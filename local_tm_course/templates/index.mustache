@@ -1,0 +1,146 @@
+{{! Front session list: index.php builds context; do not put business logic here. }}
+<div class="tm-session-grid" id="tm-session-list-grid">
+{{#sessions}}
+  <article class="tm-session-card" data-sessionid="{{id}}" data-start-ts="{{start_ts}}" data-end-ts="{{end_ts}}">
+    <header class="tm-session-header">
+      <div>
+        <small class="tm-session-date js-tm-local-time" data-tm-local-mode="date" data-tm-start-ts="{{start_ts}}">{{date_header}}</small>
+        <div class="tm-session-title">{{name}}</div>
+      </div>
+    </header>
+
+    <div class="tm-session-meta">
+      <div class="mb-1 tm-session-location-line">
+        <strong>📍</strong>
+        {{#is_online}}
+        <span class="tm-session-location-online">{{online_location_label}}</span>
+        {{#show_meeting_link}}
+        <a href="{{meeting_link_url}}" class="btn btn-sm btn-tm-success tm-meeting-link-btn" target="_blank" rel="noopener noreferrer">{{meeting_link_label}}</a>
+        {{/show_meeting_link}}
+        {{/is_online}}
+        {{^is_online}}
+        {{location}}
+        {{/is_online}}
+      </div>
+      <div class="mb-1"><strong>⏱</strong> {{duration_hours}} {{hours_suffix}}</div>
+      {{#lunch_note}}
+      <div class="tm-lunch-note">{{.}}</div>
+      {{/lunch_note}}
+      <div class="mb-1"><strong>🕐</strong> <span class="js-tm-local-time" data-tm-local-mode="range" data-tm-start-ts="{{start_ts}}" data-tm-end-ts="{{end_ts}}">{{start_label}} – {{end_label}}</span></div>
+      <div class="mb-1"><strong>{{language_label}}:</strong> {{teaching_language_label}}</div>
+      <div class="mb-1">
+        <strong>{{delivery_mode_label}}:</strong>
+        {{#is_online}}<span class="tm-online-icon" aria-hidden="true">🎥</span>{{/is_online}}
+        {{delivery_mode_text}}
+      </div>
+    </div>
+
+    {{#has_desks}}
+    <div class="mt-2 mb-1 tm-session-desks">
+      <div class="tm-session-desks-head">
+        <strong>{{desks_heading}}</strong>
+        {{#show_roster_link}}
+        <a href="{{roster_url}}" class="tm-session-roster-link">{{roster_label}}</a>
+        {{/show_roster_link}}
+      </div>
+      <div class="tm-desk-grid mt-1">
+        {{#desks}}
+        <div class="tm-desk-slot {{#occupied}}occupied{{/occupied}}{{^occupied}}available{{/occupied}}" title="{{desk_title}}">
+          {{num}}
+        </div>
+        {{/desks}}
+      </div>
+      <div class="tm-capacity-bar mt-1">
+        <div class="tm-capacity-bar-fill {{fill_bar_class}}" style="width:{{fill_percent}}%"></div>
+      </div>
+      <div class="tm-remaining-persons-highlight">
+        {{remaining_positions_text}}
+      </div>
+    </div>
+    {{/has_desks}}
+
+    {{#show_roster_link}}
+    {{^has_desks}}
+    <div class="mt-2 mb-1">
+      <a href="{{roster_url}}" class="tm-session-roster-link">{{roster_label}}</a>
+    </div>
+    {{/has_desks}}
+    {{/show_roster_link}}
+
+    {{#show_prereq}}
+    <div class="mb-2 tm-prereq-block">
+      <span class="tm-badge tm-badge-closed">⚑ {{prereq_badge}}</span>
+      <ul class="tm-prereq-course-list">
+        {{#prereq_courses}}
+        <li>{{name}}</li>
+        {{/prereq_courses}}
+      </ul>
+    </div>
+    {{/show_prereq}}
+
+    <div class="mt-3 tm-session-actions">
+      {{#show_already_enrolled}}
+        <span class="tm-badge tm-badge-{{badge_cls}} mb-2">{{badge_lbl}}</span>
+        {{#show_desk_line}}
+        <div class="mt-1"><small class="tm-session-muted">{{desk_line}}</small></div>
+        {{/show_desk_line}}
+        {{#show_diet_line}}
+        <div class="mt-1"><small class="tm-session-muted">{{diet_line_label}}: {{diet_line}}</small></div>
+        {{/show_diet_line}}
+        {{#show_cancel}}
+        <form method="post" action="" class="d-inline">
+          <input type="hidden" name="enrol_action" value="cancel">
+          <input type="hidden" name="cancel_enrolid" value="{{cancel_enrolid}}">
+          <input type="hidden" name="sesskey" value="{{sesskey}}">
+          <button type="button" class="btn btn-sm btn-tm-danger js-open-cancel-modal" data-enrolid="{{cancel_enrolid}}">
+            {{cancel_label}}
+          </button>
+        </form>
+        {{/show_cancel}}
+        {{#show_change_diet}}
+        <a class="btn btn-sm btn-secondary mt-2" href="{{change_diet_url}}">{{change_diet_label}}</a>
+        {{/show_change_diet}}
+      {{/show_already_enrolled}}
+
+      {{#show_enrol_form}}
+      <form method="post" action="" id="{{enrol_form_id}}" class="js-tm-enrol-form"{{#prereq_unmet}} data-prereq-unmet="1" data-prereq-modal-message="{{prereq_unmet_modal_message}}"{{/prereq_unmet}}>
+        <input type="hidden" name="enrol_action" value="enrol_start">
+        <input type="hidden" name="enrol_sessionid" value="{{id}}">
+        <input type="hidden" name="sesskey" value="{{sesskey}}">
+        {{#show_rejected_block}}
+        <span class="tm-badge tm-badge-{{badge_cls}} mb-2">{{badge_lbl}}</span>
+        {{#show_reject_notes}}
+        <div class="mt-1"><small class="tm-session-muted">{{reject_reason_label}}: {{reject_notes}}</small></div>
+        {{/show_reject_notes}}
+        {{/show_rejected_block}}
+        <button type="submit" class="btn tm-enrol-btn w-100">{{enrol_button_text}}</button>
+      </form>
+      {{/show_enrol_form}}
+
+      {{#show_closed_btn}}
+      <button type="button" class="btn btn-secondary w-100" disabled>{{closed_label}}</button>
+      {{/show_closed_btn}}
+      {{#show_full_badge}}
+      <span class="tm-badge tm-badge-full">{{full_label}}</span>
+      {{/show_full_badge}}
+      {{#show_contact_notice}}
+      <span class="tm-badge tm-badge-closed">{{contact_notice_text}}</span>
+      {{/show_contact_notice}}
+
+      {{#show_batch_open}}
+      <a class="btn btn-sm btn-secondary w-100 mt-2" href="{{batch_url}}">{{batch_label}}</a>
+      {{/show_batch_open}}
+      {{#show_batch_closed}}
+      <button type="button" class="btn btn-sm btn-secondary w-100 mt-2" disabled>{{batch_disabled_label}}</button>
+      {{/show_batch_closed}}
+      {{#show_attendance_open}}
+      <a class="btn btn-sm btn-secondary w-100 mt-2" href="{{attendance_url}}">{{attendance_label}}</a>
+      {{/show_attendance_open}}
+    </div>
+
+    <div class="tm-enrollment-bar" aria-hidden="true">
+      <span style="width: {{fill_percent}}%;"></span>
+    </div>
+  </article>
+{{/sessions}}
+</div>

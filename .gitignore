@@ -1,0 +1,40 @@
+# ============================================================
+# moodle_register — 版控範圍：local_tm_course 外掛 + 核心開發文件
+# 以下內容刻意排除，不進版控（個資 / 內部機密 / 建置產物 / 大型媒體檔）
+# ============================================================
+
+# 真實使用者資料匯出（含密碼雜湊、員工個資）— 絕對不可上傳
+/users/
+
+# 內部部署連結、帳密相關筆記
+/links.md
+/forgot password.txt
+/email format.md
+
+# 業務簡報 / SOP 產出（非外掛程式碼）
+/docs/
+/sop_output/
+/scripts/
+
+# 第三方 Moodle 外掛（非我們自行開發，不需備份在此 repo）
+/customcert/
+/blocks/
+
+# 截圖、簡報、備份圖片
+/backup img/
+/image/
+*.png
+*.PNG
+*.jpg
+*.jpeg
+*.pptx
+
+# 建置產物 / 舊版打包 zip（改用 GitHub Releases 或重新建置）
+/_zip_staging/
+/version/
+*.zip
+/zij0Z28q
+
+# 其他雜項
+Thumbs.db
+.DS_Store

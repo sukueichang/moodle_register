@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/tm_course/db" VERSION="2026040858" COMMENT="TM Course Management DB Schema">
+  <TABLES>
+
+    <!-- =========================================================
+         Table: local_tm_classroom
+         Physical classrooms (desks configured per room)
+         ========================================================= -->
+    <TABLE NAME="local_tm_classroom" COMMENT="Classrooms for session location and capacity">
+      <FIELDS>
+        <FIELD NAME="id"            TYPE="int"    LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="name"          TYPE="char"   LENGTH="255" NOTNULL="true" DEFAULT=""/>
+        <FIELD NAME="location"      TYPE="char"   LENGTH="255" NOTNULL="false" DEFAULT=""/>
+        <FIELD NAME="tcms_location" TYPE="char"   LENGTH="255" NOTNULL="false"
+               COMMENT="TCMS location label for this classroom (session sync)"/>
+        <FIELD NAME="table_count"   TYPE="int"    LENGTH="3"  NOTNULL="true" DEFAULT="6"
+               COMMENT="Total tables/desks in this room"/>
+        <FIELD NAME="timecreated"   TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified"  TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_enabled_courses
+         Courses allowed in session &quot;linked course&quot; dropdown
+         ========================================================= -->
+    <TABLE NAME="local_tm_enabled_courses" COMMENT="Moodle courses linked to TM session picker">
+      <FIELDS>
+        <FIELD NAME="id"        TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid"  TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="mdl_course.id"/>
+        <FIELD NAME="default_duration_hours" TYPE="number" LENGTH="6" NOTNULL="true" DEFAULT="8" DECIMALS="2"
+               COMMENT="Default session length (hours) for auto schedule when creating sessions"/>
+        <FIELD NAME="default_duration_hours_onsite" TYPE="number" LENGTH="6" NOTNULL="true" DEFAULT="8" DECIMALS="2"
+               COMMENT="Default onsite duration (hours) for reservation/scheduling"/>
+        <FIELD NAME="default_duration_hours_online" TYPE="number" LENGTH="6" NOTNULL="true" DEFAULT="8" DECIMALS="2"
+               COMMENT="Default online duration (hours) for reservation/scheduling"/>
+        <FIELD NAME="allow_onsite" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1"
+               COMMENT="1 if onsite reservation is allowed for this course"/>
+        <FIELD NAME="allow_online" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1"
+               COMMENT="1 if online reservation is allowed for this course"/>
+        <FIELD NAME="allowed_classroomids" TYPE="text" NOTNULL="false"
+               COMMENT="Comma-separated classroom ids applicable to this course"/>
+        <FIELD NAME="online_classroomid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Classroom for online reservation scheduling (teacher occupancy)"/>
+        <FIELD NAME="default_prerequisite_rules" TYPE="text" NOTNULL="false"
+               COMMENT="JSON default prerequisite rules for new sessions of this course"/>
+        <FIELD NAME="tcms_course_type" TYPE="char" LENGTH="255" NOTNULL="false"
+               COMMENT="TCMS courseTypes label for this course (session sync)"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="uq_course" TYPE="unique" FIELDS="courseid"/>
+      </KEYS>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_course_sessions
+         One row = one physical class session
+         ========================================================= -->
+    <TABLE NAME="local_tm_course_sessions" COMMENT="Physical course sessions">
+      <FIELDS>
+        <FIELD NAME="id"                TYPE="int"    LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid"          TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Linked Moodle course id (mdl_course.id)"/>
+        <FIELD NAME="classroomid"       TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="FK to local_tm_classroom.id; 0 = legacy session without classroom"/>
+        <FIELD NAME="name"              TYPE="char"   LENGTH="255" NOTNULL="true" DEFAULT=""/>
+        <FIELD NAME="description"       TYPE="text"   NOTNULL="false"/>
+        <FIELD NAME="location"          TYPE="char"   LENGTH="255" NOTNULL="false" DEFAULT=""/>
+        <FIELD NAME="teaching_language" TYPE="char"   LENGTH="10" NOTNULL="true" DEFAULT="zh_tw"
+               COMMENT="en | zh_tw"/>
+        <FIELD NAME="delivery_mode"     TYPE="char"   LENGTH="10" NOTNULL="true" DEFAULT="onsite"
+               COMMENT="onsite | online"/>
+        <FIELD NAME="meeting_link"      TYPE="text"   NOTNULL="false"
+               COMMENT="Online meeting URL (used when delivery_mode=online)"/>
+        <FIELD NAME="starttime"         TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Unix timestamp"/>
+        <FIELD NAME="endtime"           TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Unix timestamp"/>
+        <FIELD NAME="duration_hours"    TYPE="number" LENGTH="6"  NOTNULL="true" DEFAULT="8" DECIMALS="2"
+               COMMENT="Actual hours needed (flexible)"/>
+        <FIELD NAME="num_desks"         TYPE="int"    LENGTH="3"  NOTNULL="true" DEFAULT="6"
+               COMMENT="Number of desks (from classroom or legacy)"/>
+        <FIELD NAME="persons_per_desk"  TYPE="int"    LENGTH="1"  NOTNULL="true" DEFAULT="3"
+               COMMENT="1 to 3 persons per desk"/>
+        <FIELD NAME="approval_mode"     TYPE="int"    LENGTH="1"  NOTNULL="true" DEFAULT="0"
+               COMMENT="0=auto approve, 1=manual review"/>
+        <FIELD NAME="prerequisite_courseid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Legacy single prerequisite course; superseded by prerequisite_rules"/>
+        <FIELD NAME="prerequisite_rules" TYPE="text" NOTNULL="false"
+               COMMENT="JSON prerequisite rules: operator and rules array"/>
+        <FIELD NAME="status"            TYPE="int"    LENGTH="1"  NOTNULL="true" DEFAULT="1"
+               COMMENT="1=open, 2=full, 0=closed"/>
+        <FIELD NAME="auto_close_exempt" TYPE="int"    LENGTH="1"  NOTNULL="true" DEFAULT="0"
+               COMMENT="1=skip site registration auto-close rule for this session"/>
+        <FIELD NAME="groupid"            TYPE="int"    LENGTH="10" NOTNULL="false"
+               COMMENT="Moodle group id auto-created for this session (mdl_groups.id)"/>
+        <FIELD NAME="attendance_cmid"   TYPE="int"    LENGTH="10" NOTNULL="false"
+               COMMENT="mod_attendance course module id (mdl_course_modules.id)"/>
+        <FIELD NAME="attendance_sessionid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="mod_attendance session slot id (mdl_attendance_sessions.id)"/>
+        <FIELD NAME="timecreated"       TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified"      TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="createdby"         TYPE="int"    LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="source_reservation_id" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="FK local_tm_course_reservation.id when session created from dedicated-class approval"/>
+        <FIELD NAME="session_kind" TYPE="char" LENGTH="32" NOTNULL="true" DEFAULT="standard"
+               COMMENT="standard | room_closed (classroom block, no enrolment)"/>
+        <FIELD NAME="tcms_session_id" TYPE="char" LENGTH="64" NOTNULL="false"
+               COMMENT="TCMS sessions.id mirror when synced"/>
+        <FIELD NAME="tcms_sync_status" TYPE="char" LENGTH="16" NOTNULL="false"
+               COMMENT="ok | pending | error | skipped"/>
+        <FIELD NAME="tcms_sync_error" TYPE="text" NOTNULL="false"
+               COMMENT="Last TCMS sync error message"/>
+        <FIELD NAME="tcms_sync_hash" TYPE="char" LENGTH="64" NOTNULL="false"
+               COMMENT="Content hash for reconcile"/>
+        <FIELD NAME="tcms_last_synced" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Unix time last successful TCMS sync"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="fk_courseid" TYPE="foreign" FIELDS="courseid" REFTABLE="course" REFFIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_starttime" UNIQUE="false" FIELDS="starttime"/>
+        <INDEX NAME="idx_status"    UNIQUE="false" FIELDS="status"/>
+        <INDEX NAME="idx_courseid"  UNIQUE="false" FIELDS="courseid"/>
+        <INDEX NAME="idx_classroomid" UNIQUE="false" FIELDS="classroomid"/>
+        <INDEX NAME="idx_source_reservation" UNIQUE="false" FIELDS="source_reservation_id"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_course_enrolments
+         ========================================================= -->
+    <TABLE NAME="local_tm_course_enrolments" COMMENT="Session enrolment records">
+      <FIELDS>
+        <FIELD NAME="id"            TYPE="int"  LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="sessionid"     TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="userid"        TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="status"        TYPE="int"  LENGTH="1"  NOTNULL="true" DEFAULT="0"
+               COMMENT="0=pending, 1=approved, 2=rejected, 3=cancelled, 4=waitlisted"/>
+        <FIELD NAME="desk_number"   TYPE="int"  LENGTH="3"  NOTNULL="false"
+               COMMENT="Assigned desk number (1..table_count); NULL until assigned"/>
+        <FIELD NAME="attended"      TYPE="int"  LENGTH="1"  NOTNULL="true" DEFAULT="0"
+               COMMENT="0=not attended, 1=attended (from mod_attendance)"/>
+        <FIELD NAME="institution"   TYPE="char" LENGTH="255" NOTNULL="false"
+               COMMENT="Snapshot of user institution at time of enrolment"/>
+        <!-- Diet survey (student-only UI flow before enrol success) -->
+        <FIELD NAME="diet_choice"          TYPE="char"   LENGTH="1"  NOTNULL="true" DEFAULT=""
+               COMMENT="A=meat, B=vegetarian; empty when not collected (e.g. seat placeholders)"/>
+        <FIELD NAME="diet_avoid_beef"      TYPE="int"    LENGTH="1"  NOTNULL="false" DEFAULT="0"
+               COMMENT="1=avoid beef (meat option)"/>
+        <FIELD NAME="diet_avoid_seafood"    TYPE="int"    LENGTH="1"  NOTNULL="false" DEFAULT="0"
+               COMMENT="1=avoid seafood (meat option)"/>
+        <FIELD NAME="diet_meat_other"     TYPE="text"   NOTNULL="false"
+               COMMENT="Other meat restrictions (free text)"/>
+        <FIELD NAME="diet_vegetarian_notes" TYPE="text"  NOTNULL="false"
+               COMMENT="Vegetarian remarks (free text)"/>
+        <FIELD NAME="notes"         TYPE="text" NOTNULL="false"
+               COMMENT="Admin notes (rejection reason, etc.)"/>
+        <FIELD NAME="cancel_reason_code" TYPE="char" LENGTH="30" NOTNULL="false" DEFAULT=""
+               COMMENT="Cancellation reason code selected by learner"/>
+        <FIELD NAME="cancel_reason_text" TYPE="text" NOTNULL="false"
+               COMMENT="Free-text cancellation reason when code is other"/>
+        <FIELD NAME="timecreated"   TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="batch_submittedby" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="User id of business user who submitted batch enrolment (M4)"/>
+        <FIELD NAME="batch_submitter_note" TYPE="text" NOTNULL="false"
+               COMMENT="Optional remark from submitter for this batch enrolment (same text per row in one submission)"/>
+        <FIELD NAME="seat_company" TYPE="char" LENGTH="255" NOTNULL="false"
+               COMMENT="Company name for placeholder seat booking"/>
+        <FIELD NAME="seat_note" TYPE="text" NOTNULL="false"
+               COMMENT="Optional note for placeholder seat booking"/>
+        <FIELD NAME="placeholder_seq" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Placeholder sequence number in one batch"/>
+        <FIELD NAME="placeholder_name" TYPE="char" LENGTH="255" NOTNULL="false"
+               COMMENT="Display name used for placeholder learner"/>
+        <FIELD NAME="linked_userid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Linked Moodle user id after follow-up email binding"/>
+        <FIELD NAME="linked_email" TYPE="char" LENGTH="255" NOTNULL="false"
+               COMMENT="Latest email entered for follow-up linking"/>
+        <FIELD NAME="sync_health" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="0=not checked,1=ok,3=error"/>
+        <FIELD NAME="sync_lastcheck" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Last Unix timestamp of sync health check"/>
+        <FIELD NAME="sync_statusjson" TYPE="text" NOTNULL="false"
+               COMMENT="JSON diagnostic payload for audit trail"/>
+        <FIELD NAME="sync_error" TYPE="text" NOTNULL="false"
+               COMMENT="Human-readable latest sync issue summary"/>
+        <FIELD NAME="batch_archived" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="1 when submitter archived this batch tracking item"/>
+        <FIELD NAME="vq_submission_id" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="FK local_tm_course_sess_vq_sub.id when session pre-course verification applies"/>
+        <FIELD NAME="reservation_initial_enrol" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="1 when created from dedicated-class approval batch (not later batch_enrol)"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary"          TYPE="primary"  FIELDS="id"/>
+        <KEY NAME="fk_sessionid"     TYPE="foreign"  FIELDS="sessionid"
+             REFTABLE="local_tm_course_sessions" REFFIELDS="id"/>
+        <KEY NAME="fk_userid"        TYPE="foreign"  FIELDS="userid" REFTABLE="user" REFFIELDS="id"/>
+        <KEY NAME="uq_session_user"  TYPE="unique"   FIELDS="sessionid, userid"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_userid"    UNIQUE="false" FIELDS="userid"/>
+        <INDEX NAME="idx_status"    UNIQUE="false" FIELDS="status"/>
+        <INDEX NAME="idx_sessionid" UNIQUE="false" FIELDS="sessionid"/>
+        <INDEX NAME="idx_vq_submission" UNIQUE="false" FIELDS="vq_submission_id"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_course_batch
+         ========================================================= -->
+    <TABLE NAME="local_tm_course_batch" COMMENT="Batch session creation records">
+      <FIELDS>
+        <FIELD NAME="id"            TYPE="int"  LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid"      TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="batch_name"    TYPE="char" LENGTH="255" NOTNULL="true"/>
+        <FIELD NAME="repeat_type"   TYPE="int"  LENGTH="1"  NOTNULL="true" DEFAULT="0"
+               COMMENT="0=none, 1=weekly, 2=monthly"/>
+        <FIELD NAME="repeat_count"  TYPE="int"  LENGTH="3"  NOTNULL="true" DEFAULT="1"/>
+        <FIELD NAME="session_ids"   TYPE="text" NOTNULL="false"
+               COMMENT="JSON array of created session ids"/>
+        <FIELD NAME="timecreated"   TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="createdby"     TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+    </TABLE>
+
+    <!-- M4: Auto-grant rules for batch enrol capability -->
+    <TABLE NAME="local_tm_course_perm_rule" COMMENT="Rules granting batch enrol access by user profile match">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="ruletype" TYPE="char" LENGTH="30" NOTNULL="false"
+               COMMENT="idnumber | institution | name_contains"/>
+        <FIELD NAME="pattern" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="enabled" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1"/>
+        <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+    </TABLE>
+
+    <!-- M6: Auto-grant rules for attendance access -->
+    <TABLE NAME="local_tm_perm_att_rule" COMMENT="Rules granting attendance access by user profile match">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="ruletype" TYPE="char" LENGTH="30" NOTNULL="false"
+               COMMENT="idnumber | institution | name_contains"/>
+        <FIELD NAME="pattern" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="enabled" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1"/>
+        <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+    </TABLE>
+
+    <!-- Dedicated class request (Phase 1 foundation) -->
+    <TABLE NAME="local_tm_course_reservation" COMMENT="Dedicated class request applications">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="requesterid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Applicant user id"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Requested linked Moodle course id"/>
+        <FIELD NAME="courseids_json" TYPE="text" NOTNULL="false"
+               COMMENT="JSON array of requested course ids for stacked reservation flow"/>
+        <FIELD NAME="delivery_mode" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="onsite"
+               COMMENT="onsite | online"/>
+        <FIELD NAME="teaching_language" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="zh_tw"
+               COMMENT="en | zh_tw"/>
+        <FIELD NAME="classroomid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Required when delivery_mode=onsite"/>
+        <FIELD NAME="preferred_classroomid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Applicant preferred classroom for onsite reservations"/>
+        <FIELD NAME="preferred_meeting_link" TYPE="text" NOTNULL="false"
+               COMMENT="Meeting link requested when delivery_mode=online"/>
+        <FIELD NAME="preferred_starttime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Requested start timestamp"/>
+        <FIELD NAME="preferred_endtime" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Computed target end timestamp"/>
+        <FIELD NAME="learner_source" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="manual"
+               COMMENT="manual | excel | group"/>
+        <FIELD NAME="cohortid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Selected cohort id when learner_source=group"/>
+        <FIELD NAME="excel_filename" TYPE="char" LENGTH="255" NOTNULL="false"
+               COMMENT="Uploaded excel/csv original filename when learner_source=excel"/>
+        <FIELD NAME="status" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="0=pending,1=approved,2=rejected"/>
+        <FIELD NAME="manager_note" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="disclaimer_snapshot" TYPE="text" NOTNULL="false"
+               COMMENT="Disclaimer text shown when application created"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="calendar_plan_json" TYPE="text" NOTNULL="false"
+               COMMENT="JSON array of planned blocks after interactive calendar (Phase 4)"/>
+        <FIELD NAME="calendar_onboarding_seen" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="1 after user dismissed first-visit onboarding on calendar"/>
+        <FIELD NAME="calendar_plan_submitted" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="1 after applicant submitted schedule for review (still pending admin)"/>
+        <FIELD NAME="archived" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="1 when requester archived this custom request in tracking list"/>
+        <FIELD NAME="application_submitted" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="0=draft (steps 1-3 in progress); 1=formally submitted at step 3"/>
+        <FIELD NAME="timesubmitted" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Unix time when application_submitted became 1; used as applied-at in tracking"/>
+        <FIELD NAME="online_daily_hours_limit" TYPE="number" LENGTH="5" DECIMALS="2" NOTNULL="false"
+               COMMENT="Optional per-application cap (hours/day) used to evenly split online courses across consecutive workdays. NULL or 0 = no manual split."/>
+        <FIELD NAME="batch_submitter_note" TYPE="text" NOTNULL="false"
+               COMMENT="Optional remark from batch full-list on dedicated class application"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_requesterid" UNIQUE="false" FIELDS="requesterid"/>
+        <INDEX NAME="idx_status" UNIQUE="false" FIELDS="status"/>
+        <INDEX NAME="idx_starttime" UNIQUE="false" FIELDS="preferred_starttime"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_tm_course_resv_learner" COMMENT="Learner rows attached to dedicated class request">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="reservationid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Existing Moodle user id if matched"/>
+        <FIELD NAME="firstname" TYPE="char" LENGTH="100" NOTNULL="false"/>
+        <FIELD NAME="lastname" TYPE="char" LENGTH="100" NOTNULL="false"/>
+        <FIELD NAME="email" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="institution" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="diet_choice" TYPE="char" LENGTH="1" NOTNULL="false"
+               COMMENT="A=meat, B=vegetarian from batch full-list"/>
+        <FIELD NAME="diet_special_note" TYPE="char" LENGTH="255" NOTNULL="false"/>
+        <FIELD NAME="source_type" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="manual"
+               COMMENT="manual | batch_full | excel | group"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_reservationid" UNIQUE="false" FIELDS="reservationid"/>
+        <INDEX NAME="idx_userid" UNIQUE="false" FIELDS="userid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_tm_course_vq_q" COMMENT="Pre-qualification verification questions">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="apply_mode" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="both"/>
+        <FIELD NAME="question_text" TYPE="text" NOTNULL="true"/>
+        <FIELD NAME="is_required" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="sortorder" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_courseid" UNIQUE="false" FIELDS="courseid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_tm_course_vq_file" COMMENT="Uploaded verification files for reservation questions">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="reservationid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="questionid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="itemid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="review_status" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="review_note" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="reviewedby" TYPE="int" LENGTH="10" NOTNULL="false"/>
+        <FIELD NAME="timereviewed" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_reservationid" UNIQUE="false" FIELDS="reservationid"/>
+        <INDEX NAME="idx_questionid" UNIQUE="false" FIELDS="questionid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_tm_course_sess_vq_sub" COMMENT="Session enrolment verification submission (self or batch)">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="sessionid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="scope" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="self"
+               COMMENT="self | batch"/>
+        <FIELD NAME="actor_userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Learner (self) or batch submitter user id"/>
+        <FIELD NAME="submitted" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="1 after applicant finished upload step"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_session_scope_actor" UNIQUE="false" FIELDS="sessionid, scope, actor_userid"/>
+        <INDEX NAME="idx_sessionid" UNIQUE="false" FIELDS="sessionid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_tm_course_sess_vq_file" COMMENT="Uploaded verification files for session submission">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="submissionid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="questionid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="itemid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="review_status" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="review_note" TYPE="text" NOTNULL="false"/>
+        <FIELD NAME="reviewedby" TYPE="int" LENGTH="10" NOTNULL="false"/>
+        <FIELD NAME="timereviewed" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_submissionid" UNIQUE="false" FIELDS="submissionid"/>
+        <INDEX NAME="idx_questionid" UNIQUE="false" FIELDS="questionid"/>
+      </INDEXES>
+    </TABLE>
+
+  </TABLES>
+</XMLDB>
