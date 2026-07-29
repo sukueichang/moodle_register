@@ -25,6 +25,9 @@ class batch_enrol_helper {
      *     @type bool|null   $require_diet               Force A/B diet; null = auto from session when sessionid>0.
      *     @type bool        $needsvq                    Override VQ+diet relax for online (optional).
      *     @type bool        $isonline                   Delivery hint when sessionid=0.
+     *     @type bool        $create_missing_users       Create Moodle accounts for unknown emails (default true).
+     *                                                   When false, unknown emails become entries with userid=0
+     *                                                   and account_missing=true (no user created).
      * }
      * @return array{ok:bool,error:string,entries:array<int,array>}
      */
@@ -34,11 +37,12 @@ class batch_enrol_helper {
         array $rowdata,
         array $options = []
     ): array {
-        global $DB;
+        global $DB, $CFG;
 
         $allowpartial = !empty($options['allow_partial_placeholders']);
         $requireddiet = array_key_exists('require_diet', $options) ? $options['require_diet'] : null;
         $isonline = !empty($options['isonline']);
+        $createmissing = !array_key_exists('create_missing_users', $options) || !empty($options['create_missing_users']);
 
         $batchneedsvq = false;
         if ($sessionid > 0) {
@@ -100,6 +104,48 @@ class batch_enrol_helper {
                     return ['ok' => false, 'error' => get_string('error_batch_diet_required', 'local_tm_course'), 'entries' => []];
                 }
 
+                $learnerpayload = [
+                    'firstname' => $firstname,
+                    'lastname' => $lastname,
+                    'email' => $email,
+                    'institution' => $instcell,
+                    'diet_choice' => $ch,
+                    'diet_special_note' => $special,
+                ];
+                if (!$createmissing) {
+                    $existing = $DB->get_record('user', [
+                        'email' => $email,
+                        'deleted' => 0,
+                        'mnethostid' => $CFG->mnet_localhost_id,
+                    ], 'id,institution', IGNORE_MISSING);
+                    if (!$existing) {
+                        $entries[] = [
+                            'userid' => 0,
+                            'account_missing' => true,
+                            'institution' => $instcell,
+                            'diet' => [
+                                'choice' => $ch,
+                                'special_note' => $special,
+                            ],
+                            'learner' => $learnerpayload,
+                        ];
+                        continue;
+                    }
+                    if (trim((string)$existing->institution) === '') {
+                        $DB->set_field('user', 'institution', $instcell, ['id' => (int)$existing->id]);
+                    }
+                    $entries[] = [
+                        'userid' => (int) $existing->id,
+                        'account_missing' => false,
+                        'institution' => $instcell,
+                        'diet' => [
+                            'choice' => $ch,
+                            'special_note' => $special,
+                        ],
+                        'learner' => $learnerpayload,
+                    ];
+                    continue;
+                }
                 try {
                     $provisioned = enrolment_manager::provision_or_link_batch_user(
                         $sessionid,
@@ -119,14 +165,7 @@ class batch_enrol_helper {
                         'choice' => $ch,
                         'special_note' => $special,
                     ],
-                    'learner' => [
-                        'firstname' => $firstname,
-                        'lastname' => $lastname,
-                        'email' => $email,
-                        'institution' => $instcell,
-                        'diet_choice' => $ch,
-                        'diet_special_note' => $special,
-                    ],
+                    'learner' => $learnerpayload,
                 ];
                 continue;
             }

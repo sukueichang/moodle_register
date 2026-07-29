@@ -34,17 +34,23 @@ if ((int)$reservation->requesterid !== (int)$USER->id && !$issiteadmin) {
 }
 
 /**
- * Move timestamp to next weekday while preserving time.
+ * Move timestamp to next weekday while preserving time-of-day.
  */
 function local_tm_course_next_weekday_ts(int $ts): int {
     $cursor = $ts;
-    while (true) {
+    $hm = date('H:i:s', $cursor);
+    $guard = 0;
+    while ($guard < 14) {
         $w = (int)date('w', $cursor); // 0=Sun, 6=Sat
         if ($w >= 1 && $w <= 5) {
             return $cursor;
         }
-        $cursor = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $cursor)));
+        // Advance calendar day, then re-apply original clock time (do not keep midnight).
+        $nextday = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $cursor)));
+        $cursor = strtotime(date('Y-m-d', $nextday) . ' ' . $hm);
+        $guard++;
     }
+    return $cursor;
 }
 
 /**
@@ -399,41 +405,62 @@ foreach ($courseids as $idx => $cid) {
         // Onsite courses no longer advance the shared cursor onto another room's end.
         continue;
     } else {
-        $guard = 0;
+        // Build even-split durations, then place each day at the FIXED preferred clock time.
+        // Classroom / reservation conflicts skip to the next weekday — never shift start time.
+        $onlineplan = local_tm_course_build_online_blocks_average(
+            $cid,
+            (int)$cursor,
+            $preferredhhmmss,
+            $onlinedayendhhmmss,
+            $forceddailyhours
+        );
+        $durations = [];
+        foreach ($onlineplan['blocks'] as $pb) {
+            $durations[] = (float)($pb['durationhours'] ?? 0);
+        }
         $planblocks = [];
-        while ($guard < 500) {
-            $onlineplan = local_tm_course_build_online_blocks_average(
-                $cid,
-                (int)$cursor,
-                $preferredhhmmss,
-                $onlinedayendhhmmss,
-                $forceddailyhours
-            );
-            $planblocks = $onlineplan['blocks'];
-            $hasconflict = false;
-            foreach ($planblocks as $pb) {
-                $start = (int)$pb['start'];
-                $end = (int)$pb['end'];
+        $daycursor = local_tm_course_next_weekday_ts(
+            (int) strtotime(date('Y-m-d', max(1, (int)$cursor)) . ' ' . $preferredhhmmss)
+        );
+        foreach ($durations as $durh) {
+            if ($durh <= 0) {
+                continue;
+            }
+            $usecsecs = (int) round($durh * HOURSECS);
+            $placed = false;
+            $placeguard = 0;
+            while ($placeguard < 500) {
+                $start = (int) $daycursor;
+                $end = $start + $usecsecs;
+                $dayendlimit = strtotime(date('Y-m-d', $start) . ' ' . $onlinedayendhhmmss);
+                $overdayend = ($end > $dayendlimit);
                 $roomconflict = $classroomid > 0
                     && local_tm_course_has_time_conflict($classroomoccupancy[$classroomid] ?? [], $start, $end);
                 $resvconflict = local_tm_course_has_time_conflict($reservationintervals, $start, $end);
-                if ($roomconflict || $resvconflict) {
-                    $hasconflict = true;
+                if (!$overdayend && !$roomconflict && !$resvconflict) {
+                    $planblocks[] = [
+                        'start' => $start,
+                        'end' => $end,
+                        'durationhours' => $usecsecs / HOURSECS,
+                    ];
+                    $nextday = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $start)));
+                    $daycursor = local_tm_course_next_weekday_ts(
+                        (int) strtotime(date('Y-m-d', $nextday) . ' ' . $preferredhhmmss)
+                    );
+                    $placed = true;
                     break;
                 }
+                $nextday = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $start)));
+                $daycursor = local_tm_course_next_weekday_ts(
+                    (int) strtotime(date('Y-m-d', $nextday) . ' ' . $preferredhhmmss)
+                );
+                $placeguard++;
             }
-            if (!$hasconflict) {
+            if (!$placed) {
+                $planblocks = [];
                 break;
             }
-            $firststart = !empty($planblocks[0]['start']) ? (int)$planblocks[0]['start'] : (int)$cursor;
-            $nextday = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $firststart)));
-            $cursor = session_manager::next_weekday_timestamp(
-                (int) strtotime(date('Y-m-d', $nextday) . ' ' . $preferredhhmmss),
-                false
-            );
-            $guard++;
         }
-        $segcount = max(1, count($planblocks));
         foreach ($planblocks as $segidx => $pb) {
             $start = (int)$pb['start'];
             $end = (int)$pb['end'];
@@ -466,12 +493,13 @@ foreach ($courseids as $idx => $cid) {
                 ],
             ];
         }
-        $nextcursor = (int)$onlineplan['nextcursor'];
-        $cursor = $nextcursor;
+        if (!empty($planblocks)) {
+            $lastpb = end($planblocks);
+            $cursor = (int)$lastpb['end'];
+        }
         continue;
     }
 }
-
 header('Content-Type: application/json; charset=utf-8');
 echo json_encode(['ok' => true, 'events' => $events]);
 exit;

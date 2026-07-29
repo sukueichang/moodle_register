@@ -611,6 +611,40 @@
             return emDash;
         }
 
+        function formatPrereqCell(row) {
+            if (row._prereqMet) {
+                return '<span class="text-success">' + esc(S.batch_prereq_met) + '</span>';
+            }
+            var html = '<span class="text-warning">' + esc(S.batch_prereq_not_met) + '</span>';
+            var reasons = Array.isArray(row._prereqReasons) ? row._prereqReasons : [];
+            if (!reasons.length && row._prereqMissing) {
+                reasons = String(row._prereqMissing).split(/\s*[;；]\s*/).filter(function (part) {
+                    return part.trim() !== '';
+                });
+            }
+            if (reasons.length) {
+                html += '<ul class="small text-muted mb-0 mt-1 pl-3">';
+                reasons.forEach(function (reason) {
+                    html += '<li>' + esc(reason) + '</li>';
+                });
+                html += '</ul>';
+            }
+            return html;
+        }
+
+        function getSelectedCourseIds() {
+            var ids = [];
+            var boxes = form.querySelectorAll('input[name="courseids[]"]:checked');
+            var bi;
+            for (bi = 0; bi < boxes.length; bi++) {
+                var v = parseInt(boxes[bi].value, 10) || 0;
+                if (v > 0) {
+                    ids.push(v);
+                }
+            }
+            return ids;
+        }
+
         function collectValidatedFullRows() {
             var rows = [];
             var trs = tbodyFull.querySelectorAll('.tm-batch-row');
@@ -679,6 +713,11 @@
                 form.submit();
                 return;
             }
+            var courseIds = getSelectedCourseIds();
+            if (!courseIds.length) {
+                window.alert(S.reservation_batch_prereq_need_courses || S.error_batch_name_required);
+                return;
+            }
             var i;
             for (i = 0; i < data.length; i++) {
                 if (!data[i].firstname || !data[i].lastname) {
@@ -687,6 +726,10 @@
                 }
                 if (!data[i].institution) {
                     window.alert(S.error_institution_required);
+                    return;
+                }
+                if (!data[i].email) {
+                    window.alert(S.error_batch_name_required);
                     return;
                 }
                 if (requireDiet && data[i].diet !== 'A' && data[i].diet !== 'B') {
@@ -709,15 +752,13 @@
                 return;
             }
 
+            var courseQs = courseIds.map(function (cid) {
+                return 'courseids[]=' + encodeURIComponent(String(cid));
+            }).join('&');
+
             Promise.all(data.map(function (row) {
-                if (!row.email) {
-                    row._displayName = (row.firstname + ' ' + row.lastname).trim();
-                    row._displayInst = row.institution || emDash;
-                    row._userType = S.batch_modal_email_not_registered;
-                    row._userTypeClass = 'pending';
-                    return row;
-                }
-                var q = 'email=' + encodeURIComponent(row.email) + '&sesskey=' + encodeURIComponent(sk);
+                var q = 'email=' + encodeURIComponent(row.email) + '&sesskey=' + encodeURIComponent(sk) +
+                    '&' + courseQs;
                 return fetch(lookupBase + '?' + q, {credentials: 'same-origin'}).then(function (resp) {
                     return resp.json();
                 }).then(function (j) {
@@ -725,15 +766,38 @@
                     row._displayInst = row.institution || (j && j.institution) || emDash;
                     row._userType = (j && j.found) ? S.batch_user_existing : S.batch_modal_email_not_registered;
                     row._userTypeClass = (j && j.found) ? 'existing' : 'pending';
+                    row._accountMissing = !(j && j.found);
+                    row._prereqMet = !!(j && j.prereq_met === true);
+                    row._prereqMissing = (j && j.prereq_missing) ? String(j.prereq_missing) : '';
+                    row._prereqReasons = (j && Array.isArray(j.prereq_reasons)) ? j.prereq_reasons.slice() : [];
+                    if (row._accountMissing && !row._prereqReasons.length) {
+                        var acctMsg = S.reservation_batch_prereq_account_missing || '';
+                        row._prereqMet = false;
+                        row._prereqMissing = acctMsg;
+                        row._prereqReasons = acctMsg ? [acctMsg] : [];
+                    }
                     return row;
                 }).catch(function () {
                     row._displayName = (row.firstname + ' ' + row.lastname).trim() || emDash;
                     row._displayInst = row.institution || emDash;
                     row._userType = S.batch_modal_email_not_registered;
                     row._userTypeClass = 'pending';
+                    row._accountMissing = true;
+                    row._prereqMet = false;
+                    row._prereqMissing = S.reservation_batch_prereq_account_missing || '';
+                    row._prereqReasons = row._prereqMissing ? [row._prereqMissing] : [];
                     return row;
                 });
             })).then(function (rows) {
+                var metCount = 0;
+                var unmetCount = 0;
+                rows.forEach(function (row) {
+                    if (row._prereqMet) {
+                        metCount += 1;
+                    } else {
+                        unmetCount += 1;
+                    }
+                });
                 var htmlf = '';
                 var noteElf = document.getElementById('batch_submitternote');
                 var noteRawf = noteElf ? String(noteElf.value || '').trim() : '';
@@ -745,13 +809,27 @@
                     htmlf += '<div class="mb-2 p-2 border rounded bg-light"><strong>' + esc(S.batch_modal_note_preview) + '</strong>' +
                         '<div class="mt-1 small" style="white-space:pre-wrap">' + esc(noteRawf) + '</div></div>';
                 }
-                htmlf += '<div class="mb-2 small text-muted">' + esc(S.batch_modal_full_rows) + ': ' + esc(String(data.length)) + '</div>';
+                var summaryTpl = S.reservation_batch_prereq_summary || '';
+                if (summaryTpl) {
+                    var summaryText = summaryTpl
+                        .replace(/\{\{met\}\}/g, String(metCount))
+                        .replace(/\{\{unmet\}\}/g, String(unmetCount));
+                    htmlf += '<div class="mb-2 p-2 border rounded tm-alert tm-alert-info">' + esc(summaryText) + '</div>';
+                }
+                if (S.reservation_batch_prereq_excluded_hint) {
+                    htmlf += '<div class="mb-2 small text-muted">' + esc(S.reservation_batch_prereq_excluded_hint) + '</div>';
+                }
+                htmlf += '<div class="mb-2 small text-muted">' + esc(S.batch_modal_full_rows) + ': ' + esc(String(data.length)) +
+                    ' → ' + esc(S.reservation_batch_prereq_will_include || '') + ' ' + esc(String(metCount)) + '</div>';
                 htmlf += '<table class="tm-table"><thead><tr><th>' + esc(S.label_learner) + '</th><th>' + esc(S.label_email) +
-                    '</th><th>' + esc(S.batch_user_type) + '</th><th>' + esc(S.institution) + '</th><th>' + esc(S.diet_survey_title) +
+                    '</th><th>' + esc(S.batch_user_type) + '</th><th>' + esc(S.batch_prereq_warning_title) +
+                    '</th><th>' + esc(S.institution) + '</th><th>' + esc(S.diet_survey_title) +
                     '</th></tr></thead><tbody>';
                 rows.forEach(function (row) {
-                    htmlf += '<tr><td>' + esc(row._displayName) + '</td><td>' + esc(row.email || emDash) + '</td><td><span class="tm-batch-user-badge tm-batch-user-badge-' +
-                        esc(row._userTypeClass || 'existing') + '">' + esc(row._userType || '') + '</span></td><td>' + esc(row._displayInst) + '</td><td>' +
+                    htmlf += '<tr><td>' + esc(row._displayName) + '</td><td>' + esc(row.email || emDash) +
+                        '</td><td><span class="tm-batch-user-badge tm-batch-user-badge-' +
+                        esc(row._userTypeClass || 'existing') + '">' + esc(row._userType || '') + '</span></td><td>' +
+                        formatPrereqCell(row) + '</td><td>' + esc(row._displayInst) + '</td><td>' +
                         esc(dietLabel(row)) + '</td></tr>';
                 });
                 htmlf += '</tbody></table>';
@@ -773,19 +851,21 @@
             btnConfirm.addEventListener('click', function () {
                 stripDynamicHidden();
                 var use = modal._payload || [];
-                if (use.length) {
-                    use.forEach(function (row, i) {
-                        [['entry_firstname', row.firstname], ['entry_lastname', row.lastname], ['entry_email', row.email],
-                            ['entry_institution', row.institution], ['entry_diet', row.diet],
-                            ['entry_special_note', row.special_note]].forEach(function (pair) {
-                            var inp = document.createElement('input');
-                            inp.type = 'hidden';
-                            inp.name = pair[0] + '[' + i + ']';
-                            inp.value = pair[1];
-                            form.appendChild(inp);
-                        });
+                var kept = use.filter(function (row) {
+                    return !!row._prereqMet;
+                });
+                // Always post kept rows (may be empty → 學員數 0).
+                kept.forEach(function (row, i) {
+                    [['entry_firstname', row.firstname], ['entry_lastname', row.lastname], ['entry_email', row.email],
+                        ['entry_institution', row.institution], ['entry_diet', row.diet],
+                        ['entry_special_note', row.special_note]].forEach(function (pair) {
+                        var inp = document.createElement('input');
+                        inp.type = 'hidden';
+                        inp.name = pair[0] + '[' + i + ']';
+                        inp.value = pair[1];
+                        form.appendChild(inp);
                     });
-                }
+                });
                 var batchConfirmed = document.getElementById('batch_confirmed');
                 if (batchConfirmed) { batchConfirmed.value = '1'; }
                 modal.hidden = true;

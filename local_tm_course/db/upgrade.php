@@ -1608,6 +1608,46 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026071200, 'local', 'tm_course');
     }
 
+    // 2026072401 — Equipment check (上課準備事項): item templates + per-session per-desk log.
+    if ($oldversion < 2026072401) {
+
+        if (!$dbman->table_exists('local_tm_equip_check_item')) {
+            $table = new xmldb_table('local_tm_equip_check_item');
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('scope', XMLDB_TYPE_CHAR, '10', null, XMLDB_NOTNULL, null, 'both');
+            $table->add_field('checktype', XMLDB_TYPE_CHAR, '10', null, XMLDB_NOTNULL, null, 'status');
+            $table->add_field('itemname', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+            $table->add_field('enabled', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+            $table->add_field('sortorder', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('idx_courseid', XMLDB_INDEX_NOTUNIQUE, ['courseid']);
+            $dbman->create_table($table);
+        }
+
+        if (!$dbman->table_exists('local_tm_equip_check_log')) {
+            $table = new xmldb_table('local_tm_equip_check_log');
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+            $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('desknumber', XMLDB_TYPE_INTEGER, '3', null, XMLDB_NOTNULL, null, '1');
+            $table->add_field('itemid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('checkstatus', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('remark', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('checkedby', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_key('uq_session_desk_item', XMLDB_KEY_UNIQUE, ['sessionid', 'desknumber', 'itemid']);
+            $table->add_index('idx_sessionid', XMLDB_INDEX_NOTUNIQUE, ['sessionid']);
+            $table->add_index('idx_itemid', XMLDB_INDEX_NOTUNIQUE, ['itemid']);
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026072401, 'local', 'tm_course');
+    }
+
     return true;
 }
 

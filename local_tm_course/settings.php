@@ -333,8 +333,15 @@ if ($hassiteconfig) {
     if (!$ADMIN->locate('local_tm_course_attendance')) {
         $ADMIN->add('local_tm_course_cat', new admin_externalpage(
             'local_tm_course_attendance',
-            $str('nav_attendance', 'Attendance'),
+            $str('nav_class_prep', 'Class preparation'),
             new moodle_url('/local/tm_course/admin/sessions.php')
+        ));
+    }
+    if (!$ADMIN->locate('local_tm_course_equipment_check')) {
+        $ADMIN->add('local_tm_course_cat', new admin_externalpage(
+            'local_tm_course_equipment_check',
+            $str('equipment_check_manage_title', 'Equipment check list maintenance'),
+            new moodle_url('/local/tm_course/settings/equipment_check_items.php')
         ));
     }
 }

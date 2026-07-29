@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026071602;   // Immediate Sync all to TCMS button on sessions admin
-$plugin->release   = '5.16.2';
+$plugin->version   = 2026072903;   // Online plan: lock preferred start time; skip conflict days
+$plugin->release   = '5.17.4';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

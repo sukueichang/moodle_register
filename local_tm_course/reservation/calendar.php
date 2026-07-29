@@ -80,6 +80,14 @@ $txtweekendblocked = $str('reservation_calendar_weekend_blocked', 'Weekend sched
 $txtconflictblocked = $str('reservation_calendar_conflict_blocked', 'Classroom conflict detected. This timeslot is already occupied.');
 $txtdaylimitblocked = $str('reservation_calendar_daylimit_blocked', 'Daily training limit reached for this classroom/day. Please choose another day.');
 $txtautoadjusted = $str('reservation_calendar_autoadjusted', 'Auto-adjusted to next available slot on the same day.');
+$txtpreferredtimelocked = $str(
+    'reservation_calendar_preferred_time_locked',
+    'Preferred start time cannot change. Days with classroom conflicts were skipped; later weekdays still use the same start time.'
+);
+$txtpreferredtimeconflict = $str(
+    'reservation_calendar_preferred_time_conflict',
+    'Preferred start time cannot change, and that classroom timeslot is already taken. Please choose another date.'
+);
 $txtreservationoverlap = $str('reservation_calendar_reservation_overlap', 'This time overlaps another course in the same application. Learners cannot attend two sessions at once.');
 $txtonlinedaylimit = $str('reservation_calendar_error_online_day_end_limit', 'Online blocks exceed the configured daily end-time limit.');
 $txtlibmissing = $str('calendar_lib_missing', 'FullCalendar library is not loaded. It may be blocked by browser/network CSP.');
@@ -389,31 +397,50 @@ foreach ($fallbackcourseids as $idx => $cid) {
         }
         continue;
     } else {
+        $plan = $buildonlineavgblocks((int)$cid, (int)$fallbackcursor, $preferredhhmmss, $onlinedayendhhmm . ':00', $fallbackforceddailyhours);
+        $durations = [];
+        foreach ($plan['blocks'] as $ob) {
+            $durations[] = (float)($ob['durationhours'] ?? 0);
+        }
+        $teachinghoursfb = (float)($plan['teachinghours'] ?? 0);
         $onlineblocks = [];
-        while ($guard < 500) {
-            $plan = $buildonlineavgblocks((int)$cid, (int)$fallbackcursor, $preferredhhmmss, $onlinedayendhhmm . ':00', $fallbackforceddailyhours);
-            $onlineblocks = $plan['blocks'];
-            $hasconflict = false;
-            foreach ($onlineblocks as $ob) {
-                $start = (int)$ob['start'];
-                $end = (int)$ob['end'];
+        $daycursor = $nextweekdaystart((int)$fallbackcursor, $preferredhhmmss);
+        foreach ($durations as $durh) {
+            if ($durh <= 0) {
+                continue;
+            }
+            $usecsecs = (int) round($durh * HOURSECS);
+            $placed = false;
+            $placeguard = 0;
+            while ($placeguard < 500) {
+                $start = (int) $daycursor;
+                $end = $start + $usecsecs;
+                $dayendlimit = strtotime(date('Y-m-d', $start) . ' ' . $onlinedayendhhmm . ':00');
+                $overdayend = ($end > $dayendlimit);
                 $roomconflict = $fallbackclassroomid > 0
                     && $fbintervalconflict($fbclassroomocc[$fallbackclassroomid] ?? [], $start, $end);
                 $resvconflict = $fbintervalconflict($fbreservationintervals, $start, $end);
-                if ($roomconflict || $resvconflict) {
-                    $hasconflict = true;
+                if (!$overdayend && !$roomconflict && !$resvconflict) {
+                    $onlineblocks[] = [
+                        'start' => $start,
+                        'end' => $end,
+                        'durationhours' => $usecsecs / HOURSECS,
+                        'teachinghours' => $teachinghoursfb,
+                    ];
+                    $nextday = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $start)));
+                    $daycursor = $nextweekdaystart((int)$nextday, $preferredhhmmss);
+                    $placed = true;
                     break;
                 }
+                $nextday = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $start)));
+                $daycursor = $nextweekdaystart((int)$nextday, $preferredhhmmss);
+                $placeguard++;
             }
-            if (!$hasconflict) {
+            if (!$placed) {
+                $onlineblocks = [];
                 break;
             }
-            $firststart = !empty($onlineblocks[0]['start']) ? (int)$onlineblocks[0]['start'] : (int)$fallbackcursor;
-            $nextday = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $firststart)));
-            $fallbackcursor = $nextweekdaystart((int)$nextday, $preferredhhmmss);
-            $guard++;
         }
-        $segcount = max(1, count($onlineblocks));
         foreach ($onlineblocks as $segidx => $ob) {
             $start = (int)$ob['start'];
             $end = (int)$ob['end'];
@@ -446,12 +473,14 @@ foreach ($fallbackcourseids as $idx => $cid) {
                 ],
             ];
         }
-        $fallbackcursor = (int)$plan['nextcursor'];
+        if (!empty($onlineblocks)) {
+            $lastob = end($onlineblocks);
+            $fallbackcursor = (int)$lastob['end'];
+        }
         continue;
     }
 }
 }
-
 $savedplandevents = [];
 $savedgroupbycourse = [];
 $planjsonstored = isset($reservation->calendar_plan_json) ? (string) $reservation->calendar_plan_json : '';
@@ -1037,6 +1066,94 @@ echo html_writer::script("
         return d;
     }
 
+    function intervalOverlapsList(intervals, start, end) {
+        for (var i = 0; i < (intervals || []).length; i++) {
+            var itv = intervals[i];
+            if (!itv || !(itv.start instanceof Date) || !(itv.end instanceof Date)) { continue; }
+            if (itv.start.getTime() < end.getTime() && itv.end.getTime() > start.getTime()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Place online segments at a FIXED preferred clock time only.
+     * On classroom / plan conflict or day-end overflow, skip to the next weekday
+     * (same clock time) — never shift start time within a day.
+     *
+     * @return {{ok:boolean,proposals:Array,skipped:boolean}}
+     */
+    function placeOnlineSegmentsFixedStart(calendar, segmentSpecs, dropDate, preferredHm, excludeIds) {
+        var hm = parseHm(preferredHm);
+        var dayCursor = nextWeekdayStartFromDate(
+            new Date(dropDate.getFullYear(), dropDate.getMonth(), dropDate.getDate(), 0, 0, 0, 0),
+            hm.h,
+            hm.m
+        );
+        var proposals = [];
+        var skipped = false;
+        for (var si = 0; si < segmentSpecs.length; si++) {
+            var seg = segmentSpecs[si];
+            var placed = false;
+            var guard = 0;
+            while (guard < 500) {
+                if (isWeekendDate(dayCursor)) {
+                    dayCursor = nextWeekdayStartFromDate(
+                        new Date(dayCursor.getFullYear(), dayCursor.getMonth(), dayCursor.getDate() + 1, 0, 0, 0, 0),
+                        hm.h,
+                        hm.m
+                    );
+                    guard++;
+                    continue;
+                }
+                var start = new Date(dayCursor.getTime());
+                var end = new Date(start.getTime() + seg.durationMs);
+                var dayLimit = onlineDayEndAt(start);
+                if (end.getTime() > dayLimit.getTime()) {
+                    skipped = true;
+                    dayCursor = nextWeekdayStartFromDate(
+                        new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0),
+                        hm.h,
+                        hm.m
+                    );
+                    guard++;
+                    continue;
+                }
+                var dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 8, 0, 0, 0);
+                var intervals = collectDayBlockingIntervalsWithExcludes(
+                    calendar,
+                    seg.classroomId,
+                    dayStart,
+                    dayLimit,
+                    excludeIds
+                );
+                if (intervalOverlapsList(intervals, start, end)) {
+                    skipped = true;
+                    dayCursor = nextWeekdayStartFromDate(
+                        new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0),
+                        hm.h,
+                        hm.m
+                    );
+                    guard++;
+                    continue;
+                }
+                proposals.push({ event: seg.event, start: start, end: end });
+                dayCursor = nextWeekdayStartFromDate(
+                    new Date(start.getFullYear(), start.getMonth(), start.getDate() + 1, 0, 0, 0, 0),
+                    hm.h,
+                    hm.m
+                );
+                placed = true;
+                break;
+            }
+            if (!placed) {
+                return { ok: false, proposals: [], skipped: skipped };
+            }
+        }
+        return { ok: true, proposals: proposals, skipped: skipped };
+    }
+
     /** Shift a date by n weekdays (n may be negative), skipping Sat/Sun. */
     function addWeekdays(baseDate, n) {
         var d = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), 0, 0, 0, 0);
@@ -1391,79 +1508,43 @@ echo html_writer::script("
                         excludeDisplay[String(groupEventsDisplay[dgi].id)] = true;
                     }
                     excludeDisplay[String(info.event.id)] = true;
-                    var proposalsDisplay = [];
                     var preferredHmDisplay = String((groupEventsDisplay[0].extendedProps || {}).preferredStartHm || '');
-                    var anchorHmDisplay = parseHm(preferredHmDisplay);
-                    var anchorHourDisplay = anchorHmDisplay.h;
-                    var anchorMinuteDisplay = anchorHmDisplay.m;
-                    var dayCursorDisplay = nextWeekdayStartFromDate(
-                        new Date(newStartDisplay.getFullYear(), newStartDisplay.getMonth(), newStartDisplay.getDate(), 0, 0, 0, 0),
-                        anchorHourDisplay,
-                        anchorMinuteDisplay
-                    );
+                    var specsDisplay = [];
                     for (var dpi = 0; dpi < groupEventsDisplay.length; dpi++) {
                         var dev = groupEventsDisplay[dpi];
-                        var durationMsDisplay = dev.end.getTime() - dev.start.getTime();
-                        var ds = new Date(dayCursorDisplay.getTime());
-                        var de = new Date(ds.getTime() + durationMsDisplay);
-                        if (isWeekendDate(ds)) {
-                            info.revert();
-                            showPlanInfo(" . json_encode($txtweekendblocked) . ");
-                            return;
-                        }
-                        var dayLimitDisplay = onlineDayEndAt(ds);
-                        var ridDisplay = Number((dev.extendedProps || {}).classroomId || 0);
-                        var blockIntervalsDisplay = collectDayBlockingIntervalsWithExcludes(
-                            calendar,
-                            ridDisplay,
-                            new Date(ds.getFullYear(), ds.getMonth(), ds.getDate(), 8, 0, 0, 0),
-                            dayLimitDisplay,
-                            excludeDisplay
-                        );
-                        var slotDisplay = findAvailableSlotSameDay(
-                            blockIntervalsDisplay,
-                            ds,
-                            durationMsDisplay,
-                            new Date(ds.getFullYear(), ds.getMonth(), ds.getDate(), 8, 0, 0, 0),
-                            dayLimitDisplay
-                        );
-                        if (!slotDisplay && blockIntervalsDisplay.length > 0) {
-                            var appendStartDisplay = findLastIntervalEnd(blockIntervalsDisplay, new Date(ds.getFullYear(), ds.getMonth(), ds.getDate(), 8, 0, 0, 0));
-                            var appendEndDisplay = new Date(appendStartDisplay.getTime() + durationMsDisplay);
-                            if (appendEndDisplay.getTime() <= dayLimitDisplay.getTime()) {
-                                slotDisplay = appendStartDisplay;
-                            }
-                        }
-                        if (!slotDisplay) {
-                            info.revert();
-                            showPlanInfo(" . json_encode($txtconflictblocked) . ");
-                            return;
-                        }
-                        ds = slotDisplay;
-                        de = new Date(ds.getTime() + durationMsDisplay);
-                        if (String((dev.extendedProps || {}).deliveryMode || '') === 'online' && de.getTime() > dayLimitDisplay.getTime()) {
-                            info.revert();
-                            showPlanInfo(" . json_encode($txtonlinedaylimit) . ");
-                            return;
-                        }
-                        proposalsDisplay.push({event: dev, start: ds, end: de});
-                        if (dpi < groupEventsDisplay.length - 1) {
-                            dayCursorDisplay = nextWeekdayStartFromDate(
-                                new Date(ds.getFullYear(), ds.getMonth(), ds.getDate() + 1, 0, 0, 0, 0),
-                                anchorHourDisplay,
-                                anchorMinuteDisplay
-                            );
-                        }
+                        specsDisplay.push({
+                            event: dev,
+                            durationMs: dev.end.getTime() - dev.start.getTime(),
+                            classroomId: Number((dev.extendedProps || {}).classroomId || 0)
+                        });
                     }
-                    for (var dai = 0; dai < proposalsDisplay.length; dai++) {
-                        proposalsDisplay[dai].event.setDates(proposalsDisplay[dai].start, proposalsDisplay[dai].end, {allDay: false});
-                        draftOverrides[String(proposalsDisplay[dai].event.id)] = {
-                            start: proposalsDisplay[dai].start.toISOString(),
-                            end: proposalsDisplay[dai].end.toISOString()
+                    var placedDisplay = placeOnlineSegmentsFixedStart(
+                        calendar,
+                        specsDisplay,
+                        newStartDisplay,
+                        preferredHmDisplay,
+                        excludeDisplay
+                    );
+                    if (!placedDisplay.ok) {
+                        info.revert();
+                        showPlanInfo(" . json_encode($txtpreferredtimeconflict) . ");
+                        return;
+                    }
+                    for (var dai = 0; dai < placedDisplay.proposals.length; dai++) {
+                        placedDisplay.proposals[dai].event.setDates(
+                            placedDisplay.proposals[dai].start,
+                            placedDisplay.proposals[dai].end,
+                            {allDay: false}
+                        );
+                        draftOverrides[String(placedDisplay.proposals[dai].event.id)] = {
+                            start: placedDisplay.proposals[dai].start.toISOString(),
+                            end: placedDisplay.proposals[dai].end.toISOString()
                         };
                     }
                     rebuildGroupDisplayEvents(calendar);
-                    showPlanInfo(" . json_encode($txtautoadjusted) . ");
+                    showPlanInfo(placedDisplay.skipped
+                        ? " . json_encode($txtpreferredtimelocked) . "
+                        : " . json_encode($txtdragdraft) . ");
                     return;
                 }
                 if (etype !== 'reservation_plan') {
@@ -1484,67 +1565,43 @@ echo html_writer::script("
                     for (var gi = 0; gi < groupEvents.length; gi++) {
                         exclude[String(groupEvents[gi].id)] = true;
                     }
-                    var proposals = [];
                     var preferredHm = String((groupEvents[0].extendedProps || {}).preferredStartHm || '');
-                    var anchorHm = parseHm(preferredHm);
-                    var anchorHour = anchorHm.h;
-                    var anchorMinute = anchorHm.m;
-                    var dayCursor = nextWeekdayStartFromDate(
-                        new Date(newStart.getFullYear(), newStart.getMonth(), newStart.getDate(), 0, 0, 0, 0),
-                        anchorHour,
-                        anchorMinute
-                    );
+                    var specsGroup = [];
                     for (var gpi = 0; gpi < groupEvents.length; gpi++) {
                         var gev = groupEvents[gpi];
-                        var segDurationMs = gev.end.getTime() - gev.start.getTime();
-                        var ps = new Date(dayCursor.getTime());
-                        var pe = new Date(ps.getTime() + segDurationMs);
-                        if (isWeekendDate(ps)) {
-                            info.revert();
-                            showPlanInfo(" . json_encode($txtweekendblocked) . ");
-                            return;
-                        }
-                        var dayLimit = onlineDayEndAt(ps);
-                        var ridGroup = Number((gev.extendedProps || {}).classroomId || 0);
-                        var groupDayStart = new Date(ps.getFullYear(), ps.getMonth(), ps.getDate(), 8, 0, 0, 0);
-                        var blockIntervalsGroup = collectDayBlockingIntervalsWithExcludes(calendar, ridGroup, groupDayStart, dayLimit, exclude);
-                        var slotGroup = findAvailableSlotSameDay(blockIntervalsGroup, ps, segDurationMs, groupDayStart, dayLimit);
-                        if (!slotGroup && blockIntervalsGroup.length > 0) {
-                            var appendStartGroup = findLastIntervalEnd(blockIntervalsGroup, groupDayStart);
-                            var appendEndGroup = new Date(appendStartGroup.getTime() + segDurationMs);
-                            if (appendEndGroup.getTime() <= dayLimit.getTime()) {
-                                slotGroup = appendStartGroup;
-                            }
-                        }
-                        if (!slotGroup) {
-                            info.revert();
-                            showPlanInfo(" . json_encode($txtconflictblocked) . ");
-                            return;
-                        }
-                        ps = slotGroup;
-                        pe = new Date(ps.getTime() + segDurationMs);
-                        if (pe.getTime() > dayLimit.getTime()) {
-                            info.revert();
-                            showPlanInfo(" . json_encode($txtonlinedaylimit) . ");
-                            return;
-                        }
-                        proposals.push({ event: gev, start: ps, end: pe });
-                        if (gpi < groupEvents.length - 1) {
-                            dayCursor = nextWeekdayStartFromDate(
-                                new Date(ps.getFullYear(), ps.getMonth(), ps.getDate() + 1, 0, 0, 0, 0),
-                                anchorHour,
-                                anchorMinute
-                            );
-                        }
+                        specsGroup.push({
+                            event: gev,
+                            durationMs: gev.end.getTime() - gev.start.getTime(),
+                            classroomId: Number((gev.extendedProps || {}).classroomId || 0)
+                        });
                     }
-                    for (var api = 0; api < proposals.length; api++) {
-                        proposals[api].event.setDates(proposals[api].start, proposals[api].end, {allDay: false});
-                        draftOverrides[String(proposals[api].event.id)] = {
-                            start: proposals[api].start.toISOString(),
-                            end: proposals[api].end.toISOString()
+                    var placedGroup = placeOnlineSegmentsFixedStart(
+                        calendar,
+                        specsGroup,
+                        newStart,
+                        preferredHm,
+                        exclude
+                    );
+                    if (!placedGroup.ok) {
+                        info.revert();
+                        showPlanInfo(" . json_encode($txtpreferredtimeconflict) . ");
+                        return;
+                    }
+                    for (var api = 0; api < placedGroup.proposals.length; api++) {
+                        placedGroup.proposals[api].event.setDates(
+                            placedGroup.proposals[api].start,
+                            placedGroup.proposals[api].end,
+                            {allDay: false}
+                        );
+                        draftOverrides[String(placedGroup.proposals[api].event.id)] = {
+                            start: placedGroup.proposals[api].start.toISOString(),
+                            end: placedGroup.proposals[api].end.toISOString()
                         };
                     }
-                    showPlanInfo(" . json_encode($txtautoadjusted) . ");
+                    rebuildGroupDisplayEvents(calendar);
+                    showPlanInfo(placedGroup.skipped
+                        ? " . json_encode($txtpreferredtimelocked) . "
+                        : " . json_encode($txtdragdraft) . ");
                     return;
                 }
                 // Onsite multi-day course: drag ANY day and the whole course re-plans onto
@@ -1640,45 +1697,36 @@ echo html_writer::script("
                 }
 
                 var durationMs = currentEnd.getTime() - currentStart.getTime();
-                var dayStart = new Date(currentStart.getFullYear(), currentStart.getMonth(), currentStart.getDate(), 8, 0, 0, 0);
-                var dayEnd = onlineDayEndAt(currentStart);
-                var candidateStart = preferredStartAt(currentStart, preferredHmSingle);
-                if (candidateStart < dayStart) { candidateStart = new Date(dayStart.getTime()); }
-                var roomIntervals = collectDayClassroomIntervals(calendar, rid, dayStart, dayEnd, info.event.id);
-                var usedMs = sumIntervalMs(roomIntervals);
-                if (usedMs + durationMs > (dayEnd.getTime() - dayStart.getTime())) {
+                var excludeSingle = {};
+                excludeSingle[String(info.event.id)] = true;
+                var placedSingle = placeOnlineSegmentsFixedStart(
+                    calendar,
+                    [{
+                        event: info.event,
+                        durationMs: durationMs,
+                        classroomId: rid
+                    }],
+                    currentStart,
+                    preferredHmSingle,
+                    excludeSingle
+                );
+                if (!placedSingle.ok || !placedSingle.proposals.length) {
                     info.revert();
-                    showPlanInfo(" . json_encode($txtdaylimitblocked) . ");
+                    showPlanInfo(" . json_encode($txtpreferredtimeconflict) . ");
                     return;
                 }
-                var blockIntervals = collectDayBlockingIntervals(calendar, rid, dayStart, dayEnd, info.event.id);
-                var slot = findAvailableSlotSameDay(blockIntervals, candidateStart, durationMs, dayStart, dayEnd);
-                if (!slot && blockIntervals.length > 0) {
-                    var appendStart = findLastIntervalEnd(blockIntervals, dayStart);
-                    var appendEnd = new Date(appendStart.getTime() + durationMs);
-                    if (appendEnd.getTime() <= dayEnd.getTime()) {
-                        slot = appendStart;
-                    }
-                }
-                if (!slot) {
-                    info.revert();
-                    showPlanInfo(" . json_encode($txtconflictblocked) . ");
-                    return;
-                }
-                var slotEnd = new Date(slot.getTime() + durationMs);
+                var slot = placedSingle.proposals[0].start;
+                var slotEnd = placedSingle.proposals[0].end;
                 info.event.setDates(slot, slotEnd, {allDay: false});
-                if (hasReservationPlanOverlap(calendar, slot, slotEnd, info.event.id)) {
-                    info.revert();
-                    showPlanInfo(" . json_encode($txtreservationoverlap) . ");
-                    return;
-                }
                 draftOverrides[String(info.event.id)] = {
                     start: slot.toISOString(),
                     end: slotEnd.toISOString()
                 };
                 var hh1 = formatHm(slot);
                 var hh2 = formatHm(slotEnd);
-                showPlanInfo(" . json_encode($txtautoadjusted) . " + ' (' + hh1 + '-' + hh2 + ')');
+                showPlanInfo(placedSingle.skipped
+                    ? " . json_encode($txtpreferredtimelocked) . "
+                    : (" . json_encode($txtdragdraft) . " + ' (' + hh1 + '-' + hh2 + ')'));
                 rebuildGroupDisplayEvents(calendar);
             },
             eventContent: function(arg) {

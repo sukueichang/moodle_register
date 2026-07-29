@@ -64,6 +64,11 @@
 
 ## 文件
 
-- 規格主文件：`spec.md`（Single Source of Truth）
-- 維運教訓：`lesson-learned.md`
-- 版本異動歷史：[`CHANGELOG.md`](CHANGELOG.md)
+| 檔案 | 用途 |
+|------|------|
+| [`docs/SPEC.md`](docs/SPEC.md) | 規格書（Single Source of Truth） |
+| [`docs/FEATURE_LOG.md`](docs/FEATURE_LOG.md) | 功能開發進度與決策 |
+| [`docs/BUGFIX_LOG.md`](docs/BUGFIX_LOG.md) | Bug 回報與處理／回歸檢查（原 `lesson-learned.md`） |
+| [`docs/DEV_WORKFLOW.md`](docs/DEV_WORKFLOW.md) | 開發流程 SOP（含驗收後 PR／push） |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本異動歷史 |
+| [`links.md`](links.md) | 入口 URL |

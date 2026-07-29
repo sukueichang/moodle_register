@@ -302,6 +302,44 @@ class prerequisite_manager {
     }
 
     /**
+     * Evaluate against course-mapping default prerequisites for every course (AND across courses).
+     *
+     * Courses with no default rules are treated as vacuously met.
+     *
+     * @param int[] $courseids
+     * @return array{met:bool,missing:array<int,array{label:string,courseid:int,reasons?:string[]}>,has_prerequisites:bool}
+     */
+    public static function evaluate_user_against_course_defaults(int $userid, array $courseids): array {
+        require_once(__DIR__ . '/enabled_course_manager.php');
+        $courseids = array_values(array_unique(array_filter(array_map('intval', $courseids), static function($v) {
+            return $v > 0;
+        })));
+        $mergedmissing = [];
+        $hasprereq = false;
+        if ($userid < 2) {
+            return ['met' => false, 'missing' => [], 'has_prerequisites' => false];
+        }
+        foreach ($courseids as $cid) {
+            $rules = enabled_course_manager::get_default_prerequisite_rules($cid);
+            if ($rules === null || empty($rules['rules'])) {
+                continue;
+            }
+            $hasprereq = true;
+            $eval = self::evaluate_user($userid, $rules);
+            if (empty($eval['met'])) {
+                foreach ($eval['missing'] as $item) {
+                    $mergedmissing[] = $item;
+                }
+            }
+        }
+        return [
+            'met' => empty($mergedmissing),
+            'missing' => $mergedmissing,
+            'has_prerequisites' => $hasprereq,
+        ];
+    }
+
+    /**
      * @return array{met:bool,missing:array<int,array{label:string,courseid:int,reasons?:string[]}>}
      */
     public static function evaluate_user(int $userid, ?array $rules): array {

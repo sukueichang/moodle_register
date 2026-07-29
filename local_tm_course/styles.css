@@ -10,6 +10,9 @@
     --tm-green:       #74b42a;
     --tm-green-dark:  #5c8f21;
     --tm-green-light: #f0f8e6;
+    --tm-orange:       #d9711a;
+    --tm-orange-dark:  #b8590f;
+    --tm-orange-light: #fdf0e4;
     --tm-grey:        #f5f5f5;
     --tm-border:      #d0dde3;
     --tm-text:        #333333;
@@ -1650,4 +1653,116 @@ tr.tm-batch-is-prototype {
     padding: 12px;
     max-height: 360px;
     overflow: auto;
+}
+
+/* ============================================================
+   Class prep page ("上課準備事項") — three visually distinct sections
+   ============================================================ */
+.tm-prep-section {
+    border-left: 5px solid var(--tm-border);
+}
+.tm-prep-section-title {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-bottom: .75rem;
+}
+.tm-prep-section-icon {
+    font-size: 1.2rem;
+    line-height: 1;
+}
+.tm-prep-section-attendance,
+.tm-prep-section-bento {
+    border-left-color: var(--tm-blue);
+}
+.tm-prep-section-attendance .tm-prep-section-title,
+.tm-prep-section-bento .tm-prep-section-title {
+    color: var(--tm-blue-dark);
+}
+
+/* ---- Equipment check ("設備檢查") — orange theme ---- */
+.tm-prep-section-equipment {
+    border-left-color: var(--tm-orange);
+}
+.tm-prep-section-equipment .tm-prep-section-title {
+    color: var(--tm-orange-dark);
+}
+.tm-equip-desk-card {
+    border-color: var(--tm-orange-light);
+    background: #fffaf5;
+}
+.tm-equip-item {
+    border-bottom: 1px dashed var(--tm-gridline);
+    padding: .5rem 0;
+}
+.tm-equip-item:last-of-type {
+    border-bottom: none;
+}
+.tm-equip-item-name {
+    font-weight: 600;
+    margin-bottom: .35rem;
+}
+.tm-equip-item-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .75rem;
+}
+.tm-equip-item-controls label {
+    margin-bottom: 0;
+    white-space: nowrap;
+    cursor: pointer;
+}
+.tm-equip-radio-normal input[type="radio"] {
+    accent-color: var(--tm-green);
+}
+.tm-equip-radio-abnormal input[type="radio"] {
+    accent-color: var(--tm-danger);
+}
+.tm-equip-task-label input[type="checkbox"] {
+    accent-color: var(--tm-orange);
+}
+.tm-equip-remark {
+    flex: 1 1 10rem;
+    min-width: 8rem;
+}
+.tm-equip-item-meta {
+    margin-top: .2rem;
+}
+.tm-equip-form-actions .btn {
+    white-space: nowrap;
+}
+.tm-equip-grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.tm-equip-desk-details {
+    width: 100%;
+}
+.tm-equip-desk-summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.tm-equip-desk-summary::-webkit-details-marker {
+    display: none;
+}
+.tm-equip-desk-details:not([open]) .tm-equip-desk-summary {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+.tm-equip-desk-summary-right {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+.tm-equip-desk-arrow {
+    display: inline-block;
+    color: var(--tm-orange-dark);
+    transition: transform .15s ease;
+}
+.tm-equip-desk-details[open] .tm-equip-desk-arrow {
+    transform: rotate(90deg);
 }

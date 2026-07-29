@@ -8,6 +8,10 @@ namespace local_tm_course;
 
 defined('MOODLE_INTERNAL') || die();
 
+require_once(__DIR__ . '/prerequisite_manager.php');
+require_once(__DIR__ . '/enabled_course_manager.php');
+require_once(__DIR__ . '/enrolment_manager.php');
+
 class reservation_application {
 
     /** Draft: in progress (steps 1–3), not visible in tracking or admin review. */
@@ -97,6 +101,76 @@ class reservation_application {
         $reservationid = (int) $DB->insert_record('local_tm_course_reservation', $record);
         self::insert_learners($reservationid, $learnerrows);
         return $reservationid;
+    }
+
+    /**
+     * Keep only learners who already have a Moodle account and meet all selected courses'
+     * default prerequisites (AND across courses). Missing accounts are rejected.
+     *
+     * @param int[] $courseids
+     * @param array<int,array<string,mixed>> $entries From batch_enrol_helper::parse_full_mode_rows
+     * @return array{
+     *   kept: array<int,array<string,mixed>>,
+     *   rejected: array<int,array{email:string,firstname:string,lastname:string,reasons:string[]}>
+     * }
+     */
+    public static function partition_learners_by_prerequisites(array $courseids, array $entries): array {
+        $kept = [];
+        $rejected = [];
+        $accountmissingreason = get_string('reservation_batch_prereq_account_missing', 'local_tm_course');
+
+        foreach ($entries as $entry) {
+            if (empty($entry['learner']) || !is_array($entry['learner'])) {
+                continue;
+            }
+            $l = $entry['learner'];
+            $email = strtolower(trim((string)($l['email'] ?? '')));
+            $firstname = (string)($l['firstname'] ?? '');
+            $lastname = (string)($l['lastname'] ?? '');
+            $uid = (int)($entry['userid'] ?? 0);
+            $missingaccount = !empty($entry['account_missing']) || $uid < 2;
+
+            if ($missingaccount) {
+                $rejected[] = [
+                    'email' => $email,
+                    'firstname' => $firstname,
+                    'lastname' => $lastname,
+                    'reasons' => [$accountmissingreason],
+                ];
+                continue;
+            }
+
+            $eval = prerequisite_manager::evaluate_user_against_course_defaults($uid, $courseids);
+            if (empty($eval['met'])) {
+                $reasons = prerequisite_manager::flatten_missing_reasons($eval['missing']);
+                if (empty($reasons)) {
+                    $display = prerequisite_manager::format_missing_reason_list($eval['missing']);
+                    if ($display !== '') {
+                        $reasons = [$display];
+                    }
+                }
+                $rejected[] = [
+                    'email' => $email,
+                    'firstname' => $firstname,
+                    'lastname' => $lastname,
+                    'reasons' => $reasons,
+                ];
+                continue;
+            }
+
+            $kept[] = [
+                'userid' => $uid,
+                'firstname' => $firstname,
+                'lastname' => $lastname,
+                'email' => $email,
+                'institution' => (string)($l['institution'] ?? ''),
+                'diet_choice' => (string)($l['diet_choice'] ?? ''),
+                'diet_special_note' => (string)($l['diet_special_note'] ?? ''),
+                'source_type' => 'batch_full',
+            ];
+        }
+
+        return ['kept' => $kept, 'rejected' => $rejected];
     }
 
     /**

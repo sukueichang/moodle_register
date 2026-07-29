@@ -1,4 +1,138 @@
-# Lesson Learned (local_tm_course)
+# BUGFIX_LOG — 缺陷回報、根因與解法（回歸檢查清單）
+
+> **文件角色：** 每次使用者回報問題後，記錄現象／根因／解法／預防準則。  
+> **使用時機：** **每次開發或修 bug 開工前**，先掃本檔「強制檢查清單」與近期條目，確認不會重踩。  
+> **來源：** 由原 `lesson-learned.md` 全量移植，並持續追加。  
+> **相關：** [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)／[`FEATURE_LOG.md`](FEATURE_LOG.md)／[`SPEC.md`](SPEC.md)
+
+---
+
+## 強制檢查清單（開工前必跑）
+
+- [ ] 新增資料表：表名長度 **≤ 28**（Moodle XMLDB）
+- [ ] 新增 CHAR 欄位：禁止 `NOTNULL + DEFAULT ''`
+- [ ] 新增 `AJAX_SCRIPT`：`require_login()` 後立刻 `$PAGE->set_context()`
+- [ ] `get_records_sql()`：第一欄必須唯一（通常 `id`）
+- [ ] PHP closure：`use (...)` 是否帶齊外層變數
+- [ ] 新增 `get_string` key：至少同步 `lang/en` + `lang/zh_tw`；關鍵頁用 fallback-safe
+- [ ] 破壞性操作：二次確認 + 後端驗證
+- [ ] 視訊專屬開班：期望開始時間是否被改動？衝突應跳日而非改時分
+- [ ] 專屬開班學員數：是否只計「帳號存在且先修通過」者？
+- [ ] Windows 打包 zip：用 `tar.exe`，內部路徑必須是 `/` 而非 `\`
+- [ ] 升級頁 `cURL`／遠端 plugin API 錯誤 ≠ DB 升級失敗，可繼續本地升級
+
+---
+
+## 2026-07-29 — 專屬開班視訊預排：期望開始時間被改掉／週末跳日變成 00:00
+
+### 問題現象
+1. 重新自動預排後，第二天開始時間變成 `00:00`（應維持申請的 `15:30`）。
+2. 拖曳到教室已有場次的日期時，系統把開始時間改成 `17:00`（接在既有場次後），或未正確擋下衝突日。
+
+### 根因判斷
+1. 略過週末時把游標設成「隔日 00:00」而未帶回原時分（`plan_events.php` 的 `local_tm_course_next_weekday_ts`、以及 `session_manager::next_weekday_timestamp(..., false)`）。
+2. 月曆拖曳使用 `findAvailableSlotSameDay`／接在衝突區間之後，違反「業務期望開始時間不可變更」。
+
+### 解決方式
+1. 週末／換日推進一律**保留原 clock time**。
+2. 視訊預排放置改為「固定期望開始時間」：衝突或當日排不下 → **跳到下一個工作日、同一時分**；禁止同日改時。
+3. 自動預排（`plan_events.php`）與 fallback（`calendar.php`）同步此規則。
+
+### 預防準則
+- 視訊專屬開班：**preferred start time is immutable**。
+- Code review 搜尋 `findAvailableSlotSameDay`／`00:00:00` 跳日邏輯，確認不會改業務時分。
+
+---
+
+## 2026-07-29 — 專屬開班「學員數」與審核名單不一致（先修未在申請時過濾）
+
+### 問題現象
+- 申請時批次帶入學員，審核列表「學員數」>0，但專屬開班審核報名頁為 0／查無紀錄。
+- 根因鏈：申請寫入 `resv_learner` 時不查先修；核准建班時 `batch_enrol_pending` 才擋先修，且 skipped 未回寫學員數。
+
+### 解決方式（產品決策）
+- 申請批次 summary／後端：依課程連動預設先修檢查（多課 AND）。
+- 帳號不存在 → 不符合（原因：帳號不存在）；不自動建帳列入名單。
+- 僅符合者寫入 `resv_learner` → 學員數與審核來源一致；全部不符合允許學員數 = 0。
+- 舊已核准單不需清資料腳本。
+
+### 預防準則
+- 「學員數」定義 = `COUNT(resv_learner)`，且寫入前必須已通過與建班時相同語意的先修閘道（申請階段用課程預設規則）。
+
+---
+
+# Lesson Learned (local_tm_course) — 歷史條目（移植自 lesson-learned.md）
+
+## 2026-07-27 — 又踩到表名 28 字元上限（第三次）＋ CHAR NOT NULL 空字串預設值
+
+### 問題現象
+- 上架「Equipment Check（上課準備事項設備檢查）」功能後，Moodle 執行升級時直接中斷：
+  - `Invalid table name {local_tm_equipment_check_item}: name is too long. Limit is 28 chars.`
+- 同一頁面上方還有一則非致命的警告（不會擋升級，但值得順手修掉）：
+  - `XMLDB has detected one CHAR NOT NULL column (itemname) with '' (empty string) as DEFAULT value.`
+
+### 根因判斷
+- 新表 `local_tm_equipment_check_item` 長度 29 字元，超過 Moodle XMLDB 的 28 字元表名上限。
+- 這個規則**在本文件裡已經記錄過兩次**（2026-04-21、2026-05-07），但這次新增資料表時又沒有先做長度預檢，第三次踩到同一個坑。
+- 附帶的 `itemname` 欄位用了 `CHAR NOT NULL DEFAULT ''`，正是 2026-04-08 那條規則明確列為「不建議組合」的寫法，同樣是規範已寫下但實作時沒有落實檢查。
+
+### 解決方式
+1. 表名縮短並全域改名：`local_tm_equipment_check_item` → `local_tm_equip_check_item`（25 字元），同步修正：
+   - `db/install.xml`（TABLE NAME、以及另一張表 `itemid` 欄位的 COMMENT 提及此表名之處）
+   - `db/upgrade.php`（`table_exists()` / `new xmldb_table()`）
+   - `classes/equipment_check_manager.php`（4 處 `get_records` / `delete_records` / `insert_record` / `get_records_select`）
+- 由於原本的升級因為 `create_table()` 在產生 SQL 階段就丟例外，**未曾真正對 DB 下 SQL**，也還沒跑到 `upgrade_plugin_savepoint(true, 2026072401, ...)`，所以站台上記錄的外掛版本仍停留在更早的 savepoint。這種情況**不需要另外調升版本號**，只要修正 `db/upgrade.php` 內同一個版本區塊的程式碼，使用者重新安裝／升級時會自動重跑同一段升級邏輯。
+2. 順手修正 `itemname` 欄位：拿掉 `NOTNULL="true" DEFAULT=""` 組合，改成 `NOTNULL="false"`（不給預設值），`install.xml` 與 `upgrade.php` 同步調整，避免升級頁再跳出 XMLDB 警告。
+
+### 未來如何避免（本規則已第三次重申，必須真正落實成檢查清單，不能只停留在文件）
+- **任何新增資料表，在寫 `install.xml` / `upgrade.php` 之前，先手動數一次字元數，確認 `<= 28`。** 這次之後建議寫一個小工具/一行指令，在打包前對 `install.xml` 裡所有 `TABLE NAME="..."` 做長度掃描，一旦有超過 28 就直接拒絕打包：
+  ```powershell
+  $content = Get-Content local_tm_course\db\install.xml -Raw
+  [regex]::Matches($content, 'TABLE NAME="([^"]+)"') | ForEach-Object {
+      $n = $_.Groups[1].Value
+      if ($n.Length -gt 28) { Write-Output "TOO LONG ($($n.Length)): $n" }
+  }
+  ```
+- **任何新增 CHAR 欄位，禁止 `NOTNULL + DEFAULT=""` 組合**；沒有有意義預設值就設成可空（`NOTNULL="false"`，不寫 DEFAULT）。
+- 升級中途因 XMLDB coding error 失敗時，先確認「該版本的 savepoint 是否真的寫入」，若沒有寫入（通常錯誤發生在 savepoint 呼叫之前），修正程式碼後**不必**調整版號，直接讓使用者重新安裝/升級即可重跑同一段邏輯；只有當該版本的 savepoint 已經成功記錄、但邏輯仍有缺陷時，才需要開新版號 + 新的升級區塊來補救既有站台。
+
+---
+
+## 2026-07-27 — Windows 打包 zip 上傳 Moodle 出現「無法偵測到外掛類型」
+
+### 問題現象
+- 在 Windows 本機用 PowerShell 把 `local_tm_course` 資料夾打包成 `.zip` 後，上傳到 Moodle「安裝外掛」頁面，直接被拒絕並顯示：
+  - `無法偵測到外掛類型`（Sorry, the type of the plugin could not be detected automatically.）
+- 之前用同一台電腦、同樣流程打包過（例如 `local_tm_course_20260716.zip`）都正常，這次卻突然失敗，一開始誤以為是本次程式改動（新增資料表/新檔案）造成的。
+
+### 根因判斷
+- 用 `Get-ChildItem` / .NET `System.IO.Compression` 直接比對兩個 zip 內部檔案路徑分隔符，發現：
+  - 舊的、能正常安裝的 zip：內部路徑一律是正斜線，例如 `local_tm_course/admin/attendance.php`。
+  - 這次失敗的 zip：內部路徑卻是反斜線，例如 `local_tm_course\admin\class_prep.php`。
+- **ZIP 格式規範（APPNOTE.TXT）規定內部路徑必須用 `/`。** Windows PowerShell 5.1（Desktop 版 .NET Framework）內建的 `Compress-Archive`，以及直接呼叫 `[System.IO.Compression.ZipFile]::CreateFromDirectory(...)`，兩者在這台機器上都會用 OS 的路徑分隔符（Windows 是 `\`）當作壓縮檔內的條目名稱，而不是強制轉成 `/`。這是 .NET Framework 版 `System.IO.Compression` 的已知落差（.NET Core 版已修正，但 Windows PowerShell 5.1 走的是 Framework 版）。
+- Moodle 的外掛安裝器（`tool_installaddon`）用 PHP 的 `ZipArchive` 解析壓縮檔內的目錄結構，來找出唯一的根目錄、讀取裡面的 `version.php` 判斷 `$plugin->component`（進而判斷外掛類型 local/mod/block/...）。條目名稱裡的 `\` 不會被當成目錄分隔符，導致 PHP 端把整包內容看成一堆「檔名裡帶反斜線的檔案」而不是巢狀資料夾，找不到 `version.php`，於是回報「無法偵測到外掛類型」。
+- 結論：**這不是程式碼或資料庫改動的問題，是本機打包工具在這台機器上的行為問題。**
+
+### 解決方式
+1. 改用 Windows 內建的 `tar.exe`（bsdtar／libarchive，非 .NET 實作）建立 zip，其產生的內部路徑一律使用 `/`：
+   ```powershell
+   tar.exe -a -c -f local_tm_course.zip -C "<專案根目錄>" local_tm_course
+   ```
+2. 打包完成後一律做「zip 內部路徑分隔符檢查」，確認沒有任何條目含 `\`：
+   ```powershell
+   Add-Type -AssemblyName System.IO.Compression.FileSystem
+   $zip = [System.IO.Compression.ZipFile]::OpenRead("local_tm_course.zip")
+   ($zip.Entries | Where-Object { $_.FullName -match '\\' }).Count   # 必須是 0
+   $zip.Dispose()
+   ```
+3. 同時確認 zip 內只有單一根目錄（例如 `local_tm_course`），且關鍵檔案（`version.php`、`db/install.xml` 等）都存在於預期路徑。
+
+### 未來如何避免（強制規則）
+- **禁止**在 Windows PowerShell 上用 `Compress-Archive` 或直接呼叫 `[System.IO.Compression.ZipFile]::CreateFromDirectory` 打包要上傳 Moodle 的外掛 zip；一律改用 `tar.exe -a -c -f <輸出>.zip -C <上層目錄> <外掛資料夾名稱>`。
+- 每次打包完成、上傳前，先跑上面的「反斜線檢查」腳本，確認 0 筆含 `\` 的條目，再交付/上傳。
+- 若未來又看到「無法偵測到外掛類型」、「Sorry, the type of the plugin could not be detected automatically」，第一個檢查方向是**打包工具/zip 內部路徑格式**，不是程式碼或資料庫升級邏輯。
+
+---
 
 ## 2026-05-12 — AJAX endpoint 缺 `$PAGE->set_context()` 造成 format_string() 噴錯
 
@@ -112,13 +246,15 @@
 
 ## 全域維運規定（文件同步）
 
-- 每當開發新的模組/頁面/流程（包含新增入口 URL）時，必須自動評估是否需要更新 `links.md`。
+- 每當開發新的模組/頁面/流程（包含新增入口 URL）時，必須自動評估是否需要更新 [`links.md`](../links.md)。
 - 若新模組提供可操作入口（一般使用者或管理者），必須在 `links.md` 新增對應連結與使用角色分類。
-- 每當未來發生新的 issue，必須在 `lesson-learned.md` 新增一條「開發問題摘要」，至少包含：
+- 每當未來發生新的 issue，必須在 [`BUGFIX_LOG.md`](BUGFIX_LOG.md) 新增一條，至少包含：
   1. 問題現象
   2. 根因判斷
   3. 解決方式
   4. 預防準則（下次如何避免）
+- 需求與決策寫入 [`FEATURE_LOG.md`](FEATURE_LOG.md)；規格變更寫入 [`SPEC.md`](SPEC.md)。
+- 開發／修 bug／驗收後的 Git／PR／Push 步驟見 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)。
 
 ---
 
@@ -569,7 +705,7 @@
 ### 未來如何避免（強制規則）
 - **任何新增資料表/索引/欄位命名，實作前必做長度檢查**（特別是 table name <= 28）。
 - 開發流程新增固定 Gate：`命名規範檢查 -> install.xml/upgrade.php 審核 -> 語法/升級測試`，任一未通過不得交付。
-- 每次開始新需求前，先逐條檢查 `lesson-learned.md` 的既有規則，若有衝突必須先調整設計再動工。
+- 每次開始新需求前，先逐條檢查 `BUGFIX_LOG.md` 的既有規則，若有衝突必須先調整設計再動工。
 
 ---
 

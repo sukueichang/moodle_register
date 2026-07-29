@@ -11,8 +11,12 @@
 /forgot password.txt
 /email format.md
 
-# 業務簡報 / SOP 產出（非外掛程式碼）
-/docs/
+# 業務簡報 / SOP 產出（非外掛程式碼）；工程文件例外追蹤
+/docs/*
+!/docs/SPEC.md
+!/docs/FEATURE_LOG.md
+!/docs/BUGFIX_LOG.md
+!/docs/DEV_WORKFLOW.md
 /sop_output/
 /scripts/
 

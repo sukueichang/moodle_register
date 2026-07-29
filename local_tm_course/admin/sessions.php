@@ -353,9 +353,9 @@ $pluginver = local_tm_course_plugin_version_info();
            class="btn btn-sm btn-secondary"><?php echo get_string('sessions_enrolments_button', 'local_tm_course'); ?></a>
         <a href="<?php echo (new moodle_url('/local/tm_course/admin/session_roster.php', ['sessionid' => $s->id]))->out(); ?>"
            class="btn btn-sm btn-secondary"><?php echo get_string('session_roster_button', 'local_tm_course'); ?></a>
-        <a href="<?php echo (new moodle_url('/local/tm_course/admin/attendance.php', ['sessionid' => $s->id]))->out(); ?>"
+        <a href="<?php echo (new moodle_url('/local/tm_course/admin/class_prep.php', ['sessionid' => $s->id]))->out(); ?>"
            class="btn btn-sm" style="background:var(--tm-blue);color:#fff">
-            <?php echo get_string('nav_attendance', 'local_tm_course'); ?>
+            <?php echo get_string('nav_class_prep', 'local_tm_course'); ?>
         </a>
         <?php endif; ?>
         <a href="#"

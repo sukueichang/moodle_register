@@ -121,7 +121,7 @@ $calendar_api_url = (new moodle_url('/local/tm_course/calendar_events.php', ['se
 $calendar_enrol_url_base = (new moodle_url('/local/tm_course/enrol_form.php'))->out(false);
 $calendar_batch_url_base = (new moodle_url('/local/tm_course/batch_enrol.php'))->out(false);
 $calendar_roster_url_base = (new moodle_url('/local/tm_course/admin/session_roster.php'))->out(false);
-$calendar_attendance_url_base = (new moodle_url('/local/tm_course/admin/attendance.php'))->out(false);
+$calendar_attendance_url_base = (new moodle_url('/local/tm_course/admin/class_prep.php'))->out(false);
 $calendar_admin_url = (new moodle_url('/local/tm_course/admin/sessions.php'))->out(false);
 $calendar_month_view_label = get_string('calendar_month_view', 'local_tm_course');
 $calendar_status_open = get_string('calendar_status_open', 'local_tm_course');
@@ -397,8 +397,8 @@ foreach ($sessions as $s) {
         'show_batch_closed' => $show_batch_closed,
         'batch_disabled_label' => $batch_disabled_label,
         'show_attendance_open' => $can_attendance_access,
-        'attendance_url' => (new moodle_url('/local/tm_course/admin/attendance.php', ['sessionid' => (int) $s->id]))->out(false),
-        'attendance_label' => get_string('nav_attendance', 'local_tm_course'),
+        'attendance_url' => (new moodle_url('/local/tm_course/admin/class_prep.php', ['sessionid' => (int) $s->id]))->out(false),
+        'attendance_label' => get_string('nav_class_prep', 'local_tm_course'),
     ];
     if ($prereq_unmet && $prereq_unmet_modal_message !== '') {
         $prereq_unmet_by_session[(int)$s->id] = $prereq_unmet_modal_message;
@@ -980,7 +980,7 @@ echo $OUTPUT->header();
             var sid = parseInt(info.event.id, 10) || 0;
             var enrollable = ext.isEnrollable ? '1' : '0';
             var attendanceHtml = <?php echo json_encode((bool)$can_attendance_access); ?>
-                ? ('<a class="tm-fc-tooltip-btn" href="' + attendanceUrl(sid) + '">' + esc(<?php echo json_encode(get_string('nav_attendance', 'local_tm_course')); ?>) + '</a>')
+                ? ('<a class="tm-fc-tooltip-btn" href="' + attendanceUrl(sid) + '">' + esc(<?php echo json_encode(get_string('nav_class_prep', 'local_tm_course')); ?>) + '</a>')
                 : '';
             var rosterHtml = canViewRoster
                 ? ('<a class="tm-fc-tooltip-btn" href="' + rosterUrl(sid) + '">' + esc(rosterLabel) + '</a>')

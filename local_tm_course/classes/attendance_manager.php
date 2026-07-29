@@ -1111,7 +1111,7 @@ class attendance_manager {
 
     /**
      * Get all approved enrolments for a session with attendance status.
-     * Used by admin/attendance.php.
+     * Used by admin/class_prep.php.
      *
      * @param  int    $sessionid
      * @return array  Array of stdClass rows

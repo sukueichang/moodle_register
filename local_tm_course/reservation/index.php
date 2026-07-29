@@ -349,6 +349,7 @@ $collectsubmission = function() use (&$form, &$errors, $defaultdate, $mindate, $
                     'allow_partial_placeholders' => false,
                     'isonline' => $isonline,
                     'require_diet' => !$isonline,
+                    'create_missing_users' => false,
                 ]
             );
             if (!$parsed['ok']) {
@@ -356,22 +357,12 @@ $collectsubmission = function() use (&$form, &$errors, $defaultdate, $mindate, $
             } else if (empty($parsed['entries'])) {
                 $errors[] = get_string('batch_need_one_row', 'local_tm_course');
             } else {
-                foreach ($parsed['entries'] as $entry) {
-                    if (empty($entry['learner'])) {
-                        continue;
-                    }
-                    $l = $entry['learner'];
-                    $learnerrows[] = [
-                        'userid' => (int)($entry['userid'] ?? 0),
-                        'firstname' => (string)$l['firstname'],
-                        'lastname' => (string)$l['lastname'],
-                        'email' => (string)$l['email'],
-                        'institution' => (string)$l['institution'],
-                        'diet_choice' => (string)$l['diet_choice'],
-                        'diet_special_note' => (string)$l['diet_special_note'],
-                        'source_type' => 'batch_full',
-                    ];
-                }
+                $partition = \local_tm_course\reservation_application::partition_learners_by_prerequisites(
+                    $form['courseids'] ?? [],
+                    $parsed['entries']
+                );
+                // Unmet / missing-account rows are dropped: 學員數 and review list stay aligned.
+                $learnerrows = $partition['kept'];
             }
         }
     }
@@ -1065,7 +1056,7 @@ $resbatchjscfg = [
         'error_batch_diet_required' => get_string('error_batch_diet_required', 'local_tm_course'),
         'batch_lookup_loading' => get_string('batch_lookup_loading', 'local_tm_course'),
         'batch_user_existing' => get_string('batch_user_existing', 'local_tm_course'),
-        'batch_modal_email_not_registered' => get_string('batch_modal_email_not_registered', 'local_tm_course'),
+        'batch_modal_email_not_registered' => get_string('reservation_batch_email_not_registered', 'local_tm_course'),
         'batch_modal_full_rows' => get_string('batch_modal_full_rows', 'local_tm_course'),
         'label_learner' => get_string('label_learner', 'local_tm_course'),
         'label_email' => get_string('label_email', 'local_tm_course'),
@@ -1076,6 +1067,17 @@ $resbatchjscfg = [
         'diet_choice_vegetarian' => get_string('diet_choice_vegetarian', 'local_tm_course'),
         'batch_modal_note_preview' => get_string('batch_modal_note_preview', 'local_tm_course'),
         'reservation_batch_context_title' => get_string('reservation_batch_context_title', 'local_tm_course'),
+        'batch_prereq_warning_title' => get_string('batch_prereq_warning_title', 'local_tm_course'),
+        'batch_prereq_met' => get_string('batch_prereq_met', 'local_tm_course'),
+        'batch_prereq_not_met' => get_string('batch_prereq_not_met', 'local_tm_course'),
+        'reservation_batch_prereq_account_missing' => get_string('reservation_batch_prereq_account_missing', 'local_tm_course'),
+        'reservation_batch_prereq_summary' => get_string('reservation_batch_prereq_summary', 'local_tm_course', (object)[
+            'met' => '{{met}}',
+            'unmet' => '{{unmet}}',
+        ]),
+        'reservation_batch_prereq_excluded_hint' => get_string('reservation_batch_prereq_excluded_hint', 'local_tm_course'),
+        'reservation_batch_prereq_will_include' => get_string('reservation_batch_prereq_will_include', 'local_tm_course'),
+        'reservation_batch_prereq_need_courses' => get_string('reservation_batch_prereq_need_courses', 'local_tm_course'),
     ],
 ];
 $resbatchjs_path = __DIR__ . '/../batch_enrol.js';

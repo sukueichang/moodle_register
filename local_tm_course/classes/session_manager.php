@@ -1063,18 +1063,19 @@ class session_manager {
 
     /**
      * Next weekday at or after $ts (optionally snapped to 09:30 that day).
+     * When not snapping to 09:30, the original clock time is preserved across weekend skips.
      */
     public static function next_weekday_timestamp(int $ts, bool $at0930 = true): int {
         $cursor = (int) $ts;
+        $hm = date('H:i:s', $cursor);
         if ($at0930) {
-            $cursor = (int) strtotime(date('Y-m-d', $cursor) . ' 09:30:00');
+            $hm = '09:30:00';
+            $cursor = (int) strtotime(date('Y-m-d', $cursor) . ' ' . $hm);
         }
         $guard = 0;
         while (self::is_weekend_timestamp($cursor) && $guard < 14) {
-            $cursor = (int) strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $cursor)));
-            if ($at0930) {
-                $cursor = (int) strtotime(date('Y-m-d', $cursor) . ' 09:30:00');
-            }
+            $nextday = (int) strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $cursor)));
+            $cursor = (int) strtotime(date('Y-m-d', $nextday) . ' ' . $hm);
             $guard++;
         }
         return $cursor;

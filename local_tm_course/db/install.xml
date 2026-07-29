@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/tm_course/db" VERSION="2026040858" COMMENT="TM Course Management DB Schema">
+<XMLDB PATH="local/tm_course/db" VERSION="2026072401" COMMENT="TM Course Management DB Schema">
   <TABLES>
 
     <!-- =========================================================
@@ -441,6 +441,66 @@
       <INDEXES>
         <INDEX NAME="idx_submissionid" UNIQUE="false" FIELDS="submissionid"/>
         <INDEX NAME="idx_questionid" UNIQUE="false" FIELDS="questionid"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_equip_check_item
+         Per-course equipment checklist templates (class prep page)
+         ========================================================= -->
+    <TABLE NAME="local_tm_equip_check_item" COMMENT="Equipment check item templates configured per course">
+      <FIELDS>
+        <FIELD NAME="id"           TYPE="int"  LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid"     TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="mdl_course.id"/>
+        <FIELD NAME="scope"        TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="both"
+               COMMENT="onsite | online | both"/>
+        <FIELD NAME="checktype"    TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="status"
+               COMMENT="status (正常/異常+備註) | task (完成/未完成)"/>
+        <FIELD NAME="itemname"     TYPE="char" LENGTH="255" NOTNULL="false"
+               COMMENT="Display text for this checklist item"/>
+        <FIELD NAME="enabled"      TYPE="int"  LENGTH="1"  NOTNULL="true" DEFAULT="1"/>
+        <FIELD NAME="sortorder"    TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timecreated"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_courseid" UNIQUE="false" FIELDS="courseid"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_equip_check_log
+         Per-session, per-desk equipment check results (class prep page)
+         ========================================================= -->
+    <TABLE NAME="local_tm_equip_check_log" COMMENT="Equipment check results per session per desk per item">
+      <FIELDS>
+        <FIELD NAME="id"           TYPE="int"  LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="sessionid"    TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="FK local_tm_course_sessions.id"/>
+        <FIELD NAME="desknumber"   TYPE="int"  LENGTH="3"  NOTNULL="true" DEFAULT="1"
+               COMMENT="1..num_desks for onsite; always 1 for online (instructor's own set)"/>
+        <FIELD NAME="itemid"       TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="FK local_tm_equip_check_item.id"/>
+        <FIELD NAME="checkstatus"  TYPE="int"  LENGTH="1"  NOTNULL="true" DEFAULT="0"
+               COMMENT="0=unset/incomplete, 1=normal/complete, 2=abnormal (status type only)"/>
+        <FIELD NAME="remark"       TYPE="text" NOTNULL="false"
+               COMMENT="Free-text note, mainly used for abnormal status items"/>
+        <FIELD NAME="checkedby"    TYPE="int"  LENGTH="10" NOTNULL="false"
+               COMMENT="mdl_user.id who last saved this row"/>
+        <FIELD NAME="timecreated"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="uq_session_desk_item" TYPE="unique" FIELDS="sessionid, desknumber, itemid"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_sessionid" UNIQUE="false" FIELDS="sessionid"/>
+        <INDEX NAME="idx_itemid" UNIQUE="false" FIELDS="itemid"/>
       </INDEXES>
     </TABLE>
 
