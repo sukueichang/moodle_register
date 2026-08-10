@@ -3,6 +3,17 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.17.5] - 2026-08-10 - 實體額滿改回人數制／Admin 可無視額滿
+
+### Changed
+- 實體場次 `STATUS_FULL` 改以「已核准人數 ≥ 建議名額（桌×每桌人數）」判斷，不再以「每桌至少一人」關門。
+- 學員自主報名與業務批次：人數尚未額滿即可報名；額滿後關閉。
+- 具 `local/tm_course:manage` 的管理員路徑（手動批次、專屬班核准寫入等）可無視額滿與截止／關閉。
+- 升級 `2026081001`：重算既有 OPEN/FULL 場次狀態。
+
+### Docs
+- `docs/SPEC.md` §56。
+
 ## [5.16.2] - 2026-07-16 - 首次匯入 GitHub（Baseline）
 
 這是本外掛第一次納入 Git 版本控制，過去的開發歷史都記錄在

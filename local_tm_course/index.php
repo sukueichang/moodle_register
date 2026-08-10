@@ -224,6 +224,7 @@ foreach ($sessions as $s) {
     $show_already = $my_enrol && !$my_enrol_is_cancelled && !$my_enrol_is_rejected;
     $eligible_for_self_enrol = $can_enrol_capability && $can_self_enrol_by_role;
     $can_submit_enrol = session_manager::can_submit_enrolment($s, false);
+    $can_submit_batch = session_manager::can_submit_enrolment($s, $is_admin);
     $show_enrol_form = !$show_already
         && $can_submit_enrol
         && ($my_enrol_is_cancelled || $my_enrol_is_rejected || !$my_enrol)
@@ -240,7 +241,7 @@ foreach ($sessions as $s) {
     $show_full_badge = !$show_already && !$show_enrol_form && !$show_closed_btn && !$show_contact_notice
         && !session_manager::is_online_session($s)
         && ((int) $s->status === session_manager::STATUS_FULL
-            || session_manager::is_onsite_desks_full($s));
+            || session_manager::is_onsite_persons_full($s));
 
     $show_cancel = $show_already && $my_enrol
         && in_array((int) $my_enrol->status, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true);
@@ -279,12 +280,12 @@ foreach ($sessions as $s) {
         }
     }
 
-    $show_batch_open = $can_batch_enrol && $can_submit_enrol;
+    $show_batch_open = $can_batch_enrol && $can_submit_batch;
     $show_batch_closed = $can_batch_enrol && !$show_batch_open;
     $batch_disabled_label = $closed_str;
     if ($show_batch_closed && !session_manager::is_online_session($s)
         && ((int) $s->status === session_manager::STATUS_FULL
-            || session_manager::is_onsite_desks_full($s))) {
+            || session_manager::is_onsite_persons_full($s))) {
         $batch_disabled_label = $full_str;
     }
 

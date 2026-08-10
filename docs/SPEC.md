@@ -403,18 +403,18 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
   - 審核管理：核准/拒絕報名（`local/tm_course:approve`）。
   - 權限規則：管理批次報名自動授權規則（`settings/permissions.php`）。
   - 報名查詢：可看全部報名紀錄（`local/tm_course:viewall`）。
-  - 批次報名：可執行批次加入，且可對已截止場次批次加入（admin override）。
+  - 批次報名：可執行批次加入，且可對**已額滿／已截止**場次批次加入（admin override）。
 
 - 業務（Sales，`permissions_manager::user_can_batch_enrol()` 為 true）：
   - 可用批次報名入口（前提：符合角色 capability 或規則命中）。
   - 不可使用管理者後台（無 `local/tm_course:manage`）。
-  - 已截止場次不可批次加入（由 `batch_enrol.php` 擋下，僅管理者可 override）。
+  - 已額滿／已截止場次不可批次加入（由 `batch_enrol.php` 擋下，僅管理者可 override）。
   - 一般情境不可看全部報名（除非另授 `local/tm_course:viewall`）。
 
 - 一般使用者（Learner，具 `local/tm_course:enrol`）：
   - 可在前台瀏覽場次、報名/重報、取消報名。
   - 不可審核、不可批次報名、不可進入管理設定頁。
-  - 對已截止場次不可報名。
+  - 對已額滿／已截止場次不可報名。
 
 ## 14. 首頁 Dashboard（方案 A，2026-04-10）
 
@@ -1566,6 +1566,8 @@ delivery_mode = onsite：
 
 ## 50. 已實作更新（2026-05-19，實體額滿依桌次／視訊僅截止）
 
+> **已由 §56 覆寫（2026-08-10）**：實體額滿改回人數制；Admin 可無視額滿。以下為當日歷史紀錄。
+
 - **實體課 — 額滿**：`recalculate_status()` 改為「`num_desks` 每一桌皆至少有一位**已核准且已分配桌號**學員」→ `STATUS_FULL`；**不再**以「已核准人數 ≥ 建議名額（桌×每桌人數）」判斷額滿。
 - **實體課 — 阻擋報名**：`STATUS_FULL` 或 `已截止`（含開課前一日 00:00 自動截止、手動截止）時，**自主報名與業務批次皆不可**；建議人數僅 UI 參考，不阻擋核准或單桌超額。
 - **視訊課**：**不使用**額滿擋報名；僅 `已截止`（自動／手動）關門；`recalculate_status()` 不將視訊標為 `FULL`。
@@ -2040,3 +2042,31 @@ delivery_mode = onsite：
 - `admin/review_center.php`：專班區塊計數／列表僅初審學員；初審完成後隱藏「學員報名審核」子區塊。
 - `admin/enrolments.php?from_resv=`：僅列出初審學員，並顯示提示文案。
 - 語系：`reservation_review_enrol_sessions_title`、`reservation_batch_full_hint`、`reservation_review_enrol_initial_only_hint`（`zh_tw` / `en`）。
+
+## 56. 已實作更新（2026-08-10，實體額滿改回人數制／Admin 可無視額滿）
+
+### 56.1 背景
+
+§50 以「每桌至少一位已核准且已分配桌號」判定 `STATUS_FULL` 並擋報名，會造成「剩餘名額（人數）仍 > 0，但桌次已全佔 → 業務／Admin 皆無法再加人」的落差。
+
+### 56.2 規則
+
+- **實體課 — 額滿**：`recalculate_status()` 以「已核准人數 ≥ 建議名額（`num_desks × persons_per_desk`）」→ `STATUS_FULL`；**不再**以桌次是否全佔判斷額滿。
+- **實體課 — 阻擋報名**：
+  - 學員自主報名、業務批次：`STATUS_FULL`／人數額滿，或已截止／關閉時不可。
+  - 桌次佔用僅供名冊／UI 參考，不擋報名；核准仍可不擋單桌超額與建議名額超額（沿用 §49）。
+- **視訊課**：維持不因額滿擋報名；僅截止／關閉關門。
+- **管理員**（`local/tm_course:manage`）：所有走 `can_submit_enrolment(..., true)`／`batch_enrol_pending(..., allowclosed=true)` 的路徑（手動批次、專屬班核准寫入等）可**同時無視額滿與截止／關閉**。
+- **狀態時間軸（實體）**：開放 →（已核准達建議名額）→ 額滿 →（開課前一日 00:00 等）→ 已截止。
+
+### 56.3 版號與升級
+
+- 版號：`2026081001` / release `5.17.5`（無 DB schema 變更）。
+- 升級時對非 `CLOSED` 的 OPEN/FULL 場次重算狀態。
+
+### 56.4 相關檔案
+
+- `classes/session_manager.php`：`is_onsite_persons_full()`、`can_submit_enrolment()`、`recalculate_status()`
+- `classes/enrolment_manager.php`：`enrol()` / `batch_enrol_pending()` 錯誤分支
+- `index.php`、`enrol_form.php`、`enrol_apply_step.php`：前台額滿徽章／入口
+- `db/upgrade.php`：重算 OPEN/FULL

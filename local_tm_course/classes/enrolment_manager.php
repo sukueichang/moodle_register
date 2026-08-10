@@ -264,7 +264,7 @@ class enrolment_manager {
         if (!session_manager::can_submit_enrolment($session, false)) {
             if (!session_manager::is_online_session($session)
                 && ((int) $session->status === session_manager::STATUS_FULL
-                    || session_manager::is_onsite_desks_full($session))) {
+                    || session_manager::is_onsite_persons_full($session))) {
                 throw new \moodle_exception('error_session_full', 'local_tm_course');
             }
             if (session_manager::is_registration_deadline_passed($session)) {
@@ -1247,7 +1247,7 @@ class enrolment_manager {
      * @param int   $sessionid
      * @param int   $actorid   User submitting the batch (stored as batch_submittedby)
      * @param array $entries   List of [ 'userid' => int, 'institution' => string optional, 'diet' => array ]
-     * @param bool  $allowclosed When true, closed sessions are allowed (admin paths).
+     * @param bool  $allowclosed When true, full / closed / deadline are allowed (admin manage paths).
      * @param string $batchsubmitternote Optional remark stored on each created/updated enrolment row.
      * @param bool   $bypassprerequisite Site administrators may bypass prerequisite checks.
      * @return array{ processed:int, capped:bool, requested:int, skipped:array<int,array{userid:int,reason:string}>, enrolment_ids:int[], prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}> }
@@ -1266,7 +1266,7 @@ class enrolment_manager {
         if (!session_manager::can_submit_enrolment($session, $allowclosed)) {
             if (!session_manager::is_online_session($session)
                 && ((int) $session->status === session_manager::STATUS_FULL
-                    || session_manager::is_onsite_desks_full($session))) {
+                    || session_manager::is_onsite_persons_full($session))) {
                 throw new \moodle_exception('error_session_full', 'local_tm_course');
             }
             if (session_manager::is_registration_deadline_passed($session)) {

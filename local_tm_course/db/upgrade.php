@@ -1648,6 +1648,21 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072401, 'local', 'tm_course');
     }
 
+    // 2026081001 — Onsite FULL = suggested person capacity; admin may ignore FULL on manage paths.
+    if ($oldversion < 2026081001) {
+        require_once($CFG->dirroot . '/local/tm_course/classes/session_manager.php');
+        $ids = $DB->get_fieldset_select(
+            'local_tm_course_sessions',
+            'id',
+            'status IN (?, ?)',
+            [\local_tm_course\session_manager::STATUS_OPEN, \local_tm_course\session_manager::STATUS_FULL]
+        );
+        foreach ($ids as $sid) {
+            \local_tm_course\session_manager::recalculate_status((int) $sid);
+        }
+        upgrade_plugin_savepoint(true, 2026081001, 'local', 'tm_course');
+    }
+
     return true;
 }
 
