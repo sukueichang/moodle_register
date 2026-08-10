@@ -18,7 +18,30 @@
 - 版本／狀態：…（進行中 / 已驗收）
 ```
 
-使用者回覆「測試無誤／ok」後，把該節狀態改為「已驗收」，並依 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) 更新 PR／push。
+依 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)：規格確認且使用者說「開始開發」→ 先開 Draft PR 記錄；測試無誤後再 push 實作。過程中規格變更同步更新 FEATURE_LOG／SPEC／同一支 PR。
+
+---
+
+## 2026-08-10 — 先修放寬：時序 approved 報名／專班共包＋連帶取消
+
+- **需求：** 來台連上課（如 Beginner’s → AI）不應只因「先修尚未完成」被擋；現場到達前需能先報後課。先修若後來取消，依賴它的後課不可殘留。
+- **決策：**
+  1. 先修通過（整課完成型）= **已完成** ∨ **有 approved 先修場次且該場次 endtime ≤ 目標場次 starttime**（同日上下午可）∨ **專班同一次申請共包該先修課**。
+  2. 「已報名」**只認 approved**；pending 不算。
+  3. 放寬**只套用 `verify_type = course`（整課）**；活動完成／成績規則仍須真實達成（可與整課規則並存於 AND／OR）。
+  4. 先修報名被取消／駁回（且因此失去唯一時序依據）→ **自動取消**依賴之後課報名，並 **寄信通知學員 + 報名業務**（`batch_submittedby`；若無則專班申請人／相關業務）。
+  5. 公開場次／批次／專班申請／審核入學皆共用同一評估語意；專班申請階段以共包＋完成／既有 approved 為主（尚無場次時間則不做時序比對）。
+- **影響範圍：** `prerequisite_manager.php`、`enrolment_manager.php`、`reservation_application.php`、`batch_lookup.php`、`notification_helper.php`、語系、SPEC §53／§0.5、DEV_WORKFLOW。
+- **版本／狀態：** 進行中（Draft PR 記錄規格後實作）。
+
+---
+
+## 2026-08-10 — DEV_WORKFLOW：先開 PR 記錄再實作
+
+- **需求：** 規格確認並說「開始開發」後，先發 PR 留痕；測完再 push 實作；規格變更改同一 PR。
+- **決策：** 見更新後 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) §1／§3a／§3b。
+- **影響範圍：** `docs/DEV_WORKFLOW.md`、FEATURE_LOG 更新約定。
+- **版本／狀態：** 進行中（隨本輪 Draft PR）。
 
 ---
 
