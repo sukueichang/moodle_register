@@ -142,6 +142,59 @@ class notification_helper {
     }
 
     /**
+     * Always notify learner + batch submitter (and reservation requester when known)
+     * when an enrolment is auto-cancelled because a prerequisite enrolment was lost.
+     */
+    public static function notify_prereq_cascade_cancelled(
+        int $enrolid,
+        int $sourceenrolid,
+        string $prereqsessionname
+    ): void {
+        global $DB;
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', IGNORE_MISSING);
+        if (!$enrol) {
+            return;
+        }
+        $learner = $DB->get_record('user', ['id' => (int)$enrol->userid, 'deleted' => 0], '*', IGNORE_MISSING);
+        $session = $DB->get_record('local_tm_course_sessions', ['id' => (int)$enrol->sessionid], '*', IGNORE_MISSING);
+        if (!$learner || !$session) {
+            return;
+        }
+
+        $prereqsessionname = trim($prereqsessionname);
+        if ($prereqsessionname === '') {
+            $prereqsessionname = get_string('none');
+        }
+        $a = (object)[
+            'session' => (string)$session->name,
+            'prereq_session' => $prereqsessionname,
+            'learner' => fullname($learner),
+        ];
+        $subject = get_string('notify_prereq_cascade_subject', 'local_tm_course', $a);
+        $bodylearner = get_string('notify_prereq_cascade_body_learner', 'local_tm_course', $a);
+        $bodysubmitter = get_string('notify_prereq_cascade_body_submitter', 'local_tm_course', $a);
+
+        $recipientids = [(int)$learner->id];
+        $submitterid = (int)($enrol->batch_submittedby ?? 0);
+        if ($submitterid > 1) {
+            $recipientids[] = $submitterid;
+        }
+
+        $rid = (int)($session->source_reservation_id ?? 0);
+        if ($rid > 0) {
+            $requesterid = (int)$DB->get_field('local_tm_course_reservation', 'requesterid', ['id' => $rid]);
+            if ($requesterid > 1) {
+                $recipientids[] = $requesterid;
+            }
+        }
+
+        foreach (self::normalise_user_ids($recipientids) as $userid) {
+            $body = ($userid === (int)$learner->id) ? $bodylearner : $bodysubmitter;
+            self::send_message($userid, 'approval_result_learner', $subject, $body);
+        }
+    }
+
+    /**
      * Notify when a dedicated class application is formally submitted (step 3/3).
      */
     public static function notify_reservation_submitted(int $reservationid): void {
@@ -550,6 +603,10 @@ class notification_helper {
         }
         if ($code === 'batch_submitter') {
             return get_string('cancel_reason_batch_submitter', 'local_tm_course');
+        }
+        if ($code === 'prereq_cascade') {
+            $name = $text !== '' ? $text : get_string('none');
+            return get_string('cancel_reason_prereq_cascade', 'local_tm_course', $name);
         }
         if ($text !== '') {
             return $text;

@@ -68,7 +68,8 @@ foreach ($emails as $email) {
         ];
         continue;
     }
-    $eval = prerequisite_manager::evaluate_user((int)$user->id, $rules);
+    $prereqctx = prerequisite_manager::context_for_session($session);
+    $eval = prerequisite_manager::evaluate_user((int)$user->id, $rules, $prereqctx);
     $missingdisplay = prerequisite_manager::format_missing_reason_list($eval['missing']);
     $results[] = [
         'email' => $email,

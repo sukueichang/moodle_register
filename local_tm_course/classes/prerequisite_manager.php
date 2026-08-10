@@ -9,6 +9,7 @@ namespace local_tm_course;
 defined('MOODLE_INTERNAL') || die();
 
 require_once(__DIR__ . '/enabled_course_manager.php');
+require_once(__DIR__ . '/session_manager.php');
 
 class prerequisite_manager {
 
@@ -296,20 +297,75 @@ class prerequisite_manager {
         ]);
     }
 
-    public static function user_meets_rules(int $userid, ?array $rules): bool {
-        $eval = self::evaluate_user($userid, $rules);
+    public static function user_meets_rules(int $userid, ?array $rules, array $context = []): bool {
+        $eval = self::evaluate_user($userid, $rules, $context);
         return !empty($eval['met']);
+    }
+
+    /**
+     * Build evaluation context for a target session (optional extras merge on top).
+     *
+     * @param array{
+     *   target_starttime?:int,
+     *   exclude_enrolment_ids?:int[],
+     *   coselected_courseids?:int[]
+     * } $extra
+     * @return array{target_starttime?:int,exclude_enrolment_ids?:int[],coselected_courseids?:int[]}
+     */
+    public static function context_for_session(\stdClass $session, array $extra = []): array {
+        $ctx = [
+            'target_starttime' => (int)($session->starttime ?? 0),
+        ];
+        $coselected = self::coselected_courseids_for_session($session);
+        if (!empty($coselected)) {
+            $ctx['coselected_courseids'] = $coselected;
+        }
+        if (!empty($extra['coselected_courseids'])) {
+            $merged = array_merge(
+                (array)($ctx['coselected_courseids'] ?? []),
+                array_map('intval', (array)$extra['coselected_courseids'])
+            );
+            $extra['coselected_courseids'] = array_values(array_unique(array_filter($merged)));
+        }
+        return array_merge($ctx, $extra);
+    }
+
+    /**
+     * Course IDs co-selected on the dedicated-class reservation that created this session.
+     *
+     * @return int[]
+     */
+    public static function coselected_courseids_for_session(\stdClass $session): array {
+        global $DB;
+        $rid = (int)($session->source_reservation_id ?? 0);
+        if ($rid <= 0) {
+            return [];
+        }
+        $reservation = $DB->get_record('local_tm_course_reservation', ['id' => $rid], '*', IGNORE_MISSING);
+        if (!$reservation) {
+            return [];
+        }
+        require_once(__DIR__ . '/reservation_plan_validator.php');
+        return reservation_plan_validator::get_reservation_course_ids($reservation);
     }
 
     /**
      * Evaluate against course-mapping default prerequisites for every course (AND across courses).
      *
      * Courses with no default rules are treated as vacuously met.
+     * When $courseids are the courses selected on one dedicated-class application, they are
+     * treated as coselected so a later course's course-complete prereq can be satisfied by
+     * co-bundling the earlier course on the same application.
      *
      * @param int[] $courseids
+     * @param array{
+     *   target_starttime?:int,
+     *   exclude_enrolment_ids?:int[],
+     *   coselected_courseids?:int[]
+     * } $context
      * @return array{met:bool,missing:array<int,array{label:string,courseid:int,reasons?:string[]}>,has_prerequisites:bool}
      */
-    public static function evaluate_user_against_course_defaults(int $userid, array $courseids): array {
+    public static function evaluate_user_against_course_defaults(int $userid, array $courseids, array $context = []): array {
         require_once(__DIR__ . '/enabled_course_manager.php');
         $courseids = array_values(array_unique(array_filter(array_map('intval', $courseids), static function($v) {
             return $v > 0;
@@ -319,13 +375,20 @@ class prerequisite_manager {
         if ($userid < 2) {
             return ['met' => false, 'missing' => [], 'has_prerequisites' => false];
         }
+        $ctx = $context;
+        $explicitcoselected = array_map('intval', (array)($context['coselected_courseids'] ?? []));
+        // Default: selected courses on this application are co-bundled for course-complete waivers.
+        $ctx['coselected_courseids'] = array_values(array_unique(array_filter(array_merge(
+            $courseids,
+            $explicitcoselected
+        ))));
         foreach ($courseids as $cid) {
             $rules = enabled_course_manager::get_default_prerequisite_rules($cid);
             if ($rules === null || empty($rules['rules'])) {
                 continue;
             }
             $hasprereq = true;
-            $eval = self::evaluate_user($userid, $rules);
+            $eval = self::evaluate_user($userid, $rules, $ctx);
             if (empty($eval['met'])) {
                 foreach ($eval['missing'] as $item) {
                     $mergedmissing[] = $item;
@@ -340,9 +403,14 @@ class prerequisite_manager {
     }
 
     /**
+     * @param array{
+     *   target_starttime?:int,
+     *   exclude_enrolment_ids?:int[],
+     *   coselected_courseids?:int[]
+     * } $context
      * @return array{met:bool,missing:array<int,array{label:string,courseid:int,reasons?:string[]}>}
      */
-    public static function evaluate_user(int $userid, ?array $rules): array {
+    public static function evaluate_user(int $userid, ?array $rules, array $context = []): array {
         if ($rules === null || empty($rules['rules']) || $userid < 2) {
             return ['met' => true, 'missing' => []];
         }
@@ -352,7 +420,7 @@ class prerequisite_manager {
         $failedall = false;
 
         foreach ($rules['rules'] as $rule) {
-            $rulemet = self::user_meets_rule($userid, $rule);
+            $rulemet = self::user_meets_rule($userid, $rule, $context);
             if ($rulemet) {
                 $passedany = true;
                 if ($operator === self::OPERATOR_OR) {
@@ -363,7 +431,7 @@ class prerequisite_manager {
                 $missing[] = [
                     'courseid' => (int)$rule['courseid'],
                     'label' => self::format_rule_label($rule),
-                    'reasons' => self::get_rule_failure_reasons($userid, $rule),
+                    'reasons' => self::get_rule_failure_reasons($userid, $rule, $context),
                 ];
                 if ($operator === self::OPERATOR_AND) {
                     // Keep collecting for debrief; short-circuit met is false.
@@ -381,10 +449,15 @@ class prerequisite_manager {
      * Human-readable reasons why a single normalized rule is not met for the user.
      *
      * @param array $rule normalized rule row
+     * @param array{
+     *   target_starttime?:int,
+     *   exclude_enrolment_ids?:int[],
+     *   coselected_courseids?:int[]
+     * } $context
      * @return string[]
      */
-    public static function get_rule_failure_reasons(int $userid, array $rule): array {
-        if (self::user_meets_rule($userid, $rule)) {
+    public static function get_rule_failure_reasons(int $userid, array $rule, array $context = []): array {
+        if (self::user_meets_rule($userid, $rule, $context)) {
             return [];
         }
 
@@ -404,13 +477,13 @@ class prerequisite_manager {
             return [get_string('prerequisite_reason_course_not_found', 'local_tm_course', $coursename)];
         }
 
+        if ($verify === self::VERIFY_COURSE) {
+            return [get_string('prerequisite_reason_course_incomplete_or_enrol', 'local_tm_course', $coursename)];
+        }
+
         $completion = new \completion_info($course);
         if (!$completion->is_enabled()) {
             return [get_string('prerequisite_reason_completion_disabled', 'local_tm_course', $coursename)];
-        }
-
-        if ($verify === self::VERIFY_COURSE) {
-            return [get_string('prerequisite_reason_course_incomplete', 'local_tm_course', $coursename)];
         }
 
         return self::explain_activity_rule_failures($userid, $rule, $completion);
@@ -447,8 +520,13 @@ class prerequisite_manager {
 
     /**
      * @param array $rule normalized rule row
+     * @param array{
+     *   target_starttime?:int,
+     *   exclude_enrolment_ids?:int[],
+     *   coselected_courseids?:int[]
+     * } $context
      */
-    public static function user_meets_rule(int $userid, array $rule): bool {
+    public static function user_meets_rule(int $userid, array $rule, array $context = []): bool {
         global $CFG;
         require_once($CFG->dirroot . '/lib/completionlib.php');
 
@@ -462,13 +540,13 @@ class prerequisite_manager {
             return self::user_meets_grade_rule($userid, $rule);
         }
 
+        if ($rule['verify_type'] === self::VERIFY_COURSE) {
+            return self::user_meets_course_complete_rule($userid, $courseid, $course, $context);
+        }
+
         $completion = new \completion_info($course);
         if (!$completion->is_enabled()) {
             return false;
-        }
-
-        if ($rule['verify_type'] === self::VERIFY_COURSE) {
-            return $completion->is_course_complete($userid);
         }
 
         $cmids = array_map('intval', (array)($rule['cmids'] ?? []));
@@ -488,6 +566,103 @@ class prerequisite_manager {
             }
         }
         return $actop === self::ACTIVITY_ALL && $completed === count($cmids);
+    }
+
+    /**
+     * Course-complete rule: Moodle completion, or approved earlier session, or co-selected course.
+     *
+     * @param array{
+     *   target_starttime?:int,
+     *   exclude_enrolment_ids?:int[],
+     *   coselected_courseids?:int[]
+     * } $context
+     */
+    public static function user_meets_course_complete_rule(
+        int $userid,
+        int $courseid,
+        \stdClass $course,
+        array $context = []
+    ): bool {
+        global $CFG;
+        require_once($CFG->dirroot . '/lib/completionlib.php');
+
+        $completion = new \completion_info($course);
+        if ($completion->is_enabled() && $completion->is_course_complete($userid)) {
+            return true;
+        }
+
+        $coselected = array_map('intval', (array)($context['coselected_courseids'] ?? []));
+        if ($courseid > 0 && in_array($courseid, $coselected, true)) {
+            return true;
+        }
+
+        $targetstart = (int)($context['target_starttime'] ?? 0);
+        if ($targetstart > 0 && self::user_has_approved_prereq_session($userid, $courseid, $targetstart, $context)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Whether the user has an approved enrolment on a session of $prereqcourseid
+     * that ends at or before $targetstarttime.
+     *
+     * @param array{exclude_enrolment_ids?:int[]} $context
+     */
+    public static function user_has_approved_prereq_session(
+        int $userid,
+        int $prereqcourseid,
+        int $targetstarttime,
+        array $context = []
+    ): bool {
+        global $DB;
+        if ($userid < 2 || $prereqcourseid <= 0 || $targetstarttime <= 0) {
+            return false;
+        }
+
+        $sql = "SELECT e.id
+                  FROM {local_tm_course_enrolments} e
+                  JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+                 WHERE e.userid = :uid
+                   AND e.status = :st
+                   AND s.courseid = :cid
+                   AND s.endtime <= :tend";
+        $params = [
+            'uid' => $userid,
+            'st' => session_manager::ENROL_APPROVED,
+            'cid' => $prereqcourseid,
+            'tend' => $targetstarttime,
+        ];
+
+        $exclude = array_values(array_filter(array_map('intval', (array)($context['exclude_enrolment_ids'] ?? []))));
+        if (!empty($exclude)) {
+            list($insql, $inparams) = $DB->get_in_or_equal($exclude, SQL_PARAMS_NAMED, 'ex', false);
+            $sql .= " AND e.id $insql";
+            $params += $inparams;
+        }
+
+        return $DB->record_exists_sql($sql, $params);
+    }
+
+    /**
+     * Whether any rule references the given course as a course-complete prerequisite.
+     *
+     * @param array{operator?:string,rules?:array}|null $rules
+     */
+    public static function rules_reference_course_complete(?array $rules, int $courseid): bool {
+        if ($rules === null || $courseid <= 0 || empty($rules['rules'])) {
+            return false;
+        }
+        foreach ($rules['rules'] as $rule) {
+            if ((int)($rule['courseid'] ?? 0) !== $courseid) {
+                continue;
+            }
+            if (($rule['verify_type'] ?? self::VERIFY_COURSE) === self::VERIFY_COURSE) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1023,7 +1198,8 @@ class prerequisite_manager {
         if ($rules === null) {
             return null;
         }
-        $eval = self::evaluate_user($userid, $rules);
+        $ctx = self::context_for_session($session);
+        $eval = self::evaluate_user($userid, $rules, $ctx);
         if (!empty($eval['met'])) {
             return null;
         }
@@ -1031,14 +1207,20 @@ class prerequisite_manager {
     }
 
     /**
+     * @param array{
+     *   target_starttime?:int,
+     *   exclude_enrolment_ids?:int[],
+     *   coselected_courseids?:int[]
+     * } $context
      * @throws \moodle_exception when prerequisites are configured and not met
      */
-    public static function assert_learner_prerequisites(\stdClass $session, int $userid): void {
+    public static function assert_learner_prerequisites(\stdClass $session, int $userid, array $context = []): void {
         $rules = self::resolve_session_rules($session);
         if ($rules === null) {
             return;
         }
-        $eval = self::evaluate_user($userid, $rules);
+        $ctx = self::context_for_session($session, $context);
+        $eval = self::evaluate_user($userid, $rules, $ctx);
         if (!empty($eval['met'])) {
             return;
         }

@@ -538,6 +538,7 @@ class enrolment_manager {
         }
         self::clear_sync_health_state((int)$enrolid);
         notification_helper::notify_approval_result((int)$enrolid, false, (string)$reason);
+        self::cascade_cancel_after_prereq_lost((int)$enrolid);
     }
 
     /**
@@ -558,6 +559,7 @@ class enrolment_manager {
         self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
         attendance_manager::remove_from_group((int)$enrol->sessionid, $syncuserid);
         self::clear_sync_health_state((int)$enrolid);
+        self::cascade_cancel_after_prereq_lost((int)$enrolid);
     }
 
     /**
@@ -585,6 +587,7 @@ class enrolment_manager {
         attendance_manager::remove_from_group((int)$enrol->sessionid, (int)$enrol->userid);
         self::clear_sync_health_state((int)$enrolid);
         notification_helper::notify_enrolment_cancelled((int)$enrolid);
+        self::cascade_cancel_after_prereq_lost((int)$enrolid);
     }
 
     /**
@@ -628,6 +631,7 @@ class enrolment_manager {
         }
         self::clear_sync_health_state((int) $enrolid);
         notification_helper::notify_enrolment_cancelled((int) $enrolid);
+        self::cascade_cancel_after_prereq_lost((int) $enrolid);
     }
 
     /**
@@ -725,7 +729,155 @@ class enrolment_manager {
      * @return array{met:bool,missing:array<int,array{label:string,courseid:int}>}
      */
     public static function evaluate_session_prerequisites(\stdClass $session, int $userid): array {
-        return prerequisite_manager::evaluate_user($userid, prerequisite_manager::resolve_session_rules($session));
+        $ctx = prerequisite_manager::context_for_session($session);
+        return prerequisite_manager::evaluate_user(
+            $userid,
+            prerequisite_manager::resolve_session_rules($session),
+            $ctx
+        );
+    }
+
+    /**
+     * Guard against recursive cascade when cancelling a chain of dependent enrolments.
+     * @var array<int,bool>
+     */
+    private static $prereq_cascade_guard = [];
+
+    /**
+     * After an enrolment is cancelled or rejected, cancel dependents that relied on it
+     * as an approved course-complete prerequisite and no longer meet the rules.
+     */
+    public static function cascade_cancel_after_prereq_lost(int $sourceenrolid): void {
+        if ($sourceenrolid <= 0 || !empty(self::$prereq_cascade_guard[$sourceenrolid])) {
+            return;
+        }
+        self::$prereq_cascade_guard[$sourceenrolid] = true;
+        try {
+            global $DB;
+            $source = $DB->get_record('local_tm_course_enrolments', ['id' => $sourceenrolid], '*', IGNORE_MISSING);
+            if (!$source) {
+                return;
+            }
+            $userid = (int)$source->userid;
+            if ($userid < 2) {
+                return;
+            }
+            try {
+                $sourcesession = session_manager::get_session((int)$source->sessionid);
+            } catch (\Throwable $e) {
+                return;
+            }
+            $prereqcourseid = (int)($sourcesession->courseid ?? 0);
+            if ($prereqcourseid <= 0) {
+                return;
+            }
+
+            $activestatuses = [
+                session_manager::ENROL_PENDING,
+                session_manager::ENROL_APPROVED,
+                session_manager::ENROL_WAITLISTED,
+            ];
+            list($statusinsql, $statusparams) = $DB->get_in_or_equal($activestatuses, SQL_PARAMS_NAMED);
+            $sql = "SELECT e.*
+                      FROM {local_tm_course_enrolments} e
+                     WHERE e.userid = :uid
+                       AND e.id <> :sid
+                       AND e.status $statusinsql";
+            $params = ['uid' => $userid, 'sid' => $sourceenrolid] + $statusparams;
+            $deps = $DB->get_records_sql($sql, $params);
+            if (empty($deps)) {
+                return;
+            }
+
+            $prereqname = format_string((string)($sourcesession->name ?? ''));
+            foreach ($deps as $dep) {
+                $depid = (int)$dep->id;
+                try {
+                    $depsession = session_manager::get_session((int)$dep->sessionid);
+                } catch (\Throwable $e) {
+                    continue;
+                }
+                $rules = prerequisite_manager::resolve_session_rules($depsession);
+                if (!prerequisite_manager::rules_reference_course_complete($rules, $prereqcourseid)) {
+                    continue;
+                }
+                $ctx = prerequisite_manager::context_for_session($depsession, [
+                    // Do not treat reservation co-bundle as still valid once a concrete
+                    // prereq enrolment was lost — re-check completion / other approved sessions only.
+                    'coselected_courseids' => [],
+                    'exclude_enrolment_ids' => [$sourceenrolid],
+                ]);
+                // context_for_session may re-add reservation coselected; force empty for cascade re-eval.
+                $ctx['coselected_courseids'] = [];
+                $eval = prerequisite_manager::evaluate_user($userid, $rules, $ctx);
+                if (!empty($eval['met'])) {
+                    continue;
+                }
+                self::cancel_due_to_prereq_cascade($depid, $sourceenrolid, $prereqname);
+            }
+        } finally {
+            unset(self::$prereq_cascade_guard[$sourceenrolid]);
+        }
+    }
+
+    /**
+     * Cancel a dependent enrolment because its prerequisite enrolment was lost.
+     */
+    private static function cancel_due_to_prereq_cascade(
+        int $enrolid,
+        int $sourceenrolid,
+        string $prereqsessionname
+    ): void {
+        global $DB;
+        if (!empty(self::$prereq_cascade_guard[$enrolid])) {
+            return;
+        }
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', IGNORE_MISSING);
+        if (!$enrol) {
+            return;
+        }
+        $status = (int)$enrol->status;
+        if (in_array($status, [session_manager::ENROL_CANCELLED, session_manager::ENROL_REJECTED], true)) {
+            return;
+        }
+        $wasapproved = ($status === session_manager::ENROL_APPROVED);
+        try {
+            $session = session_manager::get_session((int)$enrol->sessionid);
+        } catch (\Throwable $e) {
+            return;
+        }
+        $syncuserid = self::moodle_sync_subject_userid($enrol);
+
+        $DB->set_field('local_tm_course_enrolments', 'status',
+            session_manager::ENROL_CANCELLED, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_code', 'prereq_cascade', ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $prereqsessionname, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        session_manager::recalculate_status((int)$enrol->sessionid);
+
+        if ($wasapproved) {
+            try {
+                self::sync_moodle_enrolment($syncuserid, (int)$session->courseid, 'unenrol');
+            } catch (\Throwable $e) {
+                // Notification/unenrol failure must not block cascade.
+            }
+            try {
+                attendance_manager::remove_from_group((int)$enrol->sessionid, $syncuserid);
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        }
+        self::clear_sync_health_state($enrolid);
+
+        try {
+            notification_helper::notify_prereq_cascade_cancelled($enrolid, $sourceenrolid, $prereqsessionname);
+        } catch (\Throwable $e) {
+            // ignore
+        }
+
+        // Further dependents of this cancelled row.
+        self::cascade_cancel_after_prereq_lost($enrolid);
     }
 
     /**
