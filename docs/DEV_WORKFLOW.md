@@ -2,6 +2,7 @@
 
 > **文件角色：** 每次提需求或修 bug 時雙方（你與 AI）應遵循的標準流程。  
 > **驗收訊號：** 你回覆 **`ok`**／**`測試無誤`**／**`測試無誤了`** → AI 才把實作結果 push 到已開的 PR。  
+> **通知義務：** AI 只要有 **push**、**開 PR**、或 **更新 PR**（描述／Draft→Ready），當輪回覆都要主動說清楚（做了什麼、分支、PR URL）。不可默默上遠端。  
 > **相關：** [`SPEC.md`](SPEC.md)／[`FEATURE_LOG.md`](FEATURE_LOG.md)／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)
 
 ---
@@ -48,7 +49,7 @@
 4. Push 分支；以 `gh pr create` 開 **Draft PR**（已有則更新描述）  
    - Summary：本輪要做什麼、關鍵決策  
    - Test plan：驗收檢查清單  
-5. 回報 PR URL 後再開始實作  
+5. **立刻回報**已 push／已開或更新的 **PR URL**（含分支名），再開始實作  
 
 **原則：** 過程中規格變更 → 改 FEATURE_LOG／SPEC，並 **更新同一支 PR 的描述**（不另開新 PR，除非你要求拆分）。
 
@@ -64,7 +65,8 @@
 2. **Commit** 實作（訊息著重 why；必要時含版本 bump）  
 3. **Push** 到已開 PR 的分支（`-u` 若尚未追蹤）  
 4. **更新 PR 描述**（Summary／Test plan），反映最終 FEATURE／BUGFIX；必要時標為 Ready for review  
-5. **文件收尾**  
+5. **主動告知使用者**：已 push／已更新 PR（分支名 + PR URL + 本輪內容一句話）  
+6. **文件收尾**  
    - FEATURE_LOG 該節 →「已驗收」  
    - BUGFIX_LOG 已有條目則確認預防準則寫入檢查清單（若為新類型）  
    - 新入口 URL → 評估更新根目錄 `links.md`
