@@ -26,6 +26,22 @@
 
 ---
 
+## 2026-08-12 — 課程連動「先修課程預設」內容過多時整頁無法滾動
+
+### 問題現象
+- 課程連動設定開啟「先修課程預設」後，規則／成績條件一多，modal 超出視窗高度，版面無法滾動，底部儲存／取消按不到。
+
+### 根因判斷
+- `#tm-prerequisite-modal-backdrop` 使用固定全螢幕 overlay，panel 無 `max-height`／內部 `overflow`，內容撐高後無法捲動。
+
+### 解決方式
+- 僅改 `settings/course_mapping.php`：modal 改為 header 固定／body 可捲／footer 固定；開啟時鎖背景捲動。
+
+### 預防準則
+- 管理後台長表單 modal 一律限制 viewport 高度並讓中段可捲（可參考 Bento modal 結構）。
+
+---
+
 ## 2026-08-12 — 同課程互斥把「已上過／已結束」場次也擋掉重報
 
 ### 問題現象
