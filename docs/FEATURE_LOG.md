@@ -33,7 +33,19 @@
   5. 公開場次／批次／專班申請／審核入學皆共用同一評估語意；專班申請階段以共包＋完成／既有 approved 為主（尚無場次時間則不做時序比對）。
   6. **報名檢查以課程連動先修預設為準（5.17.8）**；場次舊快照不再覆蓋連動（避免只有 grades、沒有整門完成）。場次明確清除仍可關閉先修。
 - **影響範圍：** `prerequisite_manager.php`、`enrolment_manager.php`、`reservation_application.php`、`batch_lookup.php`、`notification_helper.php`、語系、SPEC §53／§0.5、DEV_WORKFLOW。
-- **版本／狀態：** 進行中（**5.17.8**；待驗收）。
+- **版本／狀態：** **5.17.8；已驗收**（使用者確認：approved 先修 → AI+ 先修狀態「符合」；Network `prereq_rule_types` 含 course+grades）。
+
+---
+
+## 2026-08-10 — 實體額滿改回人數制／Admin 可無視額滿
+
+- **需求：** 桌次都有人但建議人數尚有餘額時，業務／Admin 仍被「額滿」擋住無法加人。
+- **決策：**
+  - 額滿改以「已核准人數 ≥ 桌×每桌人數」判定；桌次佔用不擋報名。
+  - 業務／學員：人數額滿或已截止不可報。
+  - Admin（manage／allowclosed 路徑）：可無視額滿與截止。
+- **影響範圍：** `session_manager`、`enrolment_manager`、`batch_enrol`、前台入口、SPEC §56。
+- **版本／狀態：** **5.17.5 起（隨 5.17.8 分支一併收斂）；已驗收**（使用者確認語意）。
 
 ---
 
@@ -42,7 +54,7 @@
 - **需求：** 規格確認並說「開始開發」後，先發 PR 留痕；測完再 push 實作；規格變更改同一 PR。
 - **決策：** 見更新後 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) §1／§3a／§3b。
 - **影響範圍：** `docs/DEV_WORKFLOW.md`、FEATURE_LOG 更新約定。
-- **版本／狀態：** 進行中（隨本輪 Draft PR）。
+- **版本／狀態：** **已驗收**（本輪已依此流程執行）。
 
 ---
 
