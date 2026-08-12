@@ -325,8 +325,9 @@ class enrolment_manager {
                    : session_manager::ENROL_APPROVED;
 
         // 5.5 Course-level mutual exclusion:
-        // If user has an active enrolment in any other session of the same course,
-        // block the enrol attempt to avoid duplicates/conflicts.
+        // If user has an active enrolment in any other *upcoming/ongoing* session of the
+        // same course, block the enrol attempt. Past sessions (already ended) and
+        // rejected/cancelled rows do not block retaking.
         $activeStatuses = [
             session_manager::ENROL_PENDING,
             session_manager::ENROL_APPROVED,
@@ -338,10 +339,14 @@ class enrolment_manager {
                                 JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                                WHERE e.userid = :uid
                                  AND s.courseid = :cid
+                                 AND e.sessionid <> :sid
+                                 AND s.endtime > :now
                                  AND e.status $statusinsql";
         $courseparams = [
             'uid' => $userid,
             'cid' => (int)$session->courseid,
+            'sid' => (int)$sessionid,
+            'now' => time(),
         ] + $statusparams;
         if ($DB->record_exists_sql($courseconflictsql, $courseparams)) {
             $conflictsql = "SELECT s.starttime
@@ -349,6 +354,8 @@ class enrolment_manager {
                               JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                              WHERE e.userid = :uid
                                AND s.courseid = :cid
+                               AND e.sessionid <> :sid
+                               AND s.endtime > :now
                                AND e.status $statusinsql
                              ORDER BY s.starttime ASC";
             $conflictrow = $DB->get_record_sql($conflictsql, $courseparams, IGNORE_MISSING);
@@ -2177,11 +2184,13 @@ class enrolment_manager {
                                    WHERE e.userid = :uid
                                      AND s.courseid = :cid
                                      AND e.sessionid <> :sid
+                                     AND s.endtime > :now
                                      AND e.status $statusinsql";
             $courseparams = [
                 'uid' => $userid,
                 'cid' => (int) $session->courseid,
                 'sid' => $sessionid,
+                'now' => time(),
             ] + $statusparams;
             if ($DB->record_exists_sql($courseconflictsql, $courseparams)) {
                 throw new \moodle_exception('error_course_enrolment_conflict', 'local_tm_course');
