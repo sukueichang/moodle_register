@@ -101,6 +101,11 @@ if ($rules !== null && $session) {
     $out['prereq_met'] = !empty($eval['met']);
     $out['prereq_reasons'] = prerequisite_manager::flatten_missing_reasons($eval['missing']);
     $out['prereq_missing'] = prerequisite_manager::format_missing_reason_list($eval['missing']);
+    $out['prereq_operator'] = (string)($rules['operator'] ?? '');
+    $out['prereq_rule_types'] = array_values(array_map(static function($r) {
+        return (string)($r['verify_type'] ?? '');
+    }, (array)($rules['rules'] ?? [])));
+    $out['prereq_target_starttime'] = (int)($ctx['target_starttime'] ?? 0);
 } else if ($usecoursedefaults) {
     $eval = prerequisite_manager::evaluate_user_against_course_defaults((int)$user->id, $courseids);
     $out['prereq_met'] = !empty($eval['met']);

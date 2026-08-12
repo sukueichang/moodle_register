@@ -1,7 +1,7 @@
 # SPEC — TM Course Management Plugin (`local_tm_course`)
 
 > **文件角色：** 產品／技術規格書（Single Source of Truth）  
-> **目前發行版：** 5.17.6（`local_tm_course/version.php` → `$plugin->release`）  
+> **目前發行版：** 5.17.7（`local_tm_course/version.php` → `$plugin->release`）  
 > **維護約定：** 規格變更先改本檔，再實作；版本歷史見根目錄 [`CHANGELOG.md`](../CHANGELOG.md)。  
 > **相關文件：** [`FEATURE_LOG.md`](FEATURE_LOG.md)（需求與決策）／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)（缺陷與回歸檢查）／[`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)（開發 SOP）
 
@@ -58,7 +58,8 @@
 3. **視訊總時數 vs 日曆區塊：** 課程連動「視訊時數」為總授課時數；月曆可依最晚結束時間／每日上限切成多日區塊。
 4. **Moodle XMLDB：** 表名 ≤ 28 字元；避免 `CHAR NOT NULL DEFAULT ''`。
 5. **通知失敗不阻斷**核准／報名等主流程。
-6. **先修放寬（2026-08）：** 對 `verify_type = course`（整課完成），通過條件為：**Moodle 課程已完成**，或 **存在 status=approved 的該先修課程場次報名且該場次 `endtime` ≤ 目標場次 `starttime`**（允許同日上下午），或 **專班同一次申請之勾選課程含該先修**。pending 不算。活動／成績型規則不適用報名放寬。先修 approved 報名被取消／駁回導致後課不再符合時，**自動取消**後課並通知學員與報名業務。
+6. **先修放寬（2026-08）：** 對 `verify_type = course`（整課完成），通過條件為：**Moodle 課程已完成**，或 **存在 status=approved 的該先修課程場次報名且該場次 `starttime` < 目標場次 `starttime`**（同日上下午可；多日先修只要開始較早即可），或 **專班同一次申請之勾選課程含該先修**。pending 不算。活動／成績型規則不適用報名放寬。先修 approved 報名被取消／駁回導致後課不再符合時，**自動取消**後課並通知學員與報名業務。
+   - **注意：** 報名實際以**場次**上的 `prerequisite_rules` 為準；若場次已存舊規則，改「課程連動預設」不會自動套到既有場次——請編輯該場次先修或清除後沿用連動。
 
 ### 0.6 品牌
 
@@ -1787,7 +1788,7 @@ delivery_mode = onsite：
 | 單條規則—驗證 | **整門課程完成**，或 **指定活動完成**（活動須有 Moodle 完成度追蹤） |
 | 活動條件 | **全部指定活動** 或 **任一指定活動** |
 | 驗證來源 | Moodle `completion_info`（整課／活動完成狀態）；整課規則另可認 **approved 時序報名**／**專班共包**（見 §0.5 規則 6） |
-| 整課放寬 | `endtime(先修場次) ≤ starttime(目標場次)`；僅 `ENROL_APPROVED`；不含 pending |
+| 整課放寬 | `starttime(先修場次) < starttime(目標場次)`；僅 `ENROL_APPROVED`；不含 pending |
 | 連帶取消 | 失去先修依據時自動取消依賴之後課，並通知學員 + 報名業務 |
 
 ### 53.2 管理端設定

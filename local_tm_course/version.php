@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026081200;   // Prereq waiver on top of person-based capacity (5.17.5)
-$plugin->release   = '5.17.6';
+$plugin->version   = 2026081201;   // Prereq waiver: compare starttime; OR prefers course rules
+$plugin->release   = '5.17.7';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

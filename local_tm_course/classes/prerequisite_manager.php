@@ -419,7 +419,26 @@ class prerequisite_manager {
         $passedany = false;
         $failedall = false;
 
-        foreach ($rules['rules'] as $rule) {
+        // Under OR, prefer course-complete rules first so approved earlier sessions can unlock
+        // without requiring grade rules to be evaluated as blockers in the UI path.
+        $rulelist = array_values($rules['rules']);
+        if ($operator === self::OPERATOR_OR && count($rulelist) > 1) {
+            usort($rulelist, static function(array $a, array $b): int {
+                $rank = static function(array $r): int {
+                    $v = $r['verify_type'] ?? 'course';
+                    if ($v === 'course') {
+                        return 0;
+                    }
+                    if ($v === 'activities') {
+                        return 1;
+                    }
+                    return 2;
+                };
+                return $rank($a) <=> $rank($b);
+            });
+        }
+
+        foreach ($rulelist as $rule) {
             $rulemet = self::user_meets_rule($userid, $rule, $context);
             if ($rulemet) {
                 $passedany = true;
@@ -606,7 +625,10 @@ class prerequisite_manager {
 
     /**
      * Whether the user has an approved enrolment on a session of $prereqcourseid
-     * that ends at or before $targetstarttime.
+     * that is scheduled to start before $targetstarttime.
+     *
+     * Uses starttime (not endtime) so a multi-day Beginner's that started earlier still
+     * unlocks a later course even if its calculated end overlaps the next morning.
      *
      * @param array{exclude_enrolment_ids?:int[]} $context
      */
@@ -627,12 +649,12 @@ class prerequisite_manager {
                  WHERE e.userid = :uid
                    AND e.status = :st
                    AND s.courseid = :cid
-                   AND s.endtime <= :tend";
+                   AND s.starttime < :tstart";
         $params = [
             'uid' => $userid,
             'st' => session_manager::ENROL_APPROVED,
             'cid' => $prereqcourseid,
-            'tend' => $targetstarttime,
+            'tstart' => $targetstarttime,
         ];
 
         $exclude = array_values(array_filter(array_map('intval', (array)($context['exclude_enrolment_ids'] ?? []))));
