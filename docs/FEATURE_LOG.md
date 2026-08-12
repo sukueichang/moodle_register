@@ -33,7 +33,7 @@
   5. 公開場次／批次／專班申請／審核入學皆共用同一評估語意；專班申請階段以共包＋完成／既有 approved 為主（尚無場次時間則不做時序比對）。
   6. **報名檢查以課程連動先修預設為準（5.17.8）**；場次舊快照不再覆蓋連動（避免只有 grades、沒有整門完成）。場次明確清除仍可關閉先修。
 - **影響範圍：** `prerequisite_manager.php`、`enrolment_manager.php`、`reservation_application.php`、`batch_lookup.php`、`notification_helper.php`、語系、SPEC §53／§0.5、DEV_WORKFLOW。
-- **版本／狀態：** **5.17.8；已驗收**（使用者確認：approved 先修 → AI+ 先修狀態「符合」；Network `prereq_rule_types` 含 course+grades）。
+- **版本／狀態：** **5.17.9；已驗收主路徑**（先修「符合」已確認）；連帶取消於 5.17.9 加強（取消先修後必 cascade）。
 
 ---
 

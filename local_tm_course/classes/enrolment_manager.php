@@ -584,10 +584,13 @@ class enrolment_manager {
         $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $reasontext, ['id' => $enrolid]);
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status($enrol->sessionid);
-        attendance_manager::remove_from_group((int)$enrol->sessionid, (int)$enrol->userid);
-        self::clear_sync_health_state((int)$enrolid);
-        notification_helper::notify_enrolment_cancelled((int)$enrolid);
-        self::cascade_cancel_after_prereq_lost((int)$enrolid);
+        try {
+            attendance_manager::remove_from_group((int)$enrol->sessionid, (int)$enrol->userid);
+            self::clear_sync_health_state((int)$enrolid);
+            notification_helper::notify_enrolment_cancelled((int)$enrolid);
+        } finally {
+            self::cascade_cancel_after_prereq_lost((int)$enrolid);
+        }
     }
 
     /**
@@ -625,13 +628,29 @@ class enrolment_manager {
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status((int) $enrol->sessionid);
 
-        if ($wasapproved) {
-            self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
-            attendance_manager::remove_from_group((int) $enrol->sessionid, $syncuserid);
+        try {
+            if ($wasapproved) {
+                try {
+                    self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
+                } catch (\Throwable $e) {
+                    debugging('TM Course unenrol on batch cancel failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+                try {
+                    attendance_manager::remove_from_group((int) $enrol->sessionid, $syncuserid);
+                } catch (\Throwable $e) {
+                    debugging('TM Course remove_from_group on batch cancel failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+            }
+            self::clear_sync_health_state((int) $enrolid);
+            try {
+                notification_helper::notify_enrolment_cancelled((int) $enrolid);
+            } catch (\Throwable $e) {
+                debugging('TM Course cancel notify failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        } finally {
+            // Always cascade even if LMS sync / email fails.
+            self::cascade_cancel_after_prereq_lost((int) $enrolid);
         }
-        self::clear_sync_health_state((int) $enrolid);
-        notification_helper::notify_enrolment_cancelled((int) $enrolid);
-        self::cascade_cancel_after_prereq_lost((int) $enrolid);
     }
 
     /**
@@ -801,19 +820,55 @@ class enrolment_manager {
                 if (!prerequisite_manager::rules_reference_course_complete($rules, $prereqcourseid)) {
                     continue;
                 }
-                $ctx = prerequisite_manager::context_for_session($depsession, [
-                    // Do not treat reservation co-bundle as still valid once a concrete
-                    // prereq enrolment was lost — re-check completion / other approved sessions only.
+
+                // Build a clean context: no co-bundle waiver; exclude the lost enrolment.
+                $ctx = [
+                    'target_starttime' => (int)($depsession->starttime ?? 0),
                     'coselected_courseids' => [],
                     'exclude_enrolment_ids' => [$sourceenrolid],
-                ]);
-                // context_for_session may re-add reservation coselected; force empty for cascade re-eval.
-                $ctx['coselected_courseids'] = [];
-                $eval = prerequisite_manager::evaluate_user($userid, $rules, $ctx);
-                if (!empty($eval['met'])) {
+                ];
+
+                // If the learner still satisfies the course-complete path for the lost
+                // prereq course (Moodle completion or another approved earlier session),
+                // keep the dependent enrolment.
+                $coursepathok = false;
+                try {
+                    global $CFG;
+                    require_once($CFG->dirroot . '/lib/datalib.php');
+                    $prereqcourse = get_course($prereqcourseid, false);
+                    if ($prereqcourse) {
+                        $coursepathok = prerequisite_manager::user_meets_course_complete_rule(
+                            $userid,
+                            $prereqcourseid,
+                            $prereqcourse,
+                            $ctx
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    $coursepathok = false;
+                }
+                if ($coursepathok) {
                     continue;
                 }
-                self::cancel_due_to_prereq_cascade($depid, $sourceenrolid, $prereqname);
+
+                // Course-complete path for this prereq is broken. Keep the dependent only if
+                // the full rule set is still met without relying on the lost enrolment
+                // (e.g. OR grades path already satisfied).
+                try {
+                    $eval = prerequisite_manager::evaluate_user($userid, $rules, $ctx);
+                    if (!empty($eval['met'])) {
+                        continue;
+                    }
+                } catch (\Throwable $e) {
+                    // Evaluation failed — still cascade-cancel to avoid orphan dependent seats.
+                    debugging('TM Course prereq cascade evaluate failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+
+                try {
+                    self::cancel_due_to_prereq_cascade($depid, $sourceenrolid, $prereqname);
+                } catch (\Throwable $e) {
+                    debugging('TM Course prereq cascade cancel failed for enrol #' . $depid . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
             }
         } finally {
             unset(self::$prereq_cascade_guard[$sourceenrolid]);
