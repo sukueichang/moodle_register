@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026081201;   // Prereq waiver: compare starttime; OR prefers course rules
-$plugin->release   = '5.17.7';
+$plugin->version   = 2026081202;   // Enrolment checks prefer live course-mapping prereq defaults
+$plugin->release   = '5.17.8';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

@@ -33,7 +33,12 @@ class prerequisite_manager {
     }
 
     /**
-     * Effective prerequisite rules: session-stored, else course-mapping defaults.
+     * Effective prerequisite rules for enrolment / display checks.
+     *
+     * Priority:
+     * 1. Session explicitly cleared (no prerequisites)
+     * 2. Live course-mapping defaults (source of truth — avoids stale session snapshots)
+     * 3. Session-stored / legacy rules (only when the course has no mapping defaults)
      *
      * @return array{operator:string,rules:array<int,array>}|null
      */
@@ -41,28 +46,25 @@ class prerequisite_manager {
         if (self::is_explicitly_no_prerequisites($session)) {
             return null;
         }
+        $courseid = (int) ($session->courseid ?? 0);
+        if ($courseid > 0) {
+            $defaults = enabled_course_manager::get_default_prerequisite_rules($courseid);
+            if ($defaults !== null && !empty($defaults['rules'])) {
+                return $defaults;
+            }
+        }
         $stored = self::parse_stored_session_rules($session);
         if ($stored !== null) {
             return $stored;
-        }
-        $courseid = (int) ($session->courseid ?? 0);
-        if ($courseid > 0) {
-            return enabled_course_manager::get_default_prerequisite_rules($courseid);
         }
         return null;
     }
 
     /**
-     * Whether this session has no stored rules and inherits course-mapping defaults.
+     * Whether enrolment checks use live course-mapping defaults for this session.
      */
     public static function session_inherits_course_prerequisite_defaults(\stdClass $session): bool {
         if (self::is_explicitly_no_prerequisites($session)) {
-            return false;
-        }
-        if (self::parse_stored_session_rules($session) !== null) {
-            return false;
-        }
-        if ((int) ($session->prerequisite_courseid ?? 0) > 0) {
             return false;
         }
         $courseid = (int) ($session->courseid ?? 0);

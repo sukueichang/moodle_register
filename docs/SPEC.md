@@ -1,7 +1,7 @@
 # SPEC — TM Course Management Plugin (`local_tm_course`)
 
 > **文件角色：** 產品／技術規格書（Single Source of Truth）  
-> **目前發行版：** 5.17.7（`local_tm_course/version.php` → `$plugin->release`）  
+> **目前發行版：** 5.17.8（`local_tm_course/version.php` → `$plugin->release`）  
 > **維護約定：** 規格變更先改本檔，再實作；版本歷史見根目錄 [`CHANGELOG.md`](../CHANGELOG.md)。  
 > **相關文件：** [`FEATURE_LOG.md`](FEATURE_LOG.md)（需求與決策）／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)（缺陷與回歸檢查）／[`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)（開發 SOP）
 
@@ -59,7 +59,7 @@
 4. **Moodle XMLDB：** 表名 ≤ 28 字元；避免 `CHAR NOT NULL DEFAULT ''`。
 5. **通知失敗不阻斷**核准／報名等主流程。
 6. **先修放寬（2026-08）：** 對 `verify_type = course`（整課完成），通過條件為：**Moodle 課程已完成**，或 **存在 status=approved 的該先修課程場次報名且該場次 `starttime` < 目標場次 `starttime`**（同日上下午可；多日先修只要開始較早即可），或 **專班同一次申請之勾選課程含該先修**。pending 不算。活動／成績型規則不適用報名放寬。先修 approved 報名被取消／駁回導致後課不再符合時，**自動取消**後課並通知學員與報名業務。
-   - **注意：** 報名實際以**場次**上的 `prerequisite_rules` 為準；若場次已存舊規則，改「課程連動預設」不會自動套到既有場次——請編輯該場次先修或清除後沿用連動。
+   - **規則來源（5.17.8）：** 報名／批次檢查以**課程連動先修預設**為準（避免場次舊快照只有成績規則）。場次「明確清除先修」仍可關閉檢查；僅當該課沒有連動預設時才回退場次已存規則。
 
 ### 0.6 品牌
 
