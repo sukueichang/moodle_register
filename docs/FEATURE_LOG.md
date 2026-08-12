@@ -32,7 +32,8 @@
   4. 先修報名被取消／駁回（且因此失去唯一時序依據）→ **自動取消**依賴之後課報名，並 **寄信通知學員 + 報名業務**（`batch_submittedby`；若無則專班申請人／相關業務）。
   5. 公開場次／批次／專班申請／審核入學皆共用同一評估語意；專班申請階段以共包＋完成／既有 approved 為主（尚無場次時間則不做時序比對）。
 - **影響範圍：** `prerequisite_manager.php`、`enrolment_manager.php`、`reservation_application.php`、`batch_lookup.php`、`notification_helper.php`、語系、SPEC §53／§0.5、DEV_WORKFLOW。
-- **版本／狀態：** 進行中（5.17.5；Draft PR 已開；實作完成待本機驗收後 push）。
+- **版本／狀態：** 進行中（**5.17.6**；疊在 person-based capacity 5.17.5 之上；待本機驗收後 push／合併）。
+  - 說明：先前 5.17.5 版號被容量修正占用，測試機雖顯示 5.17.5 但**未含**先修放寬；本版才真正帶入放寬邏輯。
 
 ---
 

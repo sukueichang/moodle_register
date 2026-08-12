@@ -1,7 +1,7 @@
 # SPEC — TM Course Management Plugin (`local_tm_course`)
 
 > **文件角色：** 產品／技術規格書（Single Source of Truth）  
-> **目前發行版：** 5.17.5（`local_tm_course/version.php` → `$plugin->release`）  
+> **目前發行版：** 5.17.6（`local_tm_course/version.php` → `$plugin->release`）  
 > **維護約定：** 規格變更先改本檔，再實作；版本歷史見根目錄 [`CHANGELOG.md`](../CHANGELOG.md)。  
 > **相關文件：** [`FEATURE_LOG.md`](FEATURE_LOG.md)（需求與決策）／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)（缺陷與回歸檢查）／[`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)（開發 SOP）
 
