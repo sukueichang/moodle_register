@@ -442,25 +442,79 @@ $durationhelp = $sm->string_exists('course_mapping_duration_help_split', 'local_
     </div>
 </div>
 
+<style>
+/* Course mapping prerequisite modal: fit viewport; scroll body; pin footer */
+#tm-prerequisite-modal-backdrop {
+    padding: 1rem;
+    overflow-y: auto;
+    align-items: flex-start;
+    box-sizing: border-box;
+}
+#tm-prerequisite-modal-backdrop .tm-prereq-modal-panel {
+    width: min(94vw, 52rem);
+    max-width: 52rem;
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    margin: auto 0;
+}
+#tm-prerequisite-modal-backdrop .tm-prereq-modal-header {
+    flex-shrink: 0;
+    background: #005f7e;
+    color: #fff;
+    padding: .6rem .9rem;
+    border-radius: 10px 10px 0 0;
+}
+#tm-prerequisite-modal-backdrop .tm-prereq-modal-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: .85rem 1.1rem;
+    -webkit-overflow-scrolling: touch;
+}
+#tm-prerequisite-modal-backdrop .tm-prereq-modal-footer {
+    flex-shrink: 0;
+    padding: .75rem 1.1rem 1rem;
+    border-top: 1px solid var(--tm-border, #d5dde8);
+    background: #fff;
+    border-radius: 0 0 10px 10px;
+}
+#tm-prerequisite-modal-backdrop .tm-prereq-map-row {
+    padding: .65rem .75rem;
+    margin-bottom: .55rem;
+}
+#tm-prerequisite-modal-backdrop .tm-prereq-grade-cond {
+    margin-bottom: .35rem;
+}
+body.tm-prereq-map-modal-open {
+    overflow: hidden;
+}
+</style>
 <div id="tm-prerequisite-modal-backdrop" class="tm-cancel-modal-backdrop" style="display:none;">
-    <div class="tm-cancel-modal-panel" style="max-width:52rem;width:94%;">
-        <div style="background:#005f7e;color:#fff;padding:.6rem .9rem;margin:-1rem -1rem .9rem;border-radius:.4rem .4rem 0 0;">
+    <div class="tm-cancel-modal-panel tm-prereq-modal-panel" role="dialog" aria-modal="true" aria-labelledby="tm-prerequisite-modal-title">
+        <div class="tm-prereq-modal-header">
             <strong id="tm-prerequisite-modal-title"></strong>
         </div>
-        <p class="text-muted small"><?php echo s(get_string('course_mapping_prerequisite_intro', 'local_tm_course')); ?></p>
-        <div class="form-inline mb-2">
-            <label class="mr-2"><?php echo s(get_string('session_prerequisite_operator', 'local_tm_course')); ?></label>
-            <select id="tm-prereq-map-operator" class="form-control form-control-sm">
-                <option value="and"><?php echo s(get_string('session_prerequisite_operator_and', 'local_tm_course')); ?></option>
-                <option value="or"><?php echo s(get_string('session_prerequisite_operator_or', 'local_tm_course')); ?></option>
-            </select>
+        <div class="tm-prereq-modal-body">
+            <p class="text-muted small mb-2"><?php echo s(get_string('course_mapping_prerequisite_intro', 'local_tm_course')); ?></p>
+            <div class="form-inline mb-2">
+                <label class="mr-2"><?php echo s(get_string('session_prerequisite_operator', 'local_tm_course')); ?></label>
+                <select id="tm-prereq-map-operator" class="form-control form-control-sm">
+                    <option value="and"><?php echo s(get_string('session_prerequisite_operator_and', 'local_tm_course')); ?></option>
+                    <option value="or"><?php echo s(get_string('session_prerequisite_operator_or', 'local_tm_course')); ?></option>
+                </select>
+            </div>
+            <div id="tm-prereq-map-rules"></div>
+            <div class="mt-2">
+                <button type="button" id="tm-prereq-map-add" class="btn btn-sm btn-secondary"><?php echo s(get_string('session_prerequisite_add_rule', 'local_tm_course')); ?></button>
+                <button type="button" id="tm-prereq-map-clear" class="btn btn-sm btn-link"><?php echo s(get_string('course_mapping_prerequisite_clear', 'local_tm_course')); ?></button>
+            </div>
         </div>
-        <div id="tm-prereq-map-rules"></div>
-        <div class="mt-2">
-            <button type="button" id="tm-prereq-map-add" class="btn btn-sm btn-secondary"><?php echo s(get_string('session_prerequisite_add_rule', 'local_tm_course')); ?></button>
-            <button type="button" id="tm-prereq-map-clear" class="btn btn-sm btn-link"><?php echo s(get_string('course_mapping_prerequisite_clear', 'local_tm_course')); ?></button>
-        </div>
-        <div class="mt-3 d-flex gap-2">
+        <div class="tm-prereq-modal-footer d-flex gap-2">
             <button type="button" id="tm-prereq-map-save" class="btn btn-tm-success"><?php echo get_string('save_changes', 'local_tm_course'); ?></button>
             <button type="button" id="tm-prereq-map-close" class="btn btn-secondary"><?php echo get_string('cancel', 'local_tm_course'); ?></button>
         </div>
@@ -909,6 +963,20 @@ echo html_writer::script("
         return {operator: opSel.value || 'and', rules: rules};
     }
 
+    function openPrereqModalUi() {
+        modal.style.display = 'flex';
+        document.body.classList.add('tm-prereq-map-modal-open');
+        var body = modal.querySelector('.tm-prereq-modal-body');
+        if (body) {
+            body.scrollTop = 0;
+        }
+    }
+
+    function closePrereqModalUi() {
+        modal.style.display = 'none';
+        document.body.classList.remove('tm-prereq-map-modal-open');
+    }
+
     function openModal(courseId, courseName) {
         currentCourseId = Number(courseId || 0);
         title.textContent = " . json_encode(get_string('course_mapping_prerequisite_settings', 'local_tm_course')) . " + ' - ' + String(courseName || '');
@@ -923,7 +991,7 @@ echo html_writer::script("
             }
             opSel.value = (data.rules && data.rules.operator) ? data.rules.operator : 'and';
             renderRules(data.rules || {rules: []});
-            modal.style.display = 'flex';
+            openPrereqModalUi();
         });
     }
 
@@ -948,13 +1016,18 @@ echo html_writer::script("
             body: JSON.stringify({action: 'save', courseid: currentCourseId, rules: collectRules(), sesskey: cfg.sesskey})
         }).then(function (r) { return r.json(); }).then(function (data) {
             if (data && data.ok) {
-                modal.style.display = 'none';
+                closePrereqModalUi();
             } else if (data && data.error) {
                 window.alert(data.error);
             }
         });
     });
-    closeBtn.addEventListener('click', function () { modal.style.display = 'none'; });
+    closeBtn.addEventListener('click', closePrereqModalUi);
+    modal.addEventListener('click', function (e) {
+        if (e.target === modal) {
+            closePrereqModalUi();
+        }
+    });
 })();
 "); ?>
 
