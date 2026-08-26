@@ -80,11 +80,58 @@
 
   "@
   ```
-- 打包外掛 zip：用 `tar.exe`，內部路徑用 `/`（見 BUGFIX_LOG）。
+- 打包外掛 zip：見 **§4**（禁止用 `Compress-Archive`）。
 
 ---
 
-## 4. Moodle 本機驗證建議（最短路徑）
+## 4. 打包外掛 ZIP（Windows／上傳 Moodle）
+
+交付或上傳 Moodle「安裝外掛」前，必須依此流程打包。細節背景見 [`BUGFIX_LOG.md`](BUGFIX_LOG.md)「Windows 打包 zip」。
+
+### 正確做法（唯一允許）
+
+在專案根目錄（含 `local_tm_course` 資料夾的那一層）執行：
+
+```powershell
+tar.exe -a -c -f local_tm_course.zip -C "<專案根目錄>" local_tm_course
+```
+
+例（本機路徑依實際調整）：
+
+```powershell
+tar.exe -a -c -f local_tm_course.zip -C "C:\Users\waylon.su\Desktop\tm_course_registration\Moodle plugin v2" local_tm_course
+```
+
+要求：
+
+- zip **最外層必須是單一資料夾** `local_tm_course/`（內含 `version.php`、`db/` 等）
+- 內部路徑必須使用正斜線 `/`（`tar.exe` 會自動做到）
+
+### 上傳前必做：反斜線檢查
+
+```powershell
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [System.IO.Compression.ZipFile]::OpenRead("local_tm_course.zip")
+($zip.Entries | Where-Object { $_.FullName -match '\\' }).Count   # 必須是 0
+$zip.Dispose()
+```
+
+同時抽查：應能看到 `local_tm_course/version.php`、`local_tm_course/db/install.xml` 這類路徑。
+
+### 禁止
+
+- **禁止** `Compress-Archive`
+- **禁止** `[System.IO.Compression.ZipFile]::CreateFromDirectory(...)`
+
+上述兩種在 Windows PowerShell 5.1 會把內部路徑寫成 `\`，Moodle 會回報「無法偵測到外掛類型」。
+
+### 安裝
+
+Moodle：Site administration → Plugins → Install plugins → 上傳 ZIP → 完成後 Notifications 升版。
+
+---
+
+## 5. Moodle 本機驗證建議（最短路徑）
 
 1. 升版：Site administration → Notifications（遠端 pluginfo `cURL` 錯誤可忽略，繼續本地 upgrade）。
 2. 對照本輪功能入口（`links.md`／admin 選單）。
@@ -95,7 +142,7 @@
 
 ---
 
-## 5. AI 每次開發自我檢查（摘要）
+## 6. AI 每次開發自我檢查（摘要）
 
 - [ ] BUGFIX_LOG 清單已掃  
 - [ ] FEATURE_LOG／必要時 SPEC 已更新  
@@ -105,16 +152,17 @@
 - [ ] 規格變更時：同一 PR 描述已同步  
 - [ ] 未在使用者 ok 前 push **實作**  
 - [ ] 使用者 ok 後：commit 實作 → push → 更新 PR → 回報 URL  
+- [ ] 交付 zip 時：用 `tar.exe` 打包，且反斜線檢查為 0  
 
 ---
 
-## 6. 文件地圖
+## 7. 文件地圖
 
 | 檔案 | 用途 |
 |------|------|
 | [`SPEC.md`](SPEC.md) | 產品規格、目的、模組邊界 |
 | [`FEATURE_LOG.md`](FEATURE_LOG.md) | 需求與決策時間軸 |
 | [`BUGFIX_LOG.md`](BUGFIX_LOG.md) | 缺陷與回歸檢查 |
-| [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) | 本 SOP |
+| [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) | 本 SOP（含 §4 打包 zip） |
 | [`../links.md`](../links.md) | 入口 URL |
 | `local_tm_course/docs/SCHEDULING_REQUIREMENTS.md` | 面授排課細部規則（仍獨立） |

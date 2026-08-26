@@ -21,7 +21,7 @@
 - [ ] 先修放寬：整課規則是否同時認「已完成／approved 且 end≤start／專班共包」？pending 不可算
 - [ ] 先修取消／駁回後：依賴之後課是否連帶取消並通知學員＋業務？
 - [ ] 同課程互斥：已結束場次（endtime 已過）的 approved 不應擋重報；駁回／取消本來就不擋
-- [ ] Windows 打包 zip：用 `tar.exe`，內部路徑必須是 `/` 而非 `\`
+- [ ] Windows 打包 zip：用 `tar.exe`，內部路徑必須是 `/` 而非 `\`（完整步驟見 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) §4）
 - [ ] 升級頁 `cURL`／遠端 plugin API 錯誤 ≠ DB 升級失敗，可繼續本地升級
 
 ---
