@@ -7,12 +7,16 @@
 require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/classes/session_manager.php');
 require_once(__DIR__ . '/classes/enrolment_manager.php');
+require_once(__DIR__ . '/classes/permissions_manager.php');
 
 use local_tm_course\session_manager;
 use local_tm_course\enrolment_manager;
+use local_tm_course\permissions_manager;
 
 require_login();
-require_capability('local/tm_course:enrol', context_system::instance());
+// Self-service cancel: any learner who can view the plugin and owns the enrolment
+// may cancel. Do not require local/tm_course:enrol (that gates new applications).
+permissions_manager::require_view_access();
 
 global $DB, $OUTPUT, $PAGE, $USER;
 

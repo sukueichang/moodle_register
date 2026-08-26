@@ -349,7 +349,7 @@ class enrolment_manager {
             'now' => time(),
         ] + $statusparams;
         if ($DB->record_exists_sql($courseconflictsql, $courseparams)) {
-            $conflictsql = "SELECT s.starttime
+            $conflictsql = "SELECT s.id, s.starttime
                               FROM {local_tm_course_enrolments} e
                               JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                              WHERE e.userid = :uid
@@ -358,7 +358,9 @@ class enrolment_manager {
                                AND s.endtime > :now
                                AND e.status $statusinsql
                              ORDER BY s.starttime ASC";
-            $conflictrow = $DB->get_record_sql($conflictsql, $courseparams, IGNORE_MISSING);
+            // Limit 1: learner may have several active rows; get_record_sql would debug-fail.
+            $conflictrows = $DB->get_records_sql($conflictsql, $courseparams, 0, 1);
+            $conflictrow = $conflictrows ? reset($conflictrows) : false;
             $datehint = $conflictrow ? userdate((int)$conflictrow->starttime, get_string('strftimedatetimeshort')) : '';
             throw new \moodle_exception('error_course_enrolment_conflict_with_date', 'local_tm_course', '', $datehint);
         }
@@ -944,15 +946,18 @@ class enrolment_manager {
 
     /**
      * Translate a batch skip reason code to a user-facing label.
+     *
+     * @param string $errorcode Moodle exception errorcode / lang string id
+     * @param mixed $a Optional get_string() placeholder (e.g. conflicting session hint)
      */
-    public static function format_batch_skip_reason(string $errorcode): string {
+    public static function format_batch_skip_reason(string $errorcode, $a = null): string {
         $errorcode = trim($errorcode);
         if ($errorcode === '') {
             return get_string('batch_skipped_reason_unknown', 'local_tm_course');
         }
         $sm = get_string_manager();
         if ($sm->string_exists($errorcode, 'local_tm_course')) {
-            return get_string($errorcode, 'local_tm_course');
+            return get_string($errorcode, 'local_tm_course', $a);
         }
         return get_string('batch_skipped_reason_unknown', 'local_tm_course');
     }
@@ -960,7 +965,7 @@ class enrolment_manager {
     /**
      * Build a human-readable summary of skipped batch rows (deduped by reason).
      *
-     * @param array<int,array{userid?:int,reason?:string}> $skipped
+     * @param array<int,array{userid?:int,reason?:string,a?:mixed,message?:string}> $skipped
      */
     public static function format_batch_skipped_reasons_text(array $skipped): string {
         if (empty($skipped)) {
@@ -968,7 +973,15 @@ class enrolment_manager {
         }
         $counts = [];
         foreach ($skipped as $row) {
-            $label = self::format_batch_skip_reason((string)($row['reason'] ?? ''));
+            $message = trim((string)($row['message'] ?? ''));
+            if ($message !== '') {
+                $label = $message;
+            } else {
+                $label = self::format_batch_skip_reason(
+                    (string)($row['reason'] ?? ''),
+                    $row['a'] ?? null
+                );
+            }
             $counts[$label] = ($counts[$label] ?? 0) + 1;
         }
         $parts = [];
@@ -1464,7 +1477,7 @@ class enrolment_manager {
      * @param bool  $allowclosed When true, full / closed / deadline are allowed (admin manage paths).
      * @param string $batchsubmitternote Optional remark stored on each created/updated enrolment row.
      * @param bool   $bypassprerequisite Site administrators may bypass prerequisite checks.
-     * @return array{ processed:int, capped:bool, requested:int, skipped:array<int,array{userid:int,reason:string}>, enrolment_ids:int[], prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}> }
+     * @return array{ processed:int, capped:bool, requested:int, skipped:array<int,array{userid:int,reason:string,a?:mixed,message?:string}>, enrolment_ids:int[], prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}> }
      */
     public static function batch_enrol_pending(
         int $sessionid,
@@ -1526,7 +1539,12 @@ class enrolment_manager {
                     }
                 }
             } catch (\moodle_exception $ex) {
-                $skipped[] = ['userid' => $userid, 'reason' => $ex->errorcode];
+                $skipped[] = [
+                    'userid' => $userid,
+                    'reason' => $ex->errorcode,
+                    'a' => $ex->a ?? null,
+                    'message' => $ex->getMessage(),
+                ];
             }
         }
 
@@ -2315,6 +2333,9 @@ class enrolment_manager {
      *
      * Overlap condition:
      * existing.start < target.end AND existing.end > target.start
+     *
+     * Returns the earliest overlapping session (if any). Uses LIMIT 1 because a learner
+     * may have multiple overlapping approved rows; get_record_sql would throw a debug error.
      */
     private static function find_approved_time_conflict(
         int $userid,
@@ -2342,7 +2363,11 @@ class enrolment_manager {
             'targetend' => $targetend,
             'targetstart' => $targetstart,
         ];
-        $row = $DB->get_record_sql($sql, $params, IGNORE_MISSING);
+        $rows = $DB->get_records_sql($sql, $params, 0, 1);
+        if (empty($rows)) {
+            return null;
+        }
+        $row = reset($rows);
         return $row ?: null;
     }
 }

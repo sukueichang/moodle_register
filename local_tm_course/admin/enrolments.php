@@ -138,6 +138,7 @@ echo $OUTPUT->header();
 
 <?php if (!$sessionid): ?>
 <!-- ---- Session selection list ---- -->
+<div class="tm-table-responsive">
 <table class="tm-table">
 <thead><tr>
     <th>#</th><th><?php echo get_string('session_name', 'local_tm_course'); ?></th><th><?php echo get_string('label_start', 'local_tm_course'); ?></th><th><?php echo get_string('session_total_capacity', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_pending', 'local_tm_course'); ?></th><th><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th>
@@ -167,6 +168,7 @@ echo $OUTPUT->header();
 <?php endforeach; ?>
 </tbody>
 </table>
+</div>
 
 <?php else: ?>
 <!-- ---- Enrolment list for specific session ---- -->
@@ -237,6 +239,7 @@ echo $OUTPUT->header();
 <?php if (empty($enrolments)): ?>
     <div class="tm-alert tm-alert-info"><?php echo get_string('enrolments_none_found', 'local_tm_course'); ?></div>
 <?php else: ?>
+<div class="tm-table-responsive">
 <table class="tm-table">
 <thead><tr>
     <th>#</th>
@@ -366,6 +369,7 @@ echo $OUTPUT->header();
 <?php endforeach; ?>
 </tbody>
 </table>
+</div>
 <?php endif; ?>
 <?php endif; ?>
 
