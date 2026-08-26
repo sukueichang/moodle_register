@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026081204;   // Same-course conflict ignores past (ended) sessions
-$plugin->release   = '5.17.10';
+$plugin->version   = 2026082604;   // Diet edit: admin all / sales own batch / learner own
+$plugin->release   = '5.18.3';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

@@ -1,6 +1,7 @@
 <?php
 /**
- * Edit diet preference for existing enrolment.
+ * Edit diet preference for an enrolment.
+ * Learner (holder/linked), batch submitter, or admin/approver.
  * URL: /local/tm_course/enrol_diet_edit.php?enrolid=N
  * @package    local_tm_course
  */
@@ -14,7 +15,6 @@ use local_tm_course\enrolment_manager;
 use local_tm_course\permissions_manager;
 
 require_login();
-// Self-service diet edit for the learner's own enrolment — same access model as cancel.
 permissions_manager::require_view_access();
 
 global $DB, $OUTPUT, $PAGE, $USER;
@@ -25,15 +25,29 @@ $PAGE->set_context(context_system::instance());
 $PAGE->set_pagelayout('standard');
 $PAGE->requires->css('/local/tm_course/styles.css');
 
-$enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid, 'userid' => $USER->id], '*', MUST_EXIST);
-$session = session_manager::get_session((int)$enrol->sessionid);
+$enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+if (!enrolment_manager::user_can_edit_diet($enrol, (int) $USER->id)) {
+    throw new moodle_exception('nopermissions', 'error');
+}
+$session = session_manager::get_session((int) $enrol->sessionid);
+
+$backurl = new moodle_url('/local/tm_course/index.php');
+if ((int) ($enrol->batch_submittedby ?? 0) === (int) $USER->id
+    && (int) $enrol->userid !== (int) $USER->id
+    && (int) ($enrol->linked_userid ?? 0) !== (int) $USER->id) {
+    $backurl = new moodle_url('/local/tm_course/batch_enrol.php', ['sessionid' => (int) $enrol->sessionid]);
+}
+if (has_capability('local/tm_course:approve', context_system::instance())
+    || has_capability('local/tm_course:manage', context_system::instance())) {
+    $backurl = new moodle_url('/local/tm_course/admin/enrolments.php', ['sessionid' => (int) $enrol->sessionid]);
+}
 
 $errors = [];
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     require_sesskey();
 
-    $dietchoice = strtoupper(trim((string)optional_param('diet_choice', '', PARAM_ALPHA)));
-    $specialnote = (string)optional_param('diet_special_note', '', PARAM_TEXT);
+    $dietchoice = strtoupper(trim((string) optional_param('diet_choice', '', PARAM_ALPHA)));
+    $specialnote = (string) optional_param('diet_special_note', '', PARAM_TEXT);
 
     $diet = [];
     if ($dietchoice === 'A') {
@@ -52,8 +66,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     if (empty($errors)) {
         try {
-            enrolment_manager::update_diet($enrolid, (int)$USER->id, $diet);
-            redirect(new moodle_url('/local/tm_course/index.php'),
+            enrolment_manager::update_diet_by_actor($enrolid, (int) $USER->id, $diet);
+            redirect($backurl,
                 get_string('diet_updated', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
         } catch (\moodle_exception $e) {
             $errors[] = $e->getMessage();
@@ -109,7 +123,7 @@ echo $OUTPUT->header();
             </div>
             <div class="tm-diet-form-actions">
                 <button type="submit" class="btn btn-tm-diet-submit"><?php echo get_string('savechanges'); ?></button>
-                <a class="btn btn-tm-diet-cancel" href="<?php echo (new moodle_url('/local/tm_course/index.php'))->out(); ?>"><?php echo get_string('cancel'); ?></a>
+                <a class="btn btn-tm-diet-cancel" href="<?php echo $backurl->out(); ?>"><?php echo get_string('cancel'); ?></a>
             </div>
         </form>
     </div>
@@ -118,16 +132,8 @@ echo $OUTPUT->header();
 (function() {
     var meat = document.getElementById('diet_choice_meat');
     var veg = document.getElementById('diet_choice_veg');
-    var meatBox = document.querySelector('.tm-diet-meat');
-    var vegBox = document.querySelector('.tm-diet-veg');
     function sync() {
-        if (veg && veg.checked) {
-            if (vegBox) vegBox.style.display = 'block';
-            if (meatBox) meatBox.style.display = 'none';
-        } else {
-            if (vegBox) vegBox.style.display = 'none';
-            if (meatBox) meatBox.style.display = 'block';
-        }
+        // Meat / veg panels reserved for future option flags.
     }
     if (meat) { meat.addEventListener('change', sync); }
     if (veg) { veg.addEventListener('change', sync); }

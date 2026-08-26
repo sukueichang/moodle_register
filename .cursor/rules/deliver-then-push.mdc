@@ -1,0 +1,21 @@
+---
+description: After feature delivery, prompt for test OK then commit+push
+alwaysApply: true
+---
+
+# Feature delivery → test confirm → push
+
+When you **finish delivering a feature** (implementation done, ready for the user to verify):
+
+1. Briefly say what shipped and how to verify.
+2. **Prompt the user** to test and reply if OK, e.g.:
+   - 「請測一下；沒問題回覆『可以 push』或『ok 推上去』，我就 commit 並 push。」
+3. Do **not** commit or push until they confirm testing is OK (or explicitly ask to push).
+
+When the user confirms (e.g. 「ok」「可以」「沒問題」「push」「推上去」) **after** that delivery prompt:
+
+1. Create a commit if there are uncommitted changes (follow the repo commit protocol).
+2. Push to the tracked remote branch (`git push` / `-u` if needed).
+3. Tell them branch + remote result (and PR URL if you open/update one). Follow `notify-git-remote.mdc`.
+
+Do not treat a vague early 「ok」 mid-discussion as push authorization—only after delivery + explicit post-test confirmation (or a clear push request).

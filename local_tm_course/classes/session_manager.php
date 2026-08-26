@@ -682,6 +682,57 @@ class session_manager {
     }
 
     /**
+     * Approved headcount per desk number (onsite fullness uses this only).
+     *
+     * @return array<int,int> desk_number => approved count
+     */
+    public static function approved_counts_by_desk(int $sessionid): array {
+        global $DB;
+        $sql = "SELECT desk_number, COUNT(1) AS cnt
+                  FROM {local_tm_course_enrolments}
+                 WHERE sessionid = :sid
+                   AND status = :approved
+                   AND desk_number IS NOT NULL
+                   AND desk_number > 0
+              GROUP BY desk_number";
+        $rows = $DB->get_records_sql($sql, [
+            'sid' => $sessionid,
+            'approved' => self::ENROL_APPROVED,
+        ]);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(int) $row->desk_number] = (int) $row->cnt;
+        }
+        return $out;
+    }
+
+    /**
+     * Approved learners currently seated at a desk.
+     */
+    public static function desk_approved_count(int $sessionid, int $deskno): int {
+        global $DB;
+        if ($deskno < 1) {
+            return 0;
+        }
+        return (int) $DB->count_records('local_tm_course_enrolments', [
+            'sessionid' => $sessionid,
+            'status' => self::ENROL_APPROVED,
+            'desk_number' => $deskno,
+        ]);
+    }
+
+    /**
+     * Whether a desk has reached persons_per_desk (approved only).
+     */
+    public static function is_desk_full(\stdClass $session, int $deskno): bool {
+        if (self::is_online_session($session) || $deskno < 1) {
+            return false;
+        }
+        $ppd = max(1, (int) ($session->persons_per_desk ?? self::PERSONS_CLASSROOM));
+        return self::desk_approved_count((int) $session->id, $deskno) >= $ppd;
+    }
+
+    /**
      * Remaining desks by assigned desk slots.
      */
     public static function remaining_desks(\stdClass $session): int {

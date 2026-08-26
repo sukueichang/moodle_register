@@ -1663,6 +1663,26 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026081001, 'local', 'tm_course');
     }
 
+    // 2026082601 — Onsite desk map for batch enrol + admin desk-board review / drag move.
+    if ($oldversion < 2026082601) {
+        upgrade_plugin_savepoint(true, 2026082601, 'local', 'tm_course');
+    }
+
+    // 2026082602 — Batch desk pick shows pending learners (all sales).
+    if ($oldversion < 2026082602) {
+        upgrade_plugin_savepoint(true, 2026082602, 'local', 'tm_course');
+    }
+
+    // 2026082603 — Admin "view enrolment status" opens interactive enrolments desk board.
+    if ($oldversion < 2026082603) {
+        upgrade_plugin_savepoint(true, 2026082603, 'local', 'tm_course');
+    }
+
+    // 2026082604 — Diet edit permissions: admin all, sales own batch, learner own/linked.
+    if ($oldversion < 2026082604) {
+        upgrade_plugin_savepoint(true, 2026082604, 'local', 'tm_course');
+    }
+
     return true;
 }
 

@@ -25,6 +25,13 @@ if (!$canview) {
 
 $sessionid = required_param('sessionid', PARAM_INT);
 
+// Approvers/admins: interactive desk board (drag / approve / batch add). Sales stay on read-only.
+if (is_siteadmin()
+    || has_capability('local/tm_course:approve', $ctx)
+    || has_capability('local/tm_course:manage', $ctx)) {
+    redirect(new moodle_url('/local/tm_course/admin/enrolments.php', ['sessionid' => $sessionid]));
+}
+
 try {
     $view = enrolment_manager::build_session_roster_view($sessionid);
 } catch (\dml_missing_record_exception $ex) {
