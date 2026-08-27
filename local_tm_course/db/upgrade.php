@@ -1683,6 +1683,42 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026082604, 'local', 'tm_course');
     }
 
+    // 2026082605 — TCMS sync targets VM https://tcms.tm-robot.com; reconcile task hourly :15.
+    if ($oldversion < 2026082605) {
+        $olddefault = 'https://tcms-e49a5.web.app';
+        $newdefault = 'https://tcms.tm-robot.com';
+        $current = trim((string) get_config('local_tm_course', 'tcms_api_base_url'));
+        if ($current === '' || $current === $olddefault || stripos($current, 'tcms-e49a5') !== false) {
+            set_config('tcms_api_base_url', $newdefault, 'local_tm_course');
+        } else {
+            // Strip accidental frontend /Project path from saved base URL.
+            $normalized = rtrim($current, '/');
+            if (preg_match('#/Project$#i', $normalized)) {
+                $normalized = rtrim((string) preg_replace('#/Project$#i', '', $normalized), '/');
+                if ($normalized !== '') {
+                    set_config('tcms_api_base_url', $normalized, 'local_tm_course');
+                }
+            }
+        }
+
+        // Apply new schedule (db/tasks.php only applies on first install).
+        $classnames = [
+            '\local_tm_course\task\sync_tcms_sessions',
+            'local_tm_course\\task\\sync_tcms_sessions',
+        ];
+        foreach ($classnames as $classname) {
+            if ($DB->record_exists('task_scheduled', ['classname' => $classname])) {
+                $DB->set_field('task_scheduled', 'minute', '15', ['classname' => $classname]);
+                $DB->set_field('task_scheduled', 'hour', '*', ['classname' => $classname]);
+                $DB->set_field('task_scheduled', 'day', '*', ['classname' => $classname]);
+                $DB->set_field('task_scheduled', 'dayofweek', '*', ['classname' => $classname]);
+                $DB->set_field('task_scheduled', 'month', '*', ['classname' => $classname]);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026082605, 'local', 'tm_course');
+    }
+
     return true;
 }
 

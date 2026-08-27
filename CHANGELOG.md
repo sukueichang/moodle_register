@@ -3,6 +3,30 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.19.1] - 2026-08-27 - 點名名單姓名可連到 Moodle 個人檔
+
+### Added
+- 上課準備／點名畫面（`class_prep.php`）：有真實帳號的學員姓名改為連結，開新分頁至 `/user/profile.php`，方便講師查看信箱等基本資料。
+- 僅出現於點名畫面（頁面已以 `user_can_attendance()` 把關）；「查看報名狀況」等其他名冊不變。
+- 純卡位（無 `linked_userid`）維持純文字、不設連結。
+
+### Docs
+- `docs/SPEC.md` §57、`docs/FEATURE_LOG.md`。
+
+## [5.19.0] - 2026-08-26 - TCMS 同步改指向公司 VM
+
+### Changed
+- TCMS 預設 API base URL 改為 `https://tcms.tm-robot.com`（API 根網址；不可含前端 `/Project/`）。
+- 升級時若仍為舊 Firebase 預設或含 `tcms-e49a5`／誤填 `/Project/`，自動遷移／正規化。
+- CORS 白名單改允許 VM origin `https://tcms.tm-robot.com`（移除 Firebase Hosting 網域）。
+- 補同步排程 `sync_tcms_sessions` 改為每小時 `:15` 醒來，仍由 `tcms_sync_reconcile_interval` 決定是否真正對帳（「每小時／每 6 小時」設定才有效）。
+- Payload 增補 `source=moodle`；持續傳送 `customerNames`／`customerCount`／`studentCount`／`studentsReached` 等既有欄位。
+- Schema 讀取失敗仍走快取／fallback，不阻擋場次同步。
+
+### Added
+- `classes/tcms_endpoint.php`：URL／Bearer header／必填 payload key 純函式。
+- `tests/tcms_sync_test.php`、`scripts/tcms_sync_unit_test.php`。
+
 ## [5.17.5] - 2026-08-10 - 實體額滿改回人數制／Admin 可無視額滿
 
 ### Changed

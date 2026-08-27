@@ -226,8 +226,8 @@ if ($hassiteconfig) {
         $tcmssettings->add(new admin_setting_configtext(
             'local_tm_course/tcms_api_base_url',
             $str('setting_tcms_api_base_url', 'TCMS API base URL'),
-            $str('setting_tcms_api_base_url_desc', 'Example: https://tcms-e49a5.web.app'),
-            'https://tcms-e49a5.web.app',
+            $str('setting_tcms_api_base_url_desc', 'Example: https://tcms.tm-robot.com (API root only — do not include /Project/).'),
+            'https://tcms.tm-robot.com',
             PARAM_URL
         ));
         $tcmssettings->add(new admin_setting_configpasswordunmask(

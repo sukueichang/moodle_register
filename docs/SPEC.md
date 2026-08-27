@@ -1,7 +1,7 @@
 # SPEC — TM Course Management Plugin (`local_tm_course`)
 
 > **文件角色：** 產品／技術規格書（Single Source of Truth）  
-> **目前發行版：** 5.17.10（`local_tm_course/version.php` → `$plugin->release`）  
+> **目前發行版：** 5.19.0（`local_tm_course/version.php` → `$plugin->release`）  
 > **維護約定：** 規格變更先改本檔，再實作；版本歷史見根目錄 [`CHANGELOG.md`](../CHANGELOG.md)。  
 > **相關文件：** [`FEATURE_LOG.md`](FEATURE_LOG.md)（需求與決策）／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)（缺陷與回歸檢查）／[`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)（開發 SOP）
 
@@ -43,13 +43,27 @@
 | 專屬開班預約 | `reservation/*`、`classes/reservation_application.php`、`reservation_plan_validator.php` |
 | 視訊／實體預排月曆 | `reservation/calendar.php`、`reservation/plan_events.php` |
 | 課前資料檢核 | `reservation/verification.php`、`verification_manager`、管理端檢核審核頁 |
-| 上課準備／設備檢查 | `admin/class_prep.php`、`classes/equipment_check_manager.php` |
+| 上課準備／設備檢查 | `admin/class_prep.php`、`classes/equipment_check_manager.php`（點名名單姓名可連 Moodle 個人檔，見 §57） |
 | 出缺席 | `admin/attendance.php`、`classes/attendance_manager.php` |
 | 通知 | `classes/notification_helper.php`、scheduled tasks |
 | 教室 | `classroom/*`、`classes/classroom_manager.php` |
 | 課程連動 | `settings/course_mapping.php`、`classes/enabled_course_manager.php` |
-| TCMS 同步 | `classes/tcms_sync_manager.php` |
+| TCMS 同步 | `classes/tcms_sync_manager.php`、`classes/tcms_endpoint.php`（VM：`https://tcms.tm-robot.com`） |
 | 證書 | 整合 `mod_customcert` |
+
+### 0.4a TCMS 同步（Moodle → VM，5.19.0）
+
+| 項目 | 值 |
+|------|-----|
+| API base（預設） | `https://tcms.tm-robot.com`（**不含** `/Project/`） |
+| 設定 | 管理 → 外掛 → TM Course → **TCMS sync**：`tcms_api_base_url`、`tcms_sync_token`、同步起始日、對帳間隔 |
+| Token | Moodle `tcms_sync_token` ≡ VM `TCMS_MOODLE_SYNC_TOKEN`（Bearer）；不可寫死於程式 |
+| POST | `{base}/api/integrations/moodle/sessions`（新增／修改／自動關閉） |
+| DELETE | `{base}/api/integrations/moodle/sessions/{moodleSessionId}` |
+| Payload 必留 | `source=moodle`、`moodleSessionId`、`moodleCourseId`、日期時間、課程類型、地點、教室、狀態、`kpiArea=A-1`、`countForKpi=true`、`customerNames`、`customerCount`、`studentCount`、`studentsReached` |
+| 篩選 | 標準場次＋課程連動啟用＋同步起始日；停用同步時 purge 遠端鏡像 |
+| 排程 | `sync_tcms_sessions` 每小時 `:15` 醒來；`tcms_sync_reconcile_interval` 決定是否執行 |
+| Schema | `GET /api/sessions/schema` 失敗 → 快取／內建 fallback；**不**阻擋場次同步 |
 
 ### 0.5 關鍵業務規則（近期已定案，實作須遵守）
 
@@ -2074,3 +2088,25 @@ delivery_mode = onsite：
 - `classes/enrolment_manager.php`：`enrol()` / `batch_enrol_pending()` 錯誤分支
 - `index.php`、`enrol_form.php`、`enrol_apply_step.php`：前台額滿徽章／入口
 - `db/upgrade.php`：重算 OPEN/FULL
+
+---
+
+## 57. 已實作更新（2026-08-27，點名名單姓名 → Moodle 個人檔）
+
+**狀態**：已實作（版號 `2026082701` / release `5.19.1`）。
+
+### 57.1 行為
+
+| 項目 | 規格 |
+|------|------|
+| 畫面 | 僅 **上課準備／點名** `admin/class_prep.php`（`attendance_roster_partial.php`） |
+| 權限 | 頁面既有 `permissions_manager::user_can_attendance()`；連結不出現在「查看報名狀況」等其他名冊 |
+| 連結 | 有真實 Moodle 帳號時，姓名為連結 → `/user/profile.php?id={userid}`（`target=_blank`） |
+| userid 來源 | 一般報名：`enrol.userid`；卡位：`linked_userid`；無綁定卡位：純文字 |
+| 不顯示 | 名冊上仍不直接列出 Email（信箱在 Moodle 個人檔，受站台隱私設定影響） |
+
+### 57.2 相關檔案
+
+- `classes/enrolment_manager.php`：`build_session_attendance_view()` 增加 `profile_userid`
+- `admin/attendance_roster_partial.php`：姓名渲染 helper
+- `styles.css`、`lang/en`、`lang/zh_tw`

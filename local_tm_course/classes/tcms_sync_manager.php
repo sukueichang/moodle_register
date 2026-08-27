@@ -12,6 +12,7 @@ require_once(__DIR__ . '/enabled_course_manager.php');
 require_once(__DIR__ . '/classroom_manager.php');
 require_once(__DIR__ . '/enrolment_manager.php');
 require_once(__DIR__ . '/session_manager.php');
+require_once(__DIR__ . '/tcms_endpoint.php');
 
 class tcms_sync_manager {
 
@@ -118,7 +119,7 @@ class tcms_sync_manager {
             return;
         }
 
-        $url = $base . '/api/integrations/moodle/sessions';
+        $url = tcms_endpoint::sessions_collection_url($base);
         $sendpayload = $payload;
         unset($sendpayload['_hash']);
         $response = self::http_request('POST', $url, $token, $sendpayload);
@@ -159,7 +160,7 @@ class tcms_sync_manager {
         }
 
         $moodleid = (int) $session->id;
-        $url = $base . '/api/integrations/moodle/sessions/' . $moodleid;
+        $url = tcms_endpoint::session_item_url($base, $moodleid);
         self::http_request('DELETE', $url, $token, null);
     }
 
@@ -190,7 +191,7 @@ class tcms_sync_manager {
             if (session_manager::is_room_closed_session($session)) {
                 continue;
             }
-            $url = $base . '/api/integrations/moodle/sessions/' . (int) $session->id;
+            $url = tcms_endpoint::session_item_url($base, (int) $session->id);
             $response = self::http_request('DELETE', $url, $token, null);
             // 404 / not found still counts as gone on TCMS.
             if ($response['ok'] || self::is_not_found_error($response)) {
@@ -329,6 +330,7 @@ class tcms_sync_manager {
         $enrolstats = self::collect_enrolment_stats((int) $session->id);
 
         $core = [
+            'source' => 'moodle',
             'moodleSessionId' => (int) $session->id,
             'moodleCourseId' => $courseid,
             'title' => $title,
@@ -460,20 +462,19 @@ class tcms_sync_manager {
 
     public static function api_base_url(): string {
         $url = trim((string) get_config('local_tm_course', 'tcms_api_base_url'));
-        if ($url === '') {
-            $url = 'https://tcms-e49a5.web.app';
-        }
-        return rtrim($url, '/');
+        return tcms_endpoint::normalize_base_url($url);
     }
 
     public static function api_token(): string {
+        // Must match VM env TCMS_MOODLE_SYNC_TOKEN — never hard-code.
         return trim((string) get_config('local_tm_course', 'tcms_sync_token'));
     }
 
     /**
      * Available TCMS dropdown options (courseTypes + locations).
-     * Pulled from TCMS GET /api/sessions/schema (no token needed), cached ~1h.
-     * Falls back to a built-in list when TCMS is unreachable.
+     * Pulled from TCMS GET /api/sessions/schema when reachable, cached ~1h.
+     * Schema may require TCMS login on VM; failure must not block session sync —
+     * use cache or built-in fallback for dropdowns only.
      *
      * @return array{courseTypes:string[],locations:string[]}
      */
@@ -592,7 +593,7 @@ class tcms_sync_manager {
 
         $curl = new \curl();
         $curl->setHeader([
-            'Authorization: Bearer ' . $token,
+            tcms_endpoint::authorization_header($token),
             'Content-Type: application/json',
             'Accept: application/json',
         ]);

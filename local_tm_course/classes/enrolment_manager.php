@@ -2267,6 +2267,18 @@ class enrolment_manager {
             $learner['diet_choice'] = $diet;
             $learner['diet_special_note'] = $specialnote;
             $learner['diet_label'] = $row ? self::format_diet_summary($row) : '—';
+            // Real Moodle user for profile link (attendance UI only). Seat placeholders
+            // without linked_userid stay 0 → name remains plain text.
+            $profileuserid = 0;
+            if ($row) {
+                $placeholderseq = (int) ($row->placeholder_seq ?? 0);
+                if ($placeholderseq > 0) {
+                    $profileuserid = (int) ($row->linked_userid ?? 0);
+                } else {
+                    $profileuserid = (int) ($row->userid ?? 0);
+                }
+            }
+            $learner['profile_userid'] = $profileuserid > 0 ? $profileuserid : 0;
             return $learner;
         };
 

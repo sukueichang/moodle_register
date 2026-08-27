@@ -22,6 +22,33 @@
 
 ---
 
+## 2026-08-27 — 點名畫面學員姓名連到 Moodle 個人檔
+
+- **需求：** 講師在點名時能快速從學員名單進到基本資料（尤其信箱）；不要改其他名冊頁。
+- **決策：**
+  1. 方案 A：連 `/user/profile.php?id=`（開新分頁），不另做自訂詳情頁。
+  2. **僅** `admin/class_prep.php` → `attendance_roster_partial.php`；`session_roster`／批次／審核桌次不改。
+  3. 權限靠點名頁既有 `user_can_attendance()`；連結不出現在無點名權限的畫面。
+  4. `build_session_attendance_view()` 補 `profile_userid`（一般用 `userid`；卡位用 `linked_userid`；無帳號不連）。
+- **影響範圍：** `enrolment_manager.php`、`attendance_roster_partial.php`、`styles.css`、`lang` en/zh_tw、SPEC／CHANGELOG。
+- **版本／狀態：** **5.19.1；待驗收**
+
+---
+
+## 2026-08-26 — TCMS 同步改指向公司 VM（非 Firebase）
+
+- **需求：** TCMS 改由公司內部 VM 對外提供（`https://tcms.tm-robot.com`），Moodle 場次正式改同步到新站；前端 SPA 路徑 `/Project/` 不是 API root。
+- **決策：**
+  1. 預設／說明改為 `https://tcms.tm-robot.com`；`normalize_base_url` 會 `rtrim('/')` 並剝除誤填的 `/Project`。
+  2. Token 仍只讀 `local_tm_course/tcms_sync_token`，須與 VM `TCMS_MOODLE_SYNC_TOKEN` 一致；不寫死、不提交真實 Token。
+  3. POST/DELETE 路徑不變：`/api/integrations/moodle/sessions[+/{id}]`；payload 保留 KPI／學員統計欄位並加 `source=moodle`。
+  4. Schema API 可能受登入保護 → 快取／fallback；失敗不擋同步。
+  5. `sync_tcms_sessions` 每小時 `:15` 醒來 + `tcms_sync_reconcile_interval` 閘門，讓「每小時／每 6 小時」有效。
+- **影響範圍：** `tcms_endpoint`、`tcms_sync_manager`、`tcms_cors`、`settings`、語系、`db/tasks.php`、`upgrade.php`、SPEC／CHANGELOG、單元測試。
+- **版本／狀態：** **5.19.0；待驗收**（請在 Moodle 填新 URL + VM Token 後測同步）。
+
+---
+
 ## 2026-08-10 — 先修放寬：時序 approved 報名／專班共包＋連帶取消
 
 - **需求：** 來台連上課（如 Beginner’s → AI）不應只因「先修尚未完成」被擋；現場到達前需能先報後課。先修若後來取消，依賴它的後課不可殘留。

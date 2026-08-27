@@ -1641,6 +1641,15 @@ tr.tm-batch-is-prototype {
     align-items: center;
     gap: 4px;
 }
+a.tm-attendance-learner-profile-link {
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+a.tm-attendance-learner-profile-link:hover,
+a.tm-attendance-learner-profile-link:focus {
+    text-decoration: underline;
+}
 .tm-attendance-actions {
     display: inline-flex;
     flex-wrap: wrap;

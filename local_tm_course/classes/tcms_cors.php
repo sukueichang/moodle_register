@@ -11,7 +11,7 @@ defined('MOODLE_INTERNAL') || die();
 class tcms_cors {
 
     /**
-     * Allow production TCMS + Firebase Hosting preview channels.
+     * Allow production VM TCMS + local dev origins.
      */
     public static function apply_tcms_browser_cors(): void {
         $origin = isset($_SERVER['HTTP_ORIGIN']) ? (string) $_SERVER['HTTP_ORIGIN'] : '';
@@ -27,8 +27,7 @@ class tcms_cors {
 
     public static function is_allowed_origin(string $origin): bool {
         $exact = [
-            'https://tcms-e49a5.web.app',
-            'https://tcms-e49a5.firebaseapp.com',
+            'https://tcms.tm-robot.com',
             'http://localhost',
             'http://127.0.0.1',
         ];
@@ -37,13 +36,6 @@ class tcms_cors {
         }
         // localhost with port
         if (preg_match('#^https?://(localhost|127\.0\.0\.1)(:\d+)?$#', $origin)) {
-            return true;
-        }
-        // Firebase preview: https://tcms-e49a5--{channel}-{hash}.web.app
-        if (preg_match('#^https://tcms-e49a5--[a-z0-9-]+\.web\.app$#i', $origin)) {
-            return true;
-        }
-        if (preg_match('#^https://tcms-e49a5--[a-z0-9-]+\.firebaseapp\.com$#i', $origin)) {
             return true;
         }
         return false;
