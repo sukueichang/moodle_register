@@ -300,6 +300,9 @@ class notification_helper {
      * Daily reminder: count pending enrolments older than configured threshold and notify approvers.
      */
     public static function notify_pending_overdue_to_admins(): void {
+        if (!self::is_reminder_threshold_enabled()) {
+            return;
+        }
         $threshold = self::get_reminder_threshold_seconds();
         self::notify_pending_overdue_to_admins_by_threshold($threshold);
     }
@@ -444,6 +447,10 @@ class notification_helper {
     public static function notify_pending_overdue_to_admins_by_threshold(int $threshold): void {
         global $DB;
 
+        if (!self::is_reminder_threshold_enabled()) {
+            return;
+        }
+
         $cutoff = time() - max(1, $threshold);
         $count = (int)$DB->count_records_select(
             'local_tm_course_enrolments',
@@ -500,6 +507,17 @@ class notification_helper {
         $subject = self::render_template($template['subject'], $tokens);
         $body = self::render_template($template['body'], $tokens);
         self::send_message($useridto, $provider, $subject, $body);
+    }
+
+    /**
+     * Whether pending overdue reminders are enabled. Defaults to on when unset.
+     */
+    public static function is_reminder_threshold_enabled(): bool {
+        $raw = get_config('local_tm_course', 'reminder_threshold_enabled');
+        if ($raw === false || $raw === null || $raw === '') {
+            return true;
+        }
+        return (bool)(int)$raw;
     }
 
     /**

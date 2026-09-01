@@ -16,7 +16,10 @@ class remind_pending_enrolment extends \core\task\scheduled_task {
     }
 
     public function execute(): void {
-        // N3: read threshold from plugin settings and apply dynamic cutoff.
+        // N3: skip when disabled; otherwise read threshold and apply dynamic cutoff.
+        if (!\local_tm_course\notification_helper::is_reminder_threshold_enabled()) {
+            return;
+        }
         $threshold = \local_tm_course\notification_helper::get_reminder_threshold_seconds();
         \local_tm_course\notification_helper::notify_pending_overdue_to_admins_by_threshold($threshold);
     }

@@ -1,7 +1,7 @@
 # SPEC — TM Course Management Plugin (`local_tm_course`)
 
 > **文件角色：** 產品／技術規格書（Single Source of Truth）  
-> **目前發行版：** 5.19.0（`local_tm_course/version.php` → `$plugin->release`）  
+> **目前發行版：** 5.19.2（`local_tm_course/version.php` → `$plugin->release`）  
 > **維護約定：** 規格變更先改本檔，再實作；版本歷史見根目錄 [`CHANGELOG.md`](../CHANGELOG.md)。  
 > **相關文件：** [`FEATURE_LOG.md`](FEATURE_LOG.md)（需求與決策）／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)（缺陷與回歸檢查）／[`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)（開發 SOP）
 
@@ -179,6 +179,8 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
   - Cron Job：`classes/task/remind_pending_enrolment.php`
 - 設定來源：
   - 由 `settings.php` 提供可調參數
+  - 參數名稱：`reminder_threshold_enabled`（checkbox，預設啟用）
+    - 關閉時排程與通知 helper 皆不發送逾時未審提醒
   - 參數名稱：`reminder_threshold`
   - UI?Dropdown
   - 可選值：
@@ -186,7 +188,7 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
     - 小時：1, 2, 3, ... , 24
   - 預設值：24 小時
 - 設定儲存：
-  - 寫入 `config_plugins` 的 `reminder_threshold`
+  - 寫入 `config_plugins` 的 `reminder_threshold_enabled`、`reminder_threshold`
 - 篩選條件：
   - `timecreated < (current_time - reminder_threshold_seconds)`
   - 僅通知 `pending` 狀態報名
@@ -1688,7 +1690,7 @@ delivery_mode = onsite：
 
 | 任務 | 用途（摘要） |
 |------|----------------|
-| `remind_pending_enrolment` | 逾時未審提醒（`reminder_threshold`）。 |
+| `remind_pending_enrolment` | 逾時未審提醒（需 `reminder_threshold_enabled`；閾值 `reminder_threshold`）。 |
 | `auto_close_sessions` | 開課日前一日 00:00 截止場次。 |
 | `send_pre_class_notification` | 課前通知：明日實體課程摘要信（見 §51）。 |
 | `close_incomplete_reservation_sessions` | 專屬開班檢核逾期自動關閉場次。 |

@@ -22,6 +22,18 @@
 
 ---
 
+## 2026-09-01 — 逾期提醒可啟用／關閉
+
+- **需求：** 「逾期提醒時間閾值」要能整段啟用或關閉，不要只能調時間。
+- **決策：**
+  1. 在「通知與自動化」新增 checkbox `reminder_threshold_enabled`（預設開啟，維持既有行為）。
+  2. 關閉時 task 與 `notify_pending_overdue_*` 直接 return，不發信。
+  3. 未設定時視為啟用（升級相容）。
+- **影響範圍：** `settings.php`、`notification_helper.php`、`remind_pending_enrolment.php`、語系、`upgrade.php`、SPEC／CHANGELOG。
+- **版本／狀態：** **5.19.2；待驗收**
+
+---
+
 ## 2026-08-27 — 點名畫面學員姓名連到 Moodle 個人檔
 
 - **需求：** 講師在點名時能快速從學員名單進到基本資料（尤其信箱）；不要改其他名冊頁。

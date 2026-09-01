@@ -1719,6 +1719,15 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026082605, 'local', 'tm_course');
     }
 
+    // 2026090101 — Pending overdue reminder enable/disable toggle (config only).
+    if ($oldversion < 2026090101) {
+        // Preserve existing behaviour: default enabled when unset.
+        if (get_config('local_tm_course', 'reminder_threshold_enabled') === false) {
+            set_config('reminder_threshold_enabled', 1, 'local_tm_course');
+        }
+        upgrade_plugin_savepoint(true, 2026090101, 'local', 'tm_course');
+    }
+
     return true;
 }
 

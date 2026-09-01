@@ -3,6 +3,15 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.19.2] - 2026-09-01 - 逾期提醒可啟用／關閉
+
+### Added
+- 通知與自動化設定新增「啟用逾期提醒」checkbox（`reminder_threshold_enabled`，預設開啟）。
+- 關閉後，`remind_pending_enrolment` 排程與通知 helper 不會發送逾時未審提醒；開啟時仍依「逾期提醒時間閾值」判斷。
+
+### Docs
+- `docs/SPEC.md` M5-N3、`docs/FEATURE_LOG.md`。
+
 ## [5.19.1] - 2026-08-27 - 點名名單姓名可連到 Moodle 個人檔
 
 ### Added

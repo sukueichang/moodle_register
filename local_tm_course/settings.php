@@ -60,6 +60,12 @@ if ($hassiteconfig) {
         get_string('nav_m5_settings', 'local_tm_course')
     );
     if ($ADMIN->fulltree) {
+        $m5settings->add(new admin_setting_configcheckbox(
+            'local_tm_course/reminder_threshold_enabled',
+            get_string('setting_reminder_threshold_enabled', 'local_tm_course'),
+            get_string('setting_reminder_threshold_enabled_desc', 'local_tm_course'),
+            1
+        ));
         $choices = [];
         for ($m = 5; $m <= 55; $m += 5) {
             $choices[$m * MINSECS] = get_string('reminder_minutes_option', 'local_tm_course', $m);
