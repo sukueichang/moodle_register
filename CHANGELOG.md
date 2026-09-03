@@ -9,7 +9,7 @@
 - 具批次報名權限者（capability 或指定權限規則）可於前台場次列表直接看到所有「視訊且已填連結」場次的「加入視訊課程」按鈕，不需本人已報名。
 
 ### Docs
-- `docs/SPEC.md` §13、`docs/FEATURE_LOG.md`。
+- `docs/SPEC.md` §13、`docs/FEATURE_LOG.md`、`README.md` 角色權限。
 
 ## [5.19.2] - 2026-09-01 - 逾期提醒可啟用／關閉
 
