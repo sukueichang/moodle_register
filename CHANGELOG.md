@@ -3,6 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.19.3] - 2026-09-03 - 業務可看全部視訊連結按鈕
+
+### Changed
+- 具批次報名權限者（capability 或指定權限規則）可於前台場次列表直接看到所有「視訊且已填連結」場次的「加入視訊課程」按鈕，不需本人已報名。
+
+### Docs
+- `docs/SPEC.md` §13、`docs/FEATURE_LOG.md`。
+
 ## [5.19.2] - 2026-09-01 - 逾期提醒可啟用／關閉
 
 ### Added

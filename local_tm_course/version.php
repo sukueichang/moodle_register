@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.19.2
+ * Version: 5.19.3
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026090101;   // Pending overdue reminder: enable/disable toggle
-$plugin->release   = '5.19.2';
+$plugin->version   = 2026090300;   // Batch-enrol users can see all online meeting link buttons
+$plugin->release   = '5.19.3';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

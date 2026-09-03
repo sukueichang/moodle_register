@@ -428,6 +428,7 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
   - 不可使用管理者後台（無 `local/tm_course:manage`）。
   - 已額滿／已截止場次不可批次加入（由 `batch_enrol.php` 擋下，僅管理者可 override）。
   - 一般情境不可看全部報名（除非另授 `local/tm_course:viewall`）。
+  - **視訊連結按鈕：** 前台場次列表對所有「視訊且已填 meeting_link」的場次，可直接看到「加入視訊課程」按鈕（不需本人已報名／已核准）。一般學員仍僅在本人該場次報名已核准時可見。
 
 - 一般使用者（Learner，具 `local/tm_course:enrol`）：
   - 可在前台瀏覽場次、報名/重報、取消報名。

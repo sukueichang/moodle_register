@@ -22,6 +22,15 @@
 
 ---
 
+## 2026-09-03 — 業務可看全部視訊課連結按鈕
+
+- **需求：** 有批次報名權限者（含指定權限規則），即使本人未被安排／未報名該場次，前台仍要能看到所有視訊課的「加入視訊課程」按鈕。
+- **決策：** `user_can_always_view_meeting_link()` 除 `manager`／`coursecreator` 外，也納入 `permissions_manager::user_can_batch_enrol()`；場次仍須為視訊且已填 `meeting_link`。一般學員條件不變（本人已核准報名）。
+- **影響範圍：** `user_dashboard_helper.php`、`index.php` 場次列表按鈕、SPEC §13、FEATURE_LOG／CHANGELOG。
+- **版本／狀態：** **5.19.3；已驗收**
+
+---
+
 ## 2026-09-01 — 逾期提醒可啟用／關閉
 
 - **需求：** 「逾期提醒時間閾值」要能整段啟用或關閉，不要只能調時間。

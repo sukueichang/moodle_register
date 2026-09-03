@@ -160,11 +160,13 @@ class user_dashboard_helper {
     /**
      * System roles that may always open online meeting links (hardcoded; no UI setting).
      * Matches Site administration role shortnames: 系統管理員 / 課程管理員.
+     * Batch-enrol (Sales) is also allowed via permissions_manager::user_can_batch_enrol().
      */
     private const MEETING_LINK_PRIVILEGED_SHORTNAMES = ['manager', 'coursecreator'];
 
     /**
-     * True if the user has a hardcoded privileged system role (manager / coursecreator).
+     * True if the user may always open online meeting links when a URL exists:
+     * manager / coursecreator, or batch-enrol (capability or permission rule).
      */
     public static function user_can_always_view_meeting_link(?\stdClass $user = null): bool {
         global $USER;
@@ -180,6 +182,10 @@ class user_dashboard_helper {
             return $cache[$userid];
         }
 
+        if (permissions_manager::user_can_batch_enrol($user)) {
+            return $cache[$userid] = true;
+        }
+
         $assignments = get_user_roles(\context_system::instance(), $userid, true);
         foreach ($assignments as $assignment) {
             $shortname = (string) ($assignment->shortname ?? '');
@@ -193,7 +199,8 @@ class user_dashboard_helper {
 
     /**
      * Whether the current user may open the session's online meeting link.
-     * Allowed for approved enrolments, or manager / coursecreator (always when link exists).
+     * Allowed for approved enrolments, or privileged viewers (manager / coursecreator / batch-enrol)
+     * when the session is online and a meeting link exists.
      */
     public static function can_show_meeting_link_for_enrolment(\stdClass $session, ?\stdClass $enrolment): bool {
         if (!session_manager::is_online_session($session)) {
