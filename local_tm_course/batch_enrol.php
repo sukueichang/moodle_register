@@ -40,6 +40,7 @@ $PAGE->requires->css('/local/tm_course/styles.css');
 
 $sessionid = optional_param('sessionid', 0, PARAM_INT);
 $confirmed = optional_param('batch_confirmed', 0, PARAM_INT);
+$deskparam = optional_param('desk', 0, PARAM_INT);
 
 if ($isadminmanage) {
     $sessions = session_manager::get_sessions();
@@ -53,18 +54,53 @@ if ($isadminmanage) {
 }
 
 $selectedsession = null;
+$selecteddesk = 0;
+$needsdeskpick = false;
+$deskboard = null;
+$sessionisonline = false;
+$canignoredeskfull = $isadminmanage;
+
 if ($sessionid > 0) {
     $selectedsession = session_manager::get_session($sessionid);
     if (!$isadminmanage && !session_manager::can_submit_enrolment($selectedsession, false)) {
         throw new moodle_exception('error_batch_closed_admin_only', 'local_tm_course');
+    }
+    $sessionisonline = session_manager::is_online_session($selectedsession);
+    if (!$sessionisonline) {
+        if ($deskparam >= 1 && $deskparam <= (int) $selectedsession->num_desks) {
+            if (!$canignoredeskfull && session_manager::is_desk_full($selectedsession, $deskparam)) {
+                \core\notification::error(get_string('error_desk_assignment_full', 'local_tm_course'));
+            } else {
+                $selecteddesk = $deskparam;
+            }
+        }
+        if ($selecteddesk < 1) {
+            $needsdeskpick = true;
+            $deskboard = enrolment_manager::build_session_desk_board($sessionid, ['include_pending' => true]);
+        }
     }
 }
 
 if ($sessionid && $confirmed && confirm_sesskey()) {
     $batchsubmitternote = optional_param('batch_submitternote', '', PARAM_TEXT);
     $batchmode = optional_param('batch_mode', '', PARAM_ALPHA);
+    $submitdesk = optional_param('desk_number', 0, PARAM_INT);
 
-    $finishbatch = function (array $entries) use ($sessionid, $USER, $isadminmanage, $issiteadmin, $batchsubmitternote, $DB): void {
+    if (!$sessionisonline && ($submitdesk < 1 || ($selectedsession && $submitdesk > (int) $selectedsession->num_desks))) {
+        \core\notification::error(get_string('error_batch_desk_required', 'local_tm_course'));
+    } else if (!$sessionisonline && !$canignoredeskfull && $selectedsession
+        && session_manager::is_desk_full($selectedsession, $submitdesk)) {
+        \core\notification::error(get_string('error_desk_assignment_full', 'local_tm_course'));
+    } else {
+
+    $finishbatch = function (array $entries) use (
+        $sessionid, $USER, $isadminmanage, $issiteadmin, $batchsubmitternote, $DB, $submitdesk, $sessionisonline
+    ): void {
+        if (!$sessionisonline) {
+            foreach ($entries as $idx => $entry) {
+                $entries[$idx]['desk_number'] = $submitdesk;
+            }
+        }
         try {
             $result = enrolment_manager::batch_enrol_pending(
                 $sessionid,
@@ -191,6 +227,7 @@ if ($sessionid && $confirmed && confirm_sesskey()) {
             $finishbatch($entries);
         }
     }
+    } // desk validation else
 }
 
 echo $OUTPUT->header();
@@ -205,6 +242,9 @@ echo $OUTPUT->header();
         <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
         <input type="hidden" name="batch_confirmed" id="batch_confirmed" value="0">
         <input type="hidden" name="batch_mode" id="batch_mode_hidden" value="">
+        <?php if ($selecteddesk > 0): ?>
+        <input type="hidden" name="desk_number" id="tm-batch-desk-number" value="<?php echo (int) $selecteddesk; ?>">
+        <?php endif; ?>
 
         <div class="form-group">
             <label for="tm-batch-sessionid"><strong><?php echo get_string('batch_select_session', 'local_tm_course'); ?></strong></label>
@@ -214,10 +254,12 @@ echo $OUTPUT->header();
                     $sel = ((int)$sessionid === (int)$s->id) ? 'selected' : '';
                     $cap = (int)$s->remaining_persons;
                     $hasprereq = prerequisite_manager::session_has_prerequisites($s);
+                    $isonlineopt = session_manager::is_online_session($s);
                     ?>
                 <option value="<?php echo (int)$s->id; ?>"
                         data-remaining="<?php echo $cap; ?>"
                         data-has-prereq="<?php echo $hasprereq ? '1' : '0'; ?>"
+                        data-online="<?php echo $isonlineopt ? '1' : '0'; ?>"
                         data-course-name="<?php echo s($s->name); ?>"
                         data-session-date="<?php echo s(userdate((int)$s->starttime, get_string('strftimedate'))); ?>"
                         data-session-start-time="<?php echo s(userdate((int)$s->starttime, get_string('strftimetime'))); ?>"
@@ -236,6 +278,87 @@ echo $OUTPUT->header();
 
         <p class="text-muted" id="tm-batch-cap-hint"></p>
 
+<?php if ($needsdeskpick && $deskboard): ?>
+        <div class="tm-batch-desk-pick mt-4" id="tm-batch-desk-pick">
+            <h3 class="h5"><?php echo get_string('batch_desk_pick_title', 'local_tm_course'); ?></h3>
+            <p class="text-muted small"><?php echo get_string('batch_desk_pick_intro', 'local_tm_course'); ?></p>
+            <div class="tm-roster-grid tm-batch-desk-grid">
+            <?php foreach ($deskboard['desks'] as $desk):
+                $isfull = !empty($desk['is_full']);
+                $acount = (int) $desk['approved_count'];
+                $capdesk = (int) $desk['capacity'];
+                $joindeskurl = new moodle_url('/local/tm_course/batch_enrol.php', [
+                    'sessionid' => $sessionid,
+                    'desk' => (int) $desk['desk_number'],
+                ]);
+                ?>
+                <div class="tm-roster-desk-card <?php echo $isfull ? 'tm-desk-card-full' : 'tm-desk-card-open'; ?>"
+                     data-desk="<?php echo (int) $desk['desk_number']; ?>"
+                     data-full="<?php echo $isfull ? '1' : '0'; ?>">
+                    <div class="tm-roster-desk-head">
+                        <strong><?php echo get_string('session_roster_desk_heading', 'local_tm_course', (object) ['n' => (int) $desk['desk_number']]); ?></strong>
+                        <span class="text-muted small"><?php echo get_string('batch_desk_approved_count', 'local_tm_course', (object) ['n' => $acount, 'cap' => $capdesk]); ?></span>
+                    </div>
+                    <?php if (empty($desk['learners'])): ?>
+                        <p class="text-muted small mb-2"><?php echo get_string('session_roster_desk_empty', 'local_tm_course'); ?></p>
+                    <?php else: ?>
+                        <ul class="tm-roster-learner-list mb-2 pl-3">
+                        <?php foreach ($desk['learners'] as $learner):
+                            $ispending = ((int) ($learner['status'] ?? 0) === session_manager::ENROL_PENDING);
+                            $dietlabel = ($learner['diet_summary'] !== '' && $learner['diet_summary'] !== '—')
+                                ? $learner['diet_summary']
+                                : get_string('attendance_diet_no_choice_label', 'local_tm_course');
+                            ?>
+                            <li class="tm-roster-learner-item <?php echo $ispending ? 'tm-batch-learner-pending' : ''; ?>">
+                                <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span><?php
+                                if ($ispending): ?>
+                                <span class="tm-batch-pending-mark"> — <?php echo get_string('admin_desk_pending_badge', 'local_tm_course'); ?></span>
+                                <?php endif; ?>
+                                <?php if ($learner['institution'] !== ''): ?>
+                                <span class="text-muted small d-block"><?php echo s($learner['institution']); ?></span>
+                                <?php endif; ?>
+                                <span class="small d-block tm-desk-diet-wrap">
+                                <?php if (!empty($learner['can_edit_diet'])): ?>
+                                    <button type="button"
+                                            class="tm-desk-diet-editable btn btn-link btn-sm p-0 align-baseline"
+                                            data-enrolid="<?php echo (int) $learner['enrolid']; ?>"
+                                            data-diet-choice="<?php echo s($learner['diet_choice'] ?? ''); ?>"
+                                            data-diet-note="<?php echo s($learner['diet_special_note'] ?? ''); ?>"
+                                            title="<?php echo s(get_string('attendance_diet_click_edit', 'local_tm_course')); ?>">
+                                        <?php echo s($dietlabel); ?>
+                                    </button>
+                                <?php else: ?>
+                                    <span class="text-muted"><?php echo s($dietlabel); ?></span>
+                                <?php endif; ?>
+                                </span>
+                            </li>
+                        <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
+                    <?php if ($isfull && !$canignoredeskfull): ?>
+                        <span class="tm-badge tm-badge-full"><?php echo get_string('batch_desk_full_label', 'local_tm_course'); ?></span>
+                    <?php else: ?>
+                        <a class="btn btn-sm btn-tm-primary tm-batch-desk-join"
+                           href="<?php echo $joindeskurl->out(); ?>"><?php echo get_string('batch_desk_join', 'local_tm_course'); ?></a>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+            </div>
+        </div>
+<?php endif; ?>
+
+<?php if (!$needsdeskpick && $sessionid > 0): ?>
+        <?php if ($selecteddesk > 0): ?>
+        <div class="tm-alert tm-alert-info d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <span><?php echo get_string('batch_desk_selected', 'local_tm_course', (int) $selecteddesk); ?></span>
+            <a class="btn btn-sm btn-secondary"
+               href="<?php echo (new moodle_url('/local/tm_course/batch_enrol.php', ['sessionid' => $sessionid]))->out(); ?>">
+                <?php echo get_string('batch_desk_change', 'local_tm_course'); ?>
+            </a>
+        </div>
+        <?php endif; ?>
+
+        <div id="tm-batch-form-steps">
         <div class="form-group mt-3">
             <label for="batch_submitternote"><strong><?php echo get_string('batch_submitter_note_label', 'local_tm_course'); ?></strong></label>
             <textarea name="batch_submitternote" id="batch_submitternote" class="form-control" rows="3" maxlength="2000"></textarea>
@@ -321,6 +444,10 @@ echo $OUTPUT->header();
             <button type="button" class="btn btn-tm-primary" id="tm-batch-open-debrief"><?php echo get_string('batch_submit_preview', 'local_tm_course'); ?></button>
             <a class="btn btn-link" href="<?php echo (new moodle_url('/local/tm_course/index.php'))->out(); ?>"><?php echo get_string('cancel'); ?></a>
         </div>
+        </div><!-- #tm-batch-form-steps -->
+<?php elseif (!$sessionid): ?>
+        <p class="text-muted"><?php echo get_string('batch_select_session', 'local_tm_course'); ?></p>
+<?php endif; ?>
     </form>
 </div></div>
 
@@ -382,6 +509,29 @@ $batchjs_url = new moodle_url('/local/tm_course/batch_enrol.js', ['v' => $batchj
 ?>
 <script>window.tmBatchCfg=<?php echo json_encode($batch_enrol_js_cfg, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>;</script>
 <script src="<?php echo $batchjs_url->out(); ?>"></script>
+<?php if ($needsdeskpick && $deskboard):
+    $dietjs_path = __DIR__ . '/desk_diet_edit.js';
+    $dietjs_ver = file_exists($dietjs_path) ? filemtime($dietjs_path) : time();
+    $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $dietjs_ver]);
+?>
+<script>
+window.tmDeskDietCfg = <?php echo json_encode([
+    'api' => (new moodle_url('/local/tm_course/diet_update.php'))->out(false),
+    'sesskey' => sesskey(),
+    'strings' => [
+        'meat' => get_string('diet_choice_meat', 'local_tm_course'),
+        'vegetarian' => get_string('diet_choice_vegetarian', 'local_tm_course'),
+        'noChoice' => get_string('attendance_diet_no_choice_label', 'local_tm_course'),
+        'clickEdit' => get_string('attendance_diet_click_edit', 'local_tm_course'),
+        'specialNote' => get_string('diet_special_note', 'local_tm_course'),
+        'save' => get_string('savechanges'),
+        'cancel' => get_string('cancel'),
+        'failed' => get_string('error_diet_choice_required', 'local_tm_course'),
+    ],
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>;
+</script>
+<script src="<?php echo $dietjs_url->out(); ?>"></script>
+<?php endif; ?>
 
 
 <?php

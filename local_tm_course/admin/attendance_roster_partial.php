@@ -102,6 +102,26 @@ $render_attendance_actions = static function (array $learner) use ($render_mark_
 };
 
 /**
+ * Learner display name: link to Moodle profile when a real userid exists.
+ * This partial is only included from class_prep.php (user_can_attendance).
+ *
+ * @param array $learner
+ */
+$render_learner_name = static function (array $learner): void {
+    $name = (string) ($learner['displayname'] ?? '—');
+    $profileuserid = (int) ($learner['profile_userid'] ?? 0);
+    if ($profileuserid > 0) {
+        $url = (new moodle_url('/user/profile.php', ['id' => $profileuserid]))->out(false);
+        $title = get_string('attendance_learner_profile_link', 'local_tm_course');
+        echo '<a class="tm-roster-learner-name tm-attendance-learner-profile-link" href="' . s($url) . '"'
+            . ' target="_blank" rel="noopener noreferrer" title="' . s($title) . '">'
+            . s($name) . '</a>';
+        return;
+    }
+    echo '<span class="tm-roster-learner-name">' . s($name) . '</span>';
+};
+
+/**
  * @param array $learner
  */
 $render_diet_line = static function (array $learner) use ($attendance_can_edit_diet): void {
@@ -131,6 +151,7 @@ $render_diet_line = static function (array $learner) use ($attendance_can_edit_d
  * @param array $learner
  */
 $render_learner_block = static function (array $learner) use (
+    $render_learner_name,
     $render_attendance_actions,
     $render_attendance_status,
     $render_diet_line
@@ -139,7 +160,7 @@ $render_learner_block = static function (array $learner) use (
     echo '<div class="d-flex flex-wrap align-items-start">';
     echo '<div class="flex-grow-1">';
     echo '<div class="tm-attendance-name-row">';
-    echo '<span class="tm-roster-learner-name">' . s($learner['displayname']) . '</span>';
+    $render_learner_name($learner);
     $render_attendance_actions($learner);
     echo '</div>';
     $render_diet_line($learner);
@@ -170,7 +191,7 @@ if ((int) ($view['total'] ?? 0) === 0): ?>
                 <td><?php echo $idx === 0 ? s($instlabel) : ''; ?></td>
                 <td>
                     <div class="tm-attendance-name-row">
-                        <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span>
+                        <?php $render_learner_name($learner); ?>
                         <?php $render_attendance_actions($learner); ?>
                     </div>
                     <?php $render_diet_line($learner); ?>

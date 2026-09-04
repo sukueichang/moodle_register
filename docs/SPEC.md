@@ -1,7 +1,7 @@
 # SPEC — TM Course Management Plugin (`local_tm_course`)
 
 > **文件角色：** 產品／技術規格書（Single Source of Truth）  
-> **目前發行版：** 5.17.4（`local_tm_course/version.php` → `$plugin->release`）  
+> **目前發行版：** 5.19.2（`local_tm_course/version.php` → `$plugin->release`）  
 > **維護約定：** 規格變更先改本檔，再實作；版本歷史見根目錄 [`CHANGELOG.md`](../CHANGELOG.md)。  
 > **相關文件：** [`FEATURE_LOG.md`](FEATURE_LOG.md)（需求與決策）／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)（缺陷與回歸檢查）／[`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)（開發 SOP）
 
@@ -43,21 +43,37 @@
 | 專屬開班預約 | `reservation/*`、`classes/reservation_application.php`、`reservation_plan_validator.php` |
 | 視訊／實體預排月曆 | `reservation/calendar.php`、`reservation/plan_events.php` |
 | 課前資料檢核 | `reservation/verification.php`、`verification_manager`、管理端檢核審核頁 |
-| 上課準備／設備檢查 | `admin/class_prep.php`、`classes/equipment_check_manager.php` |
+| 上課準備／設備檢查 | `admin/class_prep.php`、`classes/equipment_check_manager.php`（點名名單姓名可連 Moodle 個人檔，見 §57） |
 | 出缺席 | `admin/attendance.php`、`classes/attendance_manager.php` |
 | 通知 | `classes/notification_helper.php`、scheduled tasks |
 | 教室 | `classroom/*`、`classes/classroom_manager.php` |
 | 課程連動 | `settings/course_mapping.php`、`classes/enabled_course_manager.php` |
-| TCMS 同步 | `classes/tcms_sync_manager.php` |
+| TCMS 同步 | `classes/tcms_sync_manager.php`、`classes/tcms_endpoint.php`（VM：`https://tcms.tm-robot.com`） |
 | 證書 | 整合 `mod_customcert` |
+
+### 0.4a TCMS 同步（Moodle → VM，5.19.0）
+
+| 項目 | 值 |
+|------|-----|
+| API base（預設） | `https://tcms.tm-robot.com`（**不含** `/Project/`） |
+| 設定 | 管理 → 外掛 → TM Course → **TCMS sync**：`tcms_api_base_url`、`tcms_sync_token`、同步起始日、對帳間隔 |
+| Token | Moodle `tcms_sync_token` ≡ VM `TCMS_MOODLE_SYNC_TOKEN`（Bearer）；不可寫死於程式 |
+| POST | `{base}/api/integrations/moodle/sessions`（新增／修改／自動關閉） |
+| DELETE | `{base}/api/integrations/moodle/sessions/{moodleSessionId}` |
+| Payload 必留 | `source=moodle`、`moodleSessionId`、`moodleCourseId`、日期時間、課程類型、地點、教室、狀態、`kpiArea=A-1`、`countForKpi=true`、`customerNames`、`customerCount`、`studentCount`、`studentsReached` |
+| 篩選 | 標準場次＋課程連動啟用＋同步起始日；停用同步時 purge 遠端鏡像 |
+| 排程 | `sync_tcms_sessions` 每小時 `:15` 醒來；`tcms_sync_reconcile_interval` 決定是否執行 |
+| Schema | `GET /api/sessions/schema` 失敗 → 快取／內建 fallback；**不**阻擋場次同步 |
 
 ### 0.5 關鍵業務規則（近期已定案，實作須遵守）
 
-1. **專屬開班＋批次學員名單：** 申請時依勾選課程的**課程連動預設先修**檢查（多課 **AND**）。帳號不存在 → 不符合（原因：帳號不存在）。僅符合者寫入 `resv_learner`；**學員數 = 審核名單來源列數**；全部不符合允許學員數 = 0 繼續申請。
+1. **專屬開班＋批次學員名單：** 申請時依勾選課程的**課程連動預設先修**檢查（多課 **AND**）。帳號不存在 → 不符合（原因：帳號不存在）。僅符合者寫入 `resv_learner`；**學員數 = 審核名單來源列數**；全部不符合允許學員數 = 0 繼續申請。先修語意見下「先修放寬」。
 2. **視訊預排開始時間：** 業務填寫的**期望開始時間不可變更**。教室衝突或當日無法以該時間排下時，**改排下一個可排工作日（同一時分）**，禁止同日自動改為 17:00 等空檔。
 3. **視訊總時數 vs 日曆區塊：** 課程連動「視訊時數」為總授課時數；月曆可依最晚結束時間／每日上限切成多日區塊。
 4. **Moodle XMLDB：** 表名 ≤ 28 字元；避免 `CHAR NOT NULL DEFAULT ''`。
 5. **通知失敗不阻斷**核准／報名等主流程。
+6. **先修放寬（2026-08）：** 對 `verify_type = course`（整課完成），通過條件為：**Moodle 課程已完成**，或 **存在 status=approved 的該先修課程場次報名且該場次 `starttime` < 目標場次 `starttime`**（同日上下午可；多日先修只要開始較早即可），或 **專班同一次申請之勾選課程含該先修**。pending 不算。活動／成績型規則不適用報名放寬。先修 approved 報名被取消／駁回導致後課不再符合時，**自動取消**後課並通知學員與報名業務。
+   - **規則來源（5.17.8）：** 報名／批次檢查以**課程連動先修預設**為準（避免場次舊快照只有成績規則）。場次「明確清除先修」仍可關閉檢查；僅當該課沒有連動預設時才回退場次已存規則。
 
 ### 0.6 品牌
 
@@ -163,6 +179,8 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
   - Cron Job：`classes/task/remind_pending_enrolment.php`
 - 設定來源：
   - 由 `settings.php` 提供可調參數
+  - 參數名稱：`reminder_threshold_enabled`（checkbox，預設啟用）
+    - 關閉時排程與通知 helper 皆不發送逾時未審提醒
   - 參數名稱：`reminder_threshold`
   - UI?Dropdown
   - 可選值：
@@ -170,7 +188,7 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
     - 小時：1, 2, 3, ... , 24
   - 預設值：24 小時
 - 設定儲存：
-  - 寫入 `config_plugins` 的 `reminder_threshold`
+  - 寫入 `config_plugins` 的 `reminder_threshold_enabled`、`reminder_threshold`
 - 篩選條件：
   - `timecreated < (current_time - reminder_threshold_seconds)`
   - 僅通知 `pending` 狀態報名
@@ -403,18 +421,19 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
   - 審核管理：核准/拒絕報名（`local/tm_course:approve`）。
   - 權限規則：管理批次報名自動授權規則（`settings/permissions.php`）。
   - 報名查詢：可看全部報名紀錄（`local/tm_course:viewall`）。
-  - 批次報名：可執行批次加入，且可對已截止場次批次加入（admin override）。
+  - 批次報名：可執行批次加入，且可對**已額滿／已截止**場次批次加入（admin override）。
 
 - 業務（Sales，`permissions_manager::user_can_batch_enrol()` 為 true）：
   - 可用批次報名入口（前提：符合角色 capability 或規則命中）。
   - 不可使用管理者後台（無 `local/tm_course:manage`）。
-  - 已截止場次不可批次加入（由 `batch_enrol.php` 擋下，僅管理者可 override）。
+  - 已額滿／已截止場次不可批次加入（由 `batch_enrol.php` 擋下，僅管理者可 override）。
   - 一般情境不可看全部報名（除非另授 `local/tm_course:viewall`）。
+  - **視訊連結按鈕：** 前台場次列表對所有「視訊且已填 meeting_link」的場次，可直接看到「加入視訊課程」按鈕（不需本人已報名／已核准）。一般學員仍僅在本人該場次報名已核准時可見。
 
 - 一般使用者（Learner，具 `local/tm_course:enrol`）：
   - 可在前台瀏覽場次、報名/重報、取消報名。
   - 不可審核、不可批次報名、不可進入管理設定頁。
-  - 對已截止場次不可報名。
+  - 對已額滿／已截止場次不可報名。
 
 ## 14. 首頁 Dashboard（方案 A，2026-04-10）
 
@@ -1566,6 +1585,8 @@ delivery_mode = onsite：
 
 ## 50. 已實作更新（2026-05-19，實體額滿依桌次／視訊僅截止）
 
+> **已由 §56 覆寫（2026-08-10）**：實體額滿改回人數制；Admin 可無視額滿。以下為當日歷史紀錄。
+
 - **實體課 — 額滿**：`recalculate_status()` 改為「`num_desks` 每一桌皆至少有一位**已核准且已分配桌號**學員」→ `STATUS_FULL`；**不再**以「已核准人數 ≥ 建議名額（桌×每桌人數）」判斷額滿。
 - **實體課 — 阻擋報名**：`STATUS_FULL` 或 `已截止`（含開課前一日 00:00 自動截止、手動截止）時，**自主報名與業務批次皆不可**；建議人數僅 UI 參考，不阻擋核准或單桌超額。
 - **視訊課**：**不使用**額滿擋報名；僅 `已截止`（自動／手動）關門；`recalculate_status()` 不將視訊標為 `FULL`。
@@ -1670,7 +1691,7 @@ delivery_mode = onsite：
 
 | 任務 | 用途（摘要） |
 |------|----------------|
-| `remind_pending_enrolment` | 逾時未審提醒（`reminder_threshold`）。 |
+| `remind_pending_enrolment` | 逾時未審提醒（需 `reminder_threshold_enabled`；閾值 `reminder_threshold`）。 |
 | `auto_close_sessions` | 開課日前一日 00:00 截止場次。 |
 | `send_pre_class_notification` | 課前通知：明日實體課程摘要信（見 §51）。 |
 | `close_incomplete_reservation_sessions` | 專屬開班檢核逾期自動關閉場次。 |
@@ -1783,7 +1804,9 @@ delivery_mode = onsite：
 | 單條規則—課程 | 僅 **TM 啟用課程**（`local_tm_enabled_courses`） |
 | 單條規則—驗證 | **整門課程完成**，或 **指定活動完成**（活動須有 Moodle 完成度追蹤） |
 | 活動條件 | **全部指定活動** 或 **任一指定活動** |
-| 驗證來源 | Moodle `completion_info`（整課／活動完成狀態） |
+| 驗證來源 | Moodle `completion_info`（整課／活動完成狀態）；整課規則另可認 **approved 時序報名**／**專班共包**（見 §0.5 規則 6） |
+| 整課放寬 | `starttime(先修場次) < starttime(目標場次)`；僅 `ENROL_APPROVED`；不含 pending |
+| 連帶取消 | 失去先修依據時自動取消依賴之後課，並通知學員 + 報名業務 |
 
 ### 53.2 管理端設定
 
@@ -2040,3 +2063,53 @@ delivery_mode = onsite：
 - `admin/review_center.php`：專班區塊計數／列表僅初審學員；初審完成後隱藏「學員報名審核」子區塊。
 - `admin/enrolments.php?from_resv=`：僅列出初審學員，並顯示提示文案。
 - 語系：`reservation_review_enrol_sessions_title`、`reservation_batch_full_hint`、`reservation_review_enrol_initial_only_hint`（`zh_tw` / `en`）。
+
+## 56. 已實作更新（2026-08-10，實體額滿改回人數制／Admin 可無視額滿）
+
+### 56.1 背景
+
+§50 以「每桌至少一位已核准且已分配桌號」判定 `STATUS_FULL` 並擋報名，會造成「剩餘名額（人數）仍 > 0，但桌次已全佔 → 業務／Admin 皆無法再加人」的落差。
+
+### 56.2 規則
+
+- **實體課 — 額滿**：`recalculate_status()` 以「已核准人數 ≥ 建議名額（`num_desks × persons_per_desk`）」→ `STATUS_FULL`；**不再**以桌次是否全佔判斷額滿。
+- **實體課 — 阻擋報名**：
+  - 學員自主報名、業務批次：`STATUS_FULL`／人數額滿，或已截止／關閉時不可。
+  - 桌次佔用僅供名冊／UI 參考，不擋報名；核准仍可不擋單桌超額與建議名額超額（沿用 §49）。
+- **視訊課**：維持不因額滿擋報名；僅截止／關閉關門。
+- **管理員**（`local/tm_course:manage`）：所有走 `can_submit_enrolment(..., true)`／`batch_enrol_pending(..., allowclosed=true)` 的路徑（手動批次、專屬班核准寫入等）可**同時無視額滿與截止／關閉**。
+- **狀態時間軸（實體）**：開放 →（已核准達建議名額）→ 額滿 →（開課前一日 00:00 等）→ 已截止。
+
+### 56.3 版號與升級
+
+- 版號：`2026081001` / release `5.17.5`（無 DB schema 變更）。
+- 升級時對非 `CLOSED` 的 OPEN/FULL 場次重算狀態。
+
+### 56.4 相關檔案
+
+- `classes/session_manager.php`：`is_onsite_persons_full()`、`can_submit_enrolment()`、`recalculate_status()`
+- `classes/enrolment_manager.php`：`enrol()` / `batch_enrol_pending()` 錯誤分支
+- `index.php`、`enrol_form.php`、`enrol_apply_step.php`：前台額滿徽章／入口
+- `db/upgrade.php`：重算 OPEN/FULL
+
+---
+
+## 57. 已實作更新（2026-08-27，點名名單姓名 → Moodle 個人檔）
+
+**狀態**：已實作（版號 `2026082701` / release `5.19.1`）。
+
+### 57.1 行為
+
+| 項目 | 規格 |
+|------|------|
+| 畫面 | 僅 **上課準備／點名** `admin/class_prep.php`（`attendance_roster_partial.php`） |
+| 權限 | 頁面既有 `permissions_manager::user_can_attendance()`；連結不出現在「查看報名狀況」等其他名冊 |
+| 連結 | 有真實 Moodle 帳號時，姓名為連結 → `/user/profile.php?id={userid}`（`target=_blank`） |
+| userid 來源 | 一般報名：`enrol.userid`；卡位：`linked_userid`；無綁定卡位：純文字 |
+| 不顯示 | 名冊上仍不直接列出 Email（信箱在 Moodle 個人檔，受站台隱私設定影響） |
+
+### 57.2 相關檔案
+
+- `classes/enrolment_manager.php`：`build_session_attendance_view()` 增加 `profile_userid`
+- `admin/attendance_roster_partial.php`：姓名渲染 helper
+- `styles.css`、`lang/en`、`lang/zh_tw`

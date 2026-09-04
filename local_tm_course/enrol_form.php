@@ -20,7 +20,7 @@ $session = session_manager::get_session($sessionid);
 if (!session_manager::can_submit_enrolment($session, false)) {
     if (!session_manager::is_online_session($session)
         && ((int) $session->status === session_manager::STATUS_FULL
-            || session_manager::is_onsite_desks_full($session))) {
+            || session_manager::is_onsite_persons_full($session))) {
         redirect(new moodle_url('/local/tm_course/index.php'),
             get_string('session_status_full', 'local_tm_course'),
             null,

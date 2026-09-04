@@ -53,12 +53,14 @@ $courseids = array_values(array_unique(array_filter(array_map('intval', $coursei
 
 $rules = null;
 $usecoursedefaults = false;
+$session = null;
 if ($sessionid > 0) {
     try {
         $session = session_manager::get_session($sessionid);
         $rules = prerequisite_manager::parse_session_rules($session);
     } catch (\moodle_exception $e) {
         $rules = null;
+        $session = null;
     }
 } else if (!empty($courseids)) {
     $usecoursedefaults = true;
@@ -93,11 +95,17 @@ $out = [
     'account_missing' => false,
 ];
 
-if ($rules !== null) {
-    $eval = prerequisite_manager::evaluate_user((int)$user->id, $rules);
+if ($rules !== null && $session) {
+    $ctx = prerequisite_manager::context_for_session($session);
+    $eval = prerequisite_manager::evaluate_user((int)$user->id, $rules, $ctx);
     $out['prereq_met'] = !empty($eval['met']);
     $out['prereq_reasons'] = prerequisite_manager::flatten_missing_reasons($eval['missing']);
     $out['prereq_missing'] = prerequisite_manager::format_missing_reason_list($eval['missing']);
+    $out['prereq_operator'] = (string)($rules['operator'] ?? '');
+    $out['prereq_rule_types'] = array_values(array_map(static function($r) {
+        return (string)($r['verify_type'] ?? '');
+    }, (array)($rules['rules'] ?? [])));
+    $out['prereq_target_starttime'] = (int)($ctx['target_starttime'] ?? 0);
 } else if ($usecoursedefaults) {
     $eval = prerequisite_manager::evaluate_user_against_course_defaults((int)$user->id, $courseids);
     $out['prereq_met'] = !empty($eval['met']);

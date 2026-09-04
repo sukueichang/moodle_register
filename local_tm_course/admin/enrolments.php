@@ -138,6 +138,7 @@ echo $OUTPUT->header();
 
 <?php if (!$sessionid): ?>
 <!-- ---- Session selection list ---- -->
+<div class="tm-table-responsive">
 <table class="tm-table">
 <thead><tr>
     <th>#</th><th><?php echo get_string('session_name', 'local_tm_course'); ?></th><th><?php echo get_string('label_start', 'local_tm_course'); ?></th><th><?php echo get_string('session_total_capacity', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_pending', 'local_tm_course'); ?></th><th><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th>
@@ -167,6 +168,7 @@ echo $OUTPUT->header();
 <?php endforeach; ?>
 </tbody>
 </table>
+</div>
 
 <?php else: ?>
 <!-- ---- Enrolment list for specific session ---- -->
@@ -230,13 +232,247 @@ echo $OUTPUT->header();
     ?></div>
 </div>
 <p class="mb-3">
-    <a href="<?php echo (new moodle_url('/local/tm_course/admin/session_roster.php', ['sessionid' => $sessionid]))->out(); ?>"
-       class="btn btn-sm btn-secondary"><?php echo get_string('session_roster_button', 'local_tm_course'); ?></a>
+    <a href="<?php echo (new moodle_url('/local/tm_course/batch_enrol.php', ['sessionid' => $sessionid]))->out(); ?>"
+       class="btn btn-sm btn-tm-primary"><?php echo get_string('admin_batch_enrol_open', 'local_tm_course'); ?></a>
 </p>
+
+<?php
+$show_desk_board = !$session_is_online && $status_filter === '';
+if ($show_desk_board) {
+    $deskboard = enrolment_manager::build_session_desk_board($sessionid, ['include_pending' => true]);
+}
+?>
+
+<?php if ($show_desk_board): ?>
+<div class="tm-admin-desk-board mt-3" id="tm-admin-desk-board"
+     data-api="<?php echo s((new moodle_url('/local/tm_course/admin/enrolment_desk_api.php'))->out(false)); ?>"
+     data-sesskey="<?php echo sesskey(); ?>"
+     data-sessionid="<?php echo (int) $sessionid; ?>">
+    <h3 class="h5"><?php echo get_string('admin_desk_board_title', 'local_tm_course'); ?></h3>
+    <p class="text-muted small mb-2"><?php echo get_string('admin_desk_board_intro', 'local_tm_course'); ?></p>
+    <p class="small text-muted"><?php echo get_string('admin_desk_drag_hint', 'local_tm_course'); ?></p>
+
+    <div class="tm-roster-grid tm-admin-desk-grid">
+    <?php foreach ($deskboard['desks'] as $desk):
+        $acount = (int) $desk['approved_count'];
+        $capdesk = (int) $desk['capacity'];
+        $isfull = !empty($desk['is_full']);
+        ?>
+        <div class="tm-roster-desk-card tm-admin-desk-dropzone <?php echo $isfull ? 'tm-desk-card-full' : ''; ?>"
+             data-desk="<?php echo (int) $desk['desk_number']; ?>">
+            <div class="tm-roster-desk-head">
+                <strong><?php echo get_string('session_roster_desk_heading', 'local_tm_course', (object) ['n' => (int) $desk['desk_number']]); ?></strong>
+                <span class="text-muted small"><?php echo get_string('batch_desk_approved_count', 'local_tm_course', (object) ['n' => $acount, 'cap' => $capdesk]); ?></span>
+            </div>
+            <div class="tm-admin-desk-learners">
+            <?php foreach ($desk['learners'] as $learner):
+                $ispending = ((int) $learner['status'] === session_manager::ENROL_PENDING);
+                $isapproved = ((int) $learner['status'] === session_manager::ENROL_APPROVED);
+                ?>
+                <div class="tm-admin-learner-card <?php echo $ispending ? 'is-pending' : 'is-approved'; ?>"
+                     draggable="true"
+                     data-enrolid="<?php echo (int) $learner['enrolid']; ?>"
+                     data-desk="<?php echo (int) $desk['desk_number']; ?>">
+                    <div class="tm-admin-learner-head">
+                        <strong><?php echo s($learner['displayname']); ?></strong>
+                        <?php if ($ispending): ?>
+                            <span class="tm-badge tm-badge-pending"><?php echo get_string('admin_desk_pending_badge', 'local_tm_course'); ?></span>
+                        <?php else: ?>
+                            <span class="tm-badge tm-badge-approved"><?php echo get_string('admin_desk_approved_badge', 'local_tm_course'); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($learner['email'] !== ''): ?>
+                    <div class="small text-muted"><?php echo s($learner['email']); ?></div>
+                    <?php endif; ?>
+                    <?php if ($learner['institution'] !== ''): ?>
+                    <div class="small text-muted"><?php echo s($learner['institution']); ?></div>
+                    <?php endif; ?>
+                    <div class="small text-muted"><?php echo s($learner['source_label']); ?></div>
+                    <div class="small tm-desk-diet-wrap">
+                        <?php
+                        $dietlabel = ($learner['diet_summary'] !== '' && $learner['diet_summary'] !== '—')
+                            ? $learner['diet_summary']
+                            : get_string('attendance_diet_no_choice_label', 'local_tm_course');
+                        if (!empty($learner['can_edit_diet'])): ?>
+                        <button type="button"
+                                class="tm-desk-diet-editable btn btn-link btn-sm p-0 align-baseline"
+                                data-enrolid="<?php echo (int) $learner['enrolid']; ?>"
+                                data-diet-choice="<?php echo s($learner['diet_choice'] ?? ''); ?>"
+                                data-diet-note="<?php echo s($learner['diet_special_note'] ?? ''); ?>"
+                                title="<?php echo s(get_string('attendance_diet_click_edit', 'local_tm_course')); ?>">
+                            <?php echo s($dietlabel); ?>
+                        </button>
+                        <?php else: ?>
+                        <span><?php echo s($dietlabel); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($learner['batch_submitter_note'] !== ''): ?>
+                    <div class="small mt-1"><em><?php echo nl2br(s($learner['batch_submitter_note'])); ?></em></div>
+                    <?php endif; ?>
+                    <?php if ($ispending): ?>
+                    <div class="tm-admin-learner-actions mt-2">
+                        <form method="post" action="" class="d-inline">
+                            <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                            <input type="hidden" name="action" value="approve">
+                            <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                            <input type="hidden" name="desk_number" value="<?php echo (int)$desk['desk_number']; ?>">
+                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                            <?php if ($fromresv > 0): ?>
+                            <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                            <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                            <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                            <?php endif; ?>
+                            <button type="submit" class="btn btn-sm btn-tm-success"
+                                onclick="return confirm(<?php echo json_encode(get_string('confirm_approve_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('approve_enrolment', 'local_tm_course'); ?></button>
+                        </form>
+                        <form method="post" action="" class="tm-admin-reject-form mt-1">
+                            <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                            <input type="hidden" name="action" value="reject">
+                            <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                            <?php if ($fromresv > 0): ?>
+                            <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                            <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                            <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                            <?php endif; ?>
+                            <input type="text" name="reason" class="form-control form-control-sm mb-1"
+                                   placeholder="<?php echo s(get_string('reject_reason_prompt_optional', 'local_tm_course')); ?>">
+                            <button type="submit" class="btn btn-sm btn-tm-danger"
+                                onclick="return confirm(<?php echo json_encode(get_string('confirm_reject_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('reject_enrolment', 'local_tm_course'); ?></button>
+                        </form>
+                    </div>
+                    <?php elseif ($isapproved): ?>
+                    <form method="post" action="" class="mt-2">
+                        <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                        <input type="hidden" name="action" value="unapprove">
+                        <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                        <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                        <?php if ($fromresv > 0): ?>
+                        <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                        <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                        <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                        <?php endif; ?>
+                        <button type="submit" class="btn btn-sm btn-secondary"
+                                onclick="return confirm(<?php echo json_encode(get_string('confirm_unapprove_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('unapprove_enrolment', 'local_tm_course'); ?></button>
+                    </form>
+                    <?php endif; ?>
+                </div>
+            <?php endforeach; ?>
+            </div>
+        </div>
+    <?php endforeach; ?>
+    </div>
+
+    <?php if (!empty($deskboard['unassigned'])): ?>
+    <div class="tm-roster-unassigned mt-4">
+        <h4 class="h5"><?php echo get_string('admin_desk_unassigned', 'local_tm_course'); ?></h4>
+        <div class="tm-admin-desk-learners tm-admin-unassigned-list">
+        <?php foreach ($deskboard['unassigned'] as $learner):
+            $ispending = ((int) $learner['status'] === session_manager::ENROL_PENDING);
+            $isapproved = ((int) $learner['status'] === session_manager::ENROL_APPROVED);
+            ?>
+            <div class="tm-admin-learner-card <?php echo $ispending ? 'is-pending' : 'is-approved'; ?>"
+                 draggable="<?php echo ($ispending || $isapproved) ? 'true' : 'false'; ?>"
+                 data-enrolid="<?php echo (int) $learner['enrolid']; ?>"
+                 data-desk="0">
+                <div class="tm-admin-learner-head">
+                    <strong><?php echo s($learner['displayname']); ?></strong>
+                    <?php if ($ispending): ?>
+                        <span class="tm-badge tm-badge-pending"><?php echo get_string('admin_desk_pending_badge', 'local_tm_course'); ?></span>
+                    <?php else: ?>
+                        <span class="tm-badge tm-badge-approved"><?php echo get_string('admin_desk_approved_badge', 'local_tm_course'); ?></span>
+                    <?php endif; ?>
+                </div>
+                <?php if ($learner['email'] !== ''): ?>
+                <div class="small text-muted"><?php echo s($learner['email']); ?></div>
+                <?php endif; ?>
+                <?php if ($learner['institution'] !== ''): ?>
+                <div class="small text-muted"><?php echo s($learner['institution']); ?></div>
+                <?php endif; ?>
+                <div class="small text-muted"><?php echo s($learner['source_label']); ?></div>
+                <div class="small tm-desk-diet-wrap">
+                    <?php
+                    $dietlabel = ($learner['diet_summary'] !== '' && $learner['diet_summary'] !== '—')
+                        ? $learner['diet_summary']
+                        : get_string('attendance_diet_no_choice_label', 'local_tm_course');
+                    if (!empty($learner['can_edit_diet'])): ?>
+                    <button type="button"
+                            class="tm-desk-diet-editable btn btn-link btn-sm p-0 align-baseline"
+                            data-enrolid="<?php echo (int) $learner['enrolid']; ?>"
+                            data-diet-choice="<?php echo s($learner['diet_choice'] ?? ''); ?>"
+                            data-diet-note="<?php echo s($learner['diet_special_note'] ?? ''); ?>"
+                            title="<?php echo s(get_string('attendance_diet_click_edit', 'local_tm_course')); ?>">
+                        <?php echo s($dietlabel); ?>
+                    </button>
+                    <?php else: ?>
+                    <span><?php echo s($dietlabel); ?></span>
+                    <?php endif; ?>
+                </div>
+                <?php if ($ispending): ?>
+                <p class="small text-warning mb-1"><?php echo get_string('error_desk_required_for_approval', 'local_tm_course'); ?></p>
+                <form method="post" action="" class="tm-admin-reject-form mt-1">
+                    <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                    <input type="hidden" name="action" value="reject">
+                    <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                    <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                    <?php if ($fromresv > 0): ?>
+                    <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                    <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                    <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                    <?php endif; ?>
+                    <input type="text" name="reason" class="form-control form-control-sm mb-1"
+                           placeholder="<?php echo s(get_string('reject_reason_prompt_optional', 'local_tm_course')); ?>">
+                    <button type="submit" class="btn btn-sm btn-tm-danger"
+                        onclick="return confirm(<?php echo json_encode(get_string('confirm_reject_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('reject_enrolment', 'local_tm_course'); ?></button>
+                </form>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+</div>
+
+<?php
+$deskjs_path = __DIR__ . '/enrolments_desk.js';
+$deskjs_ver = file_exists($deskjs_path) ? filemtime($deskjs_path) : time();
+$deskjs_url = new moodle_url('/local/tm_course/admin/enrolments_desk.js', ['v' => $deskjs_ver]);
+?>
+<script>
+window.tmEnrolDeskCfg = <?php echo json_encode([
+    'moveFailed' => get_string('admin_desk_move_failed', 'local_tm_course'),
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>;
+window.tmDeskDietCfg = <?php echo json_encode([
+    'api' => (new moodle_url('/local/tm_course/diet_update.php'))->out(false),
+    'sesskey' => sesskey(),
+    'strings' => [
+        'meat' => get_string('diet_choice_meat', 'local_tm_course'),
+        'vegetarian' => get_string('diet_choice_vegetarian', 'local_tm_course'),
+        'noChoice' => get_string('attendance_diet_no_choice_label', 'local_tm_course'),
+        'clickEdit' => get_string('attendance_diet_click_edit', 'local_tm_course'),
+        'specialNote' => get_string('diet_special_note', 'local_tm_course'),
+        'save' => get_string('savechanges'),
+        'cancel' => get_string('cancel'),
+        'failed' => get_string('error_diet_choice_required', 'local_tm_course'),
+    ],
+], JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_UNICODE); ?>;
+</script>
+<script src="<?php echo $deskjs_url->out(); ?>"></script>
+<?php
+$dietjs_path = dirname(__DIR__) . '/desk_diet_edit.js';
+$dietjs_ver = file_exists($dietjs_path) ? filemtime($dietjs_path) : time();
+$dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $dietjs_ver]);
+?>
+<script src="<?php echo $dietjs_url->out(); ?>"></script>
+
+<details class="mt-4">
+    <summary class="mb-2"><?php echo get_string('all_statuses', 'local_tm_course'); ?> / <?php echo get_string('view'); ?></summary>
+<?php endif; ?>
 
 <?php if (empty($enrolments)): ?>
     <div class="tm-alert tm-alert-info"><?php echo get_string('enrolments_none_found', 'local_tm_course'); ?></div>
 <?php else: ?>
+<div class="tm-table-responsive">
 <table class="tm-table">
 <thead><tr>
     <th>#</th>
@@ -324,6 +560,11 @@ echo $OUTPUT->header();
                 <input type="hidden" name="action" value="approve">
                 <input type="hidden" name="enrolid" value="<?php echo (int)$e->id; ?>">
                 <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                <?php if ($fromresv > 0): ?>
+                <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                <?php endif; ?>
                 <?php if ($session_is_online): ?>
                 <input type="hidden" name="desk_number" value="0">
                 <?php else: ?>
@@ -331,7 +572,7 @@ echo $OUTPUT->header();
                         aria-label="<?php echo get_string('approve_desk_select', 'local_tm_course'); ?>">
                     <option value=""><?php echo get_string('choosedots'); ?></option>
                     <?php for ($dn = 1; $dn <= (int) $se->num_desks; $dn++): ?>
-                    <option value="<?php echo $dn; ?>"><?php echo get_string('label_desk', 'local_tm_course'); ?> <?php echo $dn; ?></option>
+                    <option value="<?php echo $dn; ?>" <?php echo ((int)($e->desk_number ?? 0) === $dn) ? 'selected' : ''; ?>><?php echo get_string('label_desk', 'local_tm_course'); ?> <?php echo $dn; ?></option>
                     <?php endfor; ?>
                 </select>
                 <?php endif; ?>
@@ -343,6 +584,11 @@ echo $OUTPUT->header();
                 <input type="hidden" name="action" value="reject">
                 <input type="hidden" name="enrolid" value="<?php echo (int)$e->id; ?>">
                 <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                <?php if ($fromresv > 0): ?>
+                <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                <?php endif; ?>
                 <input type="text" name="reason" class="form-control form-control-sm"
                        style="width:auto;max-width:14rem"
                        placeholder="<?php echo s(get_string('reject_reason_prompt_optional', 'local_tm_course')); ?>">
@@ -355,6 +601,11 @@ echo $OUTPUT->header();
                 <input type="hidden" name="action" value="unapprove">
                 <input type="hidden" name="enrolid" value="<?php echo (int)$e->id; ?>">
                 <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                <?php if ($fromresv > 0): ?>
+                <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                <?php endif; ?>
                 <button type="submit" class="btn btn-sm btn-secondary"
                         onclick="return confirm(<?php echo json_encode(get_string('confirm_unapprove_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('unapprove_enrolment', 'local_tm_course'); ?></button>
             </form>
@@ -366,6 +617,11 @@ echo $OUTPUT->header();
 <?php endforeach; ?>
 </tbody>
 </table>
+</div>
+<?php endif; ?>
+
+<?php if ($show_desk_board): ?>
+</details>
 <?php endif; ?>
 <?php endif; ?>
 

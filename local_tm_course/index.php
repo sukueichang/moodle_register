@@ -32,9 +32,20 @@ $PAGE->requires->js(new moodle_url('https://cdn.jsdelivr.net/npm/fullcalendar@6.
 $is_admin = has_capability('local/tm_course:manage', context_system::instance());
 $can_viewall = has_capability('local/tm_course:viewall', context_system::instance());
 $can_batch_enrol = permissions_manager::user_can_batch_enrol();
-$can_view_session_roster = $is_admin || $can_batch_enrol;
+// Must match enrolments.php gate (approve only). Do NOT treat manage alone as approver —
+// manage without approve must stay on read-only session_roster.php.
+$can_open_enrolments_board = has_capability('local/tm_course:approve', context_system::instance())
+    || is_siteadmin();
+$can_approve_enrolments = $can_open_enrolments_board || $is_admin;
 $can_attendance_access = permissions_manager::user_can_attendance();
+// Approvers, managers, batch sales, and class-prep/attendance staff may open roster.
+$can_view_session_roster = $can_approve_enrolments || $can_batch_enrol || $can_attendance_access;
 $can_self_enrol_by_role = permissions_manager::user_can_self_enrol_by_role();
+
+// Only real approvers open the interactive desk board; others get read-only roster.
+$roster_url_path = $can_open_enrolments_board
+    ? '/local/tm_course/admin/enrolments.php'
+    : '/local/tm_course/admin/session_roster.php';
 
 // ---- Handle enrolment submission ----
 $enrol_action = optional_param('enrol_action', '', PARAM_ALPHANUMEXT);
@@ -120,7 +131,7 @@ $status_labels = [
 $calendar_api_url = (new moodle_url('/local/tm_course/calendar_events.php', ['sesskey' => sesskey()]))->out(false);
 $calendar_enrol_url_base = (new moodle_url('/local/tm_course/enrol_form.php'))->out(false);
 $calendar_batch_url_base = (new moodle_url('/local/tm_course/batch_enrol.php'))->out(false);
-$calendar_roster_url_base = (new moodle_url('/local/tm_course/admin/session_roster.php'))->out(false);
+$calendar_roster_url_base = (new moodle_url($roster_url_path))->out(false);
 $calendar_attendance_url_base = (new moodle_url('/local/tm_course/admin/class_prep.php'))->out(false);
 $calendar_admin_url = (new moodle_url('/local/tm_course/admin/sessions.php'))->out(false);
 $calendar_month_view_label = get_string('calendar_month_view', 'local_tm_course');
@@ -224,6 +235,7 @@ foreach ($sessions as $s) {
     $show_already = $my_enrol && !$my_enrol_is_cancelled && !$my_enrol_is_rejected;
     $eligible_for_self_enrol = $can_enrol_capability && $can_self_enrol_by_role;
     $can_submit_enrol = session_manager::can_submit_enrolment($s, false);
+    $can_submit_batch = session_manager::can_submit_enrolment($s, $is_admin);
     $show_enrol_form = !$show_already
         && $can_submit_enrol
         && ($my_enrol_is_cancelled || $my_enrol_is_rejected || !$my_enrol)
@@ -240,7 +252,7 @@ foreach ($sessions as $s) {
     $show_full_badge = !$show_already && !$show_enrol_form && !$show_closed_btn && !$show_contact_notice
         && !session_manager::is_online_session($s)
         && ((int) $s->status === session_manager::STATUS_FULL
-            || session_manager::is_onsite_desks_full($s));
+            || session_manager::is_onsite_persons_full($s));
 
     $show_cancel = $show_already && $my_enrol
         && in_array((int) $my_enrol->status, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true);
@@ -279,12 +291,12 @@ foreach ($sessions as $s) {
         }
     }
 
-    $show_batch_open = $can_batch_enrol && $can_submit_enrol;
+    $show_batch_open = $can_batch_enrol && $can_submit_batch;
     $show_batch_closed = $can_batch_enrol && !$show_batch_open;
     $batch_disabled_label = $closed_str;
     if ($show_batch_closed && !session_manager::is_online_session($s)
         && ((int) $s->status === session_manager::STATUS_FULL
-            || session_manager::is_onsite_desks_full($s))) {
+            || session_manager::is_onsite_persons_full($s))) {
         $batch_disabled_label = $full_str;
     }
 
@@ -346,7 +358,7 @@ foreach ($sessions as $s) {
         'desks' => $desks,
         'show_roster_link' => $can_view_session_roster,
         'roster_url' => $can_view_session_roster
-            ? (new moodle_url('/local/tm_course/admin/session_roster.php', ['sessionid' => (int) $s->id]))->out(false)
+            ? (new moodle_url($roster_url_path, ['sessionid' => (int) $s->id]))->out(false)
             : '',
         'roster_label' => get_string('session_roster_button', 'local_tm_course'),
         'show_prereq' => $show_prereq,

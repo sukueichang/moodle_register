@@ -264,7 +264,7 @@ class enrolment_manager {
         if (!session_manager::can_submit_enrolment($session, false)) {
             if (!session_manager::is_online_session($session)
                 && ((int) $session->status === session_manager::STATUS_FULL
-                    || session_manager::is_onsite_desks_full($session))) {
+                    || session_manager::is_onsite_persons_full($session))) {
                 throw new \moodle_exception('error_session_full', 'local_tm_course');
             }
             if (session_manager::is_registration_deadline_passed($session)) {
@@ -325,8 +325,9 @@ class enrolment_manager {
                    : session_manager::ENROL_APPROVED;
 
         // 5.5 Course-level mutual exclusion:
-        // If user has an active enrolment in any other session of the same course,
-        // block the enrol attempt to avoid duplicates/conflicts.
+        // If user has an active enrolment in any other *upcoming/ongoing* session of the
+        // same course, block the enrol attempt. Past sessions (already ended) and
+        // rejected/cancelled rows do not block retaking.
         $activeStatuses = [
             session_manager::ENROL_PENDING,
             session_manager::ENROL_APPROVED,
@@ -338,20 +339,28 @@ class enrolment_manager {
                                 JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                                WHERE e.userid = :uid
                                  AND s.courseid = :cid
+                                 AND e.sessionid <> :sid
+                                 AND s.endtime > :now
                                  AND e.status $statusinsql";
         $courseparams = [
             'uid' => $userid,
             'cid' => (int)$session->courseid,
+            'sid' => (int)$sessionid,
+            'now' => time(),
         ] + $statusparams;
         if ($DB->record_exists_sql($courseconflictsql, $courseparams)) {
-            $conflictsql = "SELECT s.starttime
+            $conflictsql = "SELECT s.id, s.starttime
                               FROM {local_tm_course_enrolments} e
                               JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                              WHERE e.userid = :uid
                                AND s.courseid = :cid
+                               AND e.sessionid <> :sid
+                               AND s.endtime > :now
                                AND e.status $statusinsql
                              ORDER BY s.starttime ASC";
-            $conflictrow = $DB->get_record_sql($conflictsql, $courseparams, IGNORE_MISSING);
+            // Limit 1: learner may have several active rows; get_record_sql would debug-fail.
+            $conflictrows = $DB->get_records_sql($conflictsql, $courseparams, 0, 1);
+            $conflictrow = $conflictrows ? reset($conflictrows) : false;
             $datehint = $conflictrow ? userdate((int)$conflictrow->starttime, get_string('strftimedatetimeshort')) : '';
             throw new \moodle_exception('error_course_enrolment_conflict_with_date', 'local_tm_course', '', $datehint);
         }
@@ -467,12 +476,15 @@ class enrolment_manager {
         if ($isonline) {
             $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
         } else {
-            // Desk assignment required when approving (dropdown 1..num_desks).
+            // Prefer explicit desk; else keep desk already chosen at batch submit / drag.
             $deskno = (int) ($deskno ?? 0);
+            if ($deskno < 1) {
+                $deskno = (int) ($enrol->desk_number ?? 0);
+            }
             if ($deskno < 1 || $deskno > (int) $session->num_desks) {
                 throw new \moodle_exception('error_desk_required_for_approval', 'local_tm_course');
             }
-
+            // Admin may approve onto a full desk (capacity ignored).
             $DB->set_field('local_tm_course_enrolments', 'desk_number', $deskno, ['id' => $enrolid]);
         }
 
@@ -538,6 +550,7 @@ class enrolment_manager {
         }
         self::clear_sync_health_state((int)$enrolid);
         notification_helper::notify_approval_result((int)$enrolid, false, (string)$reason);
+        self::cascade_cancel_after_prereq_lost((int)$enrolid);
     }
 
     /**
@@ -552,12 +565,34 @@ class enrolment_manager {
         $session = session_manager::get_session((int) $enrol->sessionid);
         $syncuserid = self::moodle_sync_subject_userid($enrol);
         $DB->set_field('local_tm_course_enrolments', 'status', session_manager::ENROL_PENDING, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
+        // Keep desk_number so the learner stays on the desk board while pending again.
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status((int) $enrol->sessionid);
         self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
         attendance_manager::remove_from_group((int)$enrol->sessionid, $syncuserid);
         self::clear_sync_health_state((int)$enrolid);
+        self::cascade_cancel_after_prereq_lost((int)$enrolid);
+    }
+
+    /**
+     * Admin: move pending or approved enrolment to another desk (capacity ignored).
+     */
+    public static function change_desk_assignment(int $enrolid, int $deskno): void {
+        global $DB;
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        $status = (int) $enrol->status;
+        if (!in_array($status, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true)) {
+            throw new \moodle_exception('error_desk_move_status', 'local_tm_course');
+        }
+        $session = session_manager::get_session((int) $enrol->sessionid);
+        if (session_manager::is_online_session($session)) {
+            throw new \moodle_exception('error_desk_move_online', 'local_tm_course');
+        }
+        if ($deskno < 1 || $deskno > (int) $session->num_desks) {
+            throw new \moodle_exception('error_desk_assignment_range', 'local_tm_course');
+        }
+        $DB->set_field('local_tm_course_enrolments', 'desk_number', $deskno, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
     }
 
     /**
@@ -582,9 +617,13 @@ class enrolment_manager {
         $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $reasontext, ['id' => $enrolid]);
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status($enrol->sessionid);
-        attendance_manager::remove_from_group((int)$enrol->sessionid, (int)$enrol->userid);
-        self::clear_sync_health_state((int)$enrolid);
-        notification_helper::notify_enrolment_cancelled((int)$enrolid);
+        try {
+            attendance_manager::remove_from_group((int)$enrol->sessionid, (int)$enrol->userid);
+            self::clear_sync_health_state((int)$enrolid);
+            notification_helper::notify_enrolment_cancelled((int)$enrolid);
+        } finally {
+            self::cascade_cancel_after_prereq_lost((int)$enrolid);
+        }
     }
 
     /**
@@ -622,48 +661,113 @@ class enrolment_manager {
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status((int) $enrol->sessionid);
 
-        if ($wasapproved) {
-            self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
-            attendance_manager::remove_from_group((int) $enrol->sessionid, $syncuserid);
+        try {
+            if ($wasapproved) {
+                try {
+                    self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
+                } catch (\Throwable $e) {
+                    debugging('TM Course unenrol on batch cancel failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+                try {
+                    attendance_manager::remove_from_group((int) $enrol->sessionid, $syncuserid);
+                } catch (\Throwable $e) {
+                    debugging('TM Course remove_from_group on batch cancel failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+            }
+            self::clear_sync_health_state((int) $enrolid);
+            try {
+                notification_helper::notify_enrolment_cancelled((int) $enrolid);
+            } catch (\Throwable $e) {
+                debugging('TM Course cancel notify failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        } finally {
+            // Always cascade even if LMS sync / email fails.
+            self::cascade_cancel_after_prereq_lost((int) $enrolid);
         }
-        self::clear_sync_health_state((int) $enrolid);
-        notification_helper::notify_enrolment_cancelled((int) $enrolid);
+    }
+
+    /**
+     * Whether $userid may edit diet on this enrolment.
+     *
+     * Rules: admin/approver → anyone; batch submitter → own batch rows;
+     * enrolment holder / linked learner → own row.
+     */
+    public static function user_can_edit_diet(\stdClass $enrol, ?int $userid = null): bool {
+        global $USER;
+        $userid = $userid ?? (int) $USER->id;
+        if ($userid < 1) {
+            return false;
+        }
+        $status = (int) ($enrol->status ?? -1);
+        if (!in_array($status, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true)) {
+            return false;
+        }
+
+        $ctx = \context_system::instance();
+        if (is_siteadmin($userid)
+            || has_capability('local/tm_course:manage', $ctx, $userid)
+            || has_capability('local/tm_course:approve', $ctx, $userid)) {
+            return true;
+        }
+        if ((int) ($enrol->userid ?? 0) === $userid) {
+            return true;
+        }
+        if ((int) ($enrol->linked_userid ?? 0) === $userid) {
+            return true;
+        }
+        if ((int) ($enrol->batch_submittedby ?? 0) === $userid) {
+            return true;
+        }
+        return false;
     }
 
     /**
      * Update diet preference for an existing enrolment owned by the user.
      */
     public static function update_diet(int $enrolid, int $userid, array $diet): void {
-        global $DB;
-        $enrol = $DB->get_record('local_tm_course_enrolments',
-            ['id' => $enrolid, 'userid' => $userid], '*', MUST_EXIST);
+        self::update_diet_by_actor($enrolid, $userid, $diet);
+    }
 
-        $choice = strtoupper(trim((string)($diet['choice'] ?? '')));
+    /**
+     * Update diet as $actorid when permitted (admin / batch submitter / learner).
+     *
+     * @return array{choice:string,special_note:string,label:string}
+     */
+    public static function update_diet_by_actor(int $enrolid, int $actorid, array $diet): array {
+        global $DB;
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        if (!self::user_can_edit_diet($enrol, $actorid)) {
+            throw new \moodle_exception('nopermissions', 'error');
+        }
+
+        $choice = strtoupper(trim((string) ($diet['choice'] ?? '')));
         if (!in_array($choice, ['A', 'B'], true)) {
             throw new \moodle_exception('error_diet_choice_required', 'local_tm_course');
         }
 
-        $dietchoice = $choice;
-        $dietbeef = 0;
-        $dietsea = 0;
-        $specialnote = clean_param((string)($diet['special_note'] ?? ''), PARAM_TEXT);
+        $specialnote = clean_param((string) ($diet['special_note'] ?? ''), PARAM_TEXT);
         if ($specialnote === '') {
-            $specialnote = clean_param((string)($diet['meat_other'] ?? ($diet['vegetarian_notes'] ?? '')), PARAM_TEXT);
+            $specialnote = clean_param((string) ($diet['meat_other'] ?? ($diet['vegetarian_notes'] ?? '')), PARAM_TEXT);
         }
-        $dietmeat = $specialnote;
-        $dietveg = '';
 
-        $enrol->diet_choice = $dietchoice;
-        $enrol->diet_avoid_beef = $dietbeef;
-        $enrol->diet_avoid_seafood = $dietsea;
-        $enrol->diet_meat_other = $dietmeat;
-        $enrol->diet_vegetarian_notes = $dietveg;
+        $enrol->diet_choice = $choice;
+        $enrol->diet_avoid_beef = 0;
+        $enrol->diet_avoid_seafood = 0;
+        $enrol->diet_meat_other = $specialnote;
+        $enrol->diet_vegetarian_notes = '';
         $enrol->timemodified = time();
         $DB->update_record('local_tm_course_enrolments', $enrol);
+
+        return [
+            'choice' => $choice,
+            'special_note' => $specialnote,
+            'label' => self::format_diet_summary($enrol),
+        ];
     }
 
     /**
      * Update diet preference from the attendance page (staff with attendance permission).
+     * Caller must already enforce attendance capability.
      *
      * @return array{choice:string,special_note:string,label:string}
      */
@@ -725,20 +829,207 @@ class enrolment_manager {
      * @return array{met:bool,missing:array<int,array{label:string,courseid:int}>}
      */
     public static function evaluate_session_prerequisites(\stdClass $session, int $userid): array {
-        return prerequisite_manager::evaluate_user($userid, prerequisite_manager::resolve_session_rules($session));
+        $ctx = prerequisite_manager::context_for_session($session);
+        return prerequisite_manager::evaluate_user(
+            $userid,
+            prerequisite_manager::resolve_session_rules($session),
+            $ctx
+        );
+    }
+
+    /**
+     * Guard against recursive cascade when cancelling a chain of dependent enrolments.
+     * @var array<int,bool>
+     */
+    private static $prereq_cascade_guard = [];
+
+    /**
+     * After an enrolment is cancelled or rejected, cancel dependents that relied on it
+     * as an approved course-complete prerequisite and no longer meet the rules.
+     */
+    public static function cascade_cancel_after_prereq_lost(int $sourceenrolid): void {
+        if ($sourceenrolid <= 0 || !empty(self::$prereq_cascade_guard[$sourceenrolid])) {
+            return;
+        }
+        self::$prereq_cascade_guard[$sourceenrolid] = true;
+        try {
+            global $DB;
+            $source = $DB->get_record('local_tm_course_enrolments', ['id' => $sourceenrolid], '*', IGNORE_MISSING);
+            if (!$source) {
+                return;
+            }
+            $userid = (int)$source->userid;
+            if ($userid < 2) {
+                return;
+            }
+            try {
+                $sourcesession = session_manager::get_session((int)$source->sessionid);
+            } catch (\Throwable $e) {
+                return;
+            }
+            $prereqcourseid = (int)($sourcesession->courseid ?? 0);
+            if ($prereqcourseid <= 0) {
+                return;
+            }
+
+            $activestatuses = [
+                session_manager::ENROL_PENDING,
+                session_manager::ENROL_APPROVED,
+                session_manager::ENROL_WAITLISTED,
+            ];
+            list($statusinsql, $statusparams) = $DB->get_in_or_equal($activestatuses, SQL_PARAMS_NAMED);
+            $sql = "SELECT e.*
+                      FROM {local_tm_course_enrolments} e
+                     WHERE e.userid = :uid
+                       AND e.id <> :sid
+                       AND e.status $statusinsql";
+            $params = ['uid' => $userid, 'sid' => $sourceenrolid] + $statusparams;
+            $deps = $DB->get_records_sql($sql, $params);
+            if (empty($deps)) {
+                return;
+            }
+
+            $prereqname = format_string((string)($sourcesession->name ?? ''));
+            foreach ($deps as $dep) {
+                $depid = (int)$dep->id;
+                try {
+                    $depsession = session_manager::get_session((int)$dep->sessionid);
+                } catch (\Throwable $e) {
+                    continue;
+                }
+                $rules = prerequisite_manager::resolve_session_rules($depsession);
+                if (!prerequisite_manager::rules_reference_course_complete($rules, $prereqcourseid)) {
+                    continue;
+                }
+
+                // Build a clean context: no co-bundle waiver; exclude the lost enrolment.
+                $ctx = [
+                    'target_starttime' => (int)($depsession->starttime ?? 0),
+                    'coselected_courseids' => [],
+                    'exclude_enrolment_ids' => [$sourceenrolid],
+                ];
+
+                // If the learner still satisfies the course-complete path for the lost
+                // prereq course (Moodle completion or another approved earlier session),
+                // keep the dependent enrolment.
+                $coursepathok = false;
+                try {
+                    global $CFG;
+                    require_once($CFG->dirroot . '/lib/datalib.php');
+                    $prereqcourse = get_course($prereqcourseid, false);
+                    if ($prereqcourse) {
+                        $coursepathok = prerequisite_manager::user_meets_course_complete_rule(
+                            $userid,
+                            $prereqcourseid,
+                            $prereqcourse,
+                            $ctx
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    $coursepathok = false;
+                }
+                if ($coursepathok) {
+                    continue;
+                }
+
+                // Course-complete path for this prereq is broken. Keep the dependent only if
+                // the full rule set is still met without relying on the lost enrolment
+                // (e.g. OR grades path already satisfied).
+                try {
+                    $eval = prerequisite_manager::evaluate_user($userid, $rules, $ctx);
+                    if (!empty($eval['met'])) {
+                        continue;
+                    }
+                } catch (\Throwable $e) {
+                    // Evaluation failed — still cascade-cancel to avoid orphan dependent seats.
+                    debugging('TM Course prereq cascade evaluate failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+
+                try {
+                    self::cancel_due_to_prereq_cascade($depid, $sourceenrolid, $prereqname);
+                } catch (\Throwable $e) {
+                    debugging('TM Course prereq cascade cancel failed for enrol #' . $depid . ': ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+            }
+        } finally {
+            unset(self::$prereq_cascade_guard[$sourceenrolid]);
+        }
+    }
+
+    /**
+     * Cancel a dependent enrolment because its prerequisite enrolment was lost.
+     */
+    private static function cancel_due_to_prereq_cascade(
+        int $enrolid,
+        int $sourceenrolid,
+        string $prereqsessionname
+    ): void {
+        global $DB;
+        if (!empty(self::$prereq_cascade_guard[$enrolid])) {
+            return;
+        }
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', IGNORE_MISSING);
+        if (!$enrol) {
+            return;
+        }
+        $status = (int)$enrol->status;
+        if (in_array($status, [session_manager::ENROL_CANCELLED, session_manager::ENROL_REJECTED], true)) {
+            return;
+        }
+        $wasapproved = ($status === session_manager::ENROL_APPROVED);
+        try {
+            $session = session_manager::get_session((int)$enrol->sessionid);
+        } catch (\Throwable $e) {
+            return;
+        }
+        $syncuserid = self::moodle_sync_subject_userid($enrol);
+
+        $DB->set_field('local_tm_course_enrolments', 'status',
+            session_manager::ENROL_CANCELLED, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_code', 'prereq_cascade', ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $prereqsessionname, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        session_manager::recalculate_status((int)$enrol->sessionid);
+
+        if ($wasapproved) {
+            try {
+                self::sync_moodle_enrolment($syncuserid, (int)$session->courseid, 'unenrol');
+            } catch (\Throwable $e) {
+                // Notification/unenrol failure must not block cascade.
+            }
+            try {
+                attendance_manager::remove_from_group((int)$enrol->sessionid, $syncuserid);
+            } catch (\Throwable $e) {
+                // ignore
+            }
+        }
+        self::clear_sync_health_state($enrolid);
+
+        try {
+            notification_helper::notify_prereq_cascade_cancelled($enrolid, $sourceenrolid, $prereqsessionname);
+        } catch (\Throwable $e) {
+            // ignore
+        }
+
+        // Further dependents of this cancelled row.
+        self::cascade_cancel_after_prereq_lost($enrolid);
     }
 
     /**
      * Translate a batch skip reason code to a user-facing label.
+     *
+     * @param string $errorcode Moodle exception errorcode / lang string id
+     * @param mixed $a Optional get_string() placeholder (e.g. conflicting session hint)
      */
-    public static function format_batch_skip_reason(string $errorcode): string {
+    public static function format_batch_skip_reason(string $errorcode, $a = null): string {
         $errorcode = trim($errorcode);
         if ($errorcode === '') {
             return get_string('batch_skipped_reason_unknown', 'local_tm_course');
         }
         $sm = get_string_manager();
         if ($sm->string_exists($errorcode, 'local_tm_course')) {
-            return get_string($errorcode, 'local_tm_course');
+            return get_string($errorcode, 'local_tm_course', $a);
         }
         return get_string('batch_skipped_reason_unknown', 'local_tm_course');
     }
@@ -746,7 +1037,7 @@ class enrolment_manager {
     /**
      * Build a human-readable summary of skipped batch rows (deduped by reason).
      *
-     * @param array<int,array{userid?:int,reason?:string}> $skipped
+     * @param array<int,array{userid?:int,reason?:string,a?:mixed,message?:string}> $skipped
      */
     public static function format_batch_skipped_reasons_text(array $skipped): string {
         if (empty($skipped)) {
@@ -754,7 +1045,15 @@ class enrolment_manager {
         }
         $counts = [];
         foreach ($skipped as $row) {
-            $label = self::format_batch_skip_reason((string)($row['reason'] ?? ''));
+            $message = trim((string)($row['message'] ?? ''));
+            if ($message !== '') {
+                $label = $message;
+            } else {
+                $label = self::format_batch_skip_reason(
+                    (string)($row['reason'] ?? ''),
+                    $row['a'] ?? null
+                );
+            }
             $counts[$label] = ($counts[$label] ?? 0) + 1;
         }
         $parts = [];
@@ -1247,10 +1546,10 @@ class enrolment_manager {
      * @param int   $sessionid
      * @param int   $actorid   User submitting the batch (stored as batch_submittedby)
      * @param array $entries   List of [ 'userid' => int, 'institution' => string optional, 'diet' => array ]
-     * @param bool  $allowclosed When true, closed sessions are allowed (admin paths).
+     * @param bool  $allowclosed When true, full / closed / deadline are allowed (admin manage paths).
      * @param string $batchsubmitternote Optional remark stored on each created/updated enrolment row.
      * @param bool   $bypassprerequisite Site administrators may bypass prerequisite checks.
-     * @return array{ processed:int, capped:bool, requested:int, skipped:array<int,array{userid:int,reason:string}>, enrolment_ids:int[], prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}> }
+     * @return array{ processed:int, capped:bool, requested:int, skipped:array<int,array{userid:int,reason:string,a?:mixed,message?:string}>, enrolment_ids:int[], prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}> }
      */
     public static function batch_enrol_pending(
         int $sessionid,
@@ -1266,13 +1565,44 @@ class enrolment_manager {
         if (!session_manager::can_submit_enrolment($session, $allowclosed)) {
             if (!session_manager::is_online_session($session)
                 && ((int) $session->status === session_manager::STATUS_FULL
-                    || session_manager::is_onsite_desks_full($session))) {
+                    || session_manager::is_onsite_persons_full($session))) {
                 throw new \moodle_exception('error_session_full', 'local_tm_course');
             }
             if (session_manager::is_registration_deadline_passed($session)) {
                 throw new \moodle_exception('error_session_registration_deadline', 'local_tm_course');
             }
             throw new \moodle_exception('error_session_full', 'local_tm_course');
+        }
+
+        $isonline = session_manager::is_online_session($session);
+        $isreservationbatch = false;
+        foreach ($entries as $probe) {
+            if (!empty($probe['reservation_initial'])) {
+                $isreservationbatch = true;
+                break;
+            }
+        }
+        $batchdesk = 0;
+        // Onsite sales/admin batch must bind a desk. Reservation-initial rows are seated later by admin.
+        if (!$isonline && !$isreservationbatch) {
+            // Prefer explicit desk on the first entry; all rows share the same desk for a batch submit.
+            foreach ($entries as $probe) {
+                $batchdesk = (int) ($probe['desk_number'] ?? 0);
+                if ($batchdesk > 0) {
+                    break;
+                }
+            }
+            if ($batchdesk < 1 || $batchdesk > (int) $session->num_desks) {
+                throw new \moodle_exception('error_batch_desk_required', 'local_tm_course');
+            }
+            // Sales may only join a desk that is not yet full (approved count). Overbooking that desk is allowed.
+            // Admin manage paths ($allowclosed) may ignore per-desk fullness.
+            if (!$allowclosed && session_manager::is_desk_full($session, $batchdesk)) {
+                throw new \moodle_exception('error_desk_assignment_full', 'local_tm_course');
+            }
+            foreach ($entries as $idx => $entry) {
+                $entries[$idx]['desk_number'] = $batchdesk;
+            }
         }
 
         $requested = count($entries);
@@ -1312,7 +1642,12 @@ class enrolment_manager {
                     }
                 }
             } catch (\moodle_exception $ex) {
-                $skipped[] = ['userid' => $userid, 'reason' => $ex->errorcode];
+                $skipped[] = [
+                    'userid' => $userid,
+                    'reason' => $ex->errorcode,
+                    'a' => $ex->a ?? null,
+                    'message' => $ex->getMessage(),
+                ];
             }
         }
 
@@ -1777,6 +2112,127 @@ class enrolment_manager {
     }
 
     /**
+     * Interactive desk board for business join / admin review.
+     *
+     * @param array{include_pending?:bool,include_self_pending?:bool} $options
+     * @return array{
+     *   is_online:bool,
+     *   session:\stdClass,
+     *   num_desks:int,
+     *   persons_per_desk:int,
+     *   desks:array<int,array{
+     *     desk_number:int,
+     *     capacity:int,
+     *     approved_count:int,
+     *     is_full:bool,
+     *     learners:array
+     *   }>,
+     *   unassigned:array
+     * }
+     */
+    public static function build_session_desk_board(int $sessionid, array $options = []): array {
+        global $DB;
+
+        $session = session_manager::get_session($sessionid);
+        $isonline = session_manager::is_online_session($session);
+        if ($isonline) {
+            return [
+                'is_online' => true,
+                'session' => $session,
+                'num_desks' => 0,
+                'persons_per_desk' => 0,
+                'desks' => [],
+                'unassigned' => [],
+            ];
+        }
+
+        $includepending = !empty($options['include_pending']);
+        $statuses = [session_manager::ENROL_APPROVED];
+        if ($includepending) {
+            $statuses[] = session_manager::ENROL_PENDING;
+        }
+        list($statusinsql, $statusparams) = $DB->get_in_or_equal($statuses, SQL_PARAMS_NAMED, 'st');
+
+        $sql = "SELECT e.id, e.userid, e.status, e.desk_number, e.institution, e.notes,
+                       e.diet_choice, e.diet_meat_other, e.batch_submittedby, e.batch_submitter_note,
+                       e.seat_company, e.placeholder_seq, e.linked_userid, e.linked_email, e.placeholder_name,
+                       e.vq_submission_id, e.timecreated,
+                       u.firstname, u.lastname, u.email, u.institution AS profile_institution,
+                       lu.firstname AS lu_firstname, lu.lastname AS lu_lastname, lu.email AS lu_email,
+                       sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname
+                  FROM {local_tm_course_enrolments} e
+                  JOIN {user} u ON u.id = e.userid
+             LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
+             LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
+                 WHERE e.sessionid = :sid
+                   AND e.status $statusinsql
+              ORDER BY COALESCE(e.desk_number, 9999) ASC, e.status DESC, e.timecreated ASC";
+        $rows = $DB->get_records_sql($sql, ['sid' => $sessionid] + $statusparams);
+
+        $numdesks = max(0, (int) ($session->num_desks ?? 0));
+        $ppd = max(1, (int) ($session->persons_per_desk ?? session_manager::PERSONS_CLASSROOM));
+        $approvedcounts = session_manager::approved_counts_by_desk($sessionid);
+
+        $desks = [];
+        for ($d = 1; $d <= $numdesks; $d++) {
+            $acount = (int) ($approvedcounts[$d] ?? 0);
+            $desks[$d] = [
+                'desk_number' => $d,
+                'capacity' => $ppd,
+                'approved_count' => $acount,
+                'is_full' => ($acount >= $ppd),
+                'learners' => [],
+            ];
+        }
+        $unassigned = [];
+
+        foreach ($rows as $row) {
+            $cells = self::format_attendance_roster_cells($row);
+            $inst = trim((string) ($cells['institution'] ?? ''));
+            if ($inst === '—') {
+                $inst = '';
+            }
+            $email = trim((string) ($cells['email'] ?? ''));
+            if ($email === '—') {
+                $email = '';
+            }
+            $learner = [
+                'enrolid' => (int) $row->id,
+                'status' => (int) $row->status,
+                'desk_number' => (int) ($row->desk_number ?? 0),
+                'displayname' => (string) ($cells['displayname'] ?? '—'),
+                'email' => $email,
+                'institution' => $inst,
+                'source_label' => self::format_enrol_source_label($row),
+                'diet_summary' => self::format_diet_summary($row),
+                'diet_choice' => strtoupper(trim((string) ($row->diet_choice ?? ''))),
+                'diet_special_note' => trim((string) ($row->diet_meat_other ?? '')),
+                'batch_submittedby' => (int) ($row->batch_submittedby ?? 0),
+                'can_edit_diet' => self::user_can_edit_diet($row),
+                'batch_submitter_note' => trim((string) ($row->batch_submitter_note ?? '')),
+                'notes' => trim((string) ($row->notes ?? '')),
+                'vq_submission_id' => (int) ($row->vq_submission_id ?? 0),
+                'timecreated' => (int) ($row->timecreated ?? 0),
+            ];
+            $dn = (int) $learner['desk_number'];
+            if ($dn >= 1 && $dn <= $numdesks) {
+                $desks[$dn]['learners'][] = $learner;
+            } else {
+                $unassigned[] = $learner;
+            }
+        }
+
+        return [
+            'is_online' => false,
+            'session' => $session,
+            'num_desks' => $numdesks,
+            'persons_per_desk' => $ppd,
+            'desks' => array_values($desks),
+            'unassigned' => $unassigned,
+        ];
+    }
+
+    /**
      * Attendance page payload: roster layout + attended/diet per learner + summary stats.
      *
      * @return array{
@@ -1811,6 +2267,18 @@ class enrolment_manager {
             $learner['diet_choice'] = $diet;
             $learner['diet_special_note'] = $specialnote;
             $learner['diet_label'] = $row ? self::format_diet_summary($row) : '—';
+            // Real Moodle user for profile link (attendance UI only). Seat placeholders
+            // without linked_userid stay 0 → name remains plain text.
+            $profileuserid = 0;
+            if ($row) {
+                $placeholderseq = (int) ($row->placeholder_seq ?? 0);
+                if ($placeholderseq > 0) {
+                    $profileuserid = (int) ($row->linked_userid ?? 0);
+                } else {
+                    $profileuserid = (int) ($row->userid ?? 0);
+                }
+            }
+            $learner['profile_userid'] = $profileuserid > 0 ? $profileuserid : 0;
             return $learner;
         };
 
@@ -1970,11 +2438,13 @@ class enrolment_manager {
                                    WHERE e.userid = :uid
                                      AND s.courseid = :cid
                                      AND e.sessionid <> :sid
+                                     AND s.endtime > :now
                                      AND e.status $statusinsql";
             $courseparams = [
                 'uid' => $userid,
                 'cid' => (int) $session->courseid,
                 'sid' => $sessionid,
+                'now' => time(),
             ] + $statusparams;
             if ($DB->record_exists_sql($courseconflictsql, $courseparams)) {
                 throw new \moodle_exception('error_course_enrolment_conflict', 'local_tm_course');
@@ -2012,6 +2482,14 @@ class enrolment_manager {
         $batchnotedb = ($batchnote === '') ? null : $batchnote;
         $reservationinitial = !empty($row['reservation_initial']) ? 1 : 0;
 
+        $desknumberdb = null;
+        if (!session_manager::is_online_session($session)) {
+            $deskno = (int) ($row['desk_number'] ?? 0);
+            if ($deskno >= 1 && $deskno <= (int) $session->num_desks) {
+                $desknumberdb = $deskno;
+            }
+        }
+
         $existing = $DB->get_record('local_tm_course_enrolments', [
             'sessionid' => $sessionid,
             'userid'    => $userid,
@@ -2026,7 +2504,7 @@ class enrolment_manager {
             }
             $existing->status = $status;
             $existing->institution = $userobj->institution;
-            $existing->desk_number = null;
+            $existing->desk_number = $desknumberdb;
             $existing->diet_choice = $dietchoice;
             $existing->diet_avoid_beef = $dietbeef;
             $existing->diet_avoid_seafood = $dietsea;
@@ -2047,6 +2525,7 @@ class enrolment_manager {
             $record->userid = $userid;
             $record->status = $status;
             $record->institution = $userobj->institution;
+            $record->desk_number = $desknumberdb;
             $record->diet_choice = $dietchoice;
             $record->diet_avoid_beef = $dietbeef;
             $record->diet_avoid_seafood = $dietsea;
@@ -2099,6 +2578,9 @@ class enrolment_manager {
      *
      * Overlap condition:
      * existing.start < target.end AND existing.end > target.start
+     *
+     * Returns the earliest overlapping session (if any). Uses LIMIT 1 because a learner
+     * may have multiple overlapping approved rows; get_record_sql would throw a debug error.
      */
     private static function find_approved_time_conflict(
         int $userid,
@@ -2126,7 +2608,11 @@ class enrolment_manager {
             'targetend' => $targetend,
             'targetstart' => $targetstart,
         ];
-        $row = $DB->get_record_sql($sql, $params, IGNORE_MISSING);
+        $rows = $DB->get_records_sql($sql, $params, 0, 1);
+        if (empty($rows)) {
+            return null;
+        }
+        $row = reset($rows);
         return $row ?: null;
     }
 }

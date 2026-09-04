@@ -116,7 +116,21 @@
         var modeRadiosWrap = document.getElementById('tm-batch-mode-radios-wrap');
         var prereqModeHint = document.getElementById('tm-batch-prereq-mode-hint');
 
-        if (!form || !tbodyFull || !tbodyCo || !protoFull || !protoCo || !sessionSel || !modal || !modalBody) {
+        if (!form || !sessionSel) {
+            return;
+        }
+
+        // Desk-pick step only: reload on session change; skip A/B form wiring.
+        if (!tbodyFull || !tbodyCo || !protoFull || !protoCo || !modal || !modalBody) {
+            sessionSel.addEventListener('change', function () {
+                var sid = String(sessionSel.value || '').trim();
+                var base = window.location.pathname;
+                if (sid) {
+                    window.location.href = base + '?sessionid=' + encodeURIComponent(sid);
+                } else {
+                    window.location.href = base;
+                }
+            });
             return;
         }
 
@@ -224,8 +238,13 @@
         }
 
         sessionSel.addEventListener('change', function () {
-            updateCapHint();
-            syncPrereqBatchMode();
+            var sid = String(sessionSel.value || '').trim();
+            var base = window.location.pathname;
+            if (sid) {
+                window.location.href = base + '?sessionid=' + encodeURIComponent(sid);
+            } else {
+                window.location.href = base;
+            }
         });
 
         var radios = document.querySelectorAll('input[name="batch_mode_radio"]');

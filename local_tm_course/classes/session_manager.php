@@ -541,6 +541,7 @@ class session_manager {
 
     /**
      * Onsite only: every desk slot has at least one approved learner with desk_number.
+     * Advisory for roster/UI — does not gate enrolment (see is_onsite_persons_full).
      */
     public static function is_onsite_desks_full(\stdClass $session): bool {
         if (self::is_online_session($session)) {
@@ -554,17 +555,33 @@ class session_manager {
     }
 
     /**
+     * Onsite only: approved headcount has reached suggested capacity (desks × persons_per_desk).
+     */
+    public static function is_onsite_persons_full(\stdClass $session): bool {
+        if (self::is_online_session($session)) {
+            return false;
+        }
+        if (self::total_capacity($session) <= 0) {
+            return false;
+        }
+        return self::remaining_persons($session) <= 0;
+    }
+
+    /**
      * Whether self-enrol or business batch may submit new enrolments.
-     * Onsite: blocked when STATUS_FULL (all desks occupied). Online: never blocked by full.
-     * Closed / registration deadline: blocked unless $adminoverride (manage batch on closed sessions).
+     * Onsite: blocked when person capacity is full unless $adminoverride.
+     * Online: never blocked by full.
+     * Closed / registration deadline: blocked unless $adminoverride (manage paths).
      *
      * @param \stdClass $session
-     * @param bool $adminoverride allow closed/deadline for admin batch only
+     * @param bool $adminoverride allow full + closed/deadline for admin (manage) paths
      */
     public static function can_submit_enrolment(\stdClass $session, bool $adminoverride = false): bool {
         if (!self::is_online_session($session)
-            && ((int) $session->status === self::STATUS_FULL || self::is_onsite_desks_full($session))) {
-            return false;
+            && ((int) $session->status === self::STATUS_FULL || self::is_onsite_persons_full($session))) {
+            if (!$adminoverride) {
+                return false;
+            }
         }
         if (self::is_registration_deadline_passed($session)) {
             return $adminoverride;
@@ -665,6 +682,57 @@ class session_manager {
     }
 
     /**
+     * Approved headcount per desk number (onsite fullness uses this only).
+     *
+     * @return array<int,int> desk_number => approved count
+     */
+    public static function approved_counts_by_desk(int $sessionid): array {
+        global $DB;
+        $sql = "SELECT desk_number, COUNT(1) AS cnt
+                  FROM {local_tm_course_enrolments}
+                 WHERE sessionid = :sid
+                   AND status = :approved
+                   AND desk_number IS NOT NULL
+                   AND desk_number > 0
+              GROUP BY desk_number";
+        $rows = $DB->get_records_sql($sql, [
+            'sid' => $sessionid,
+            'approved' => self::ENROL_APPROVED,
+        ]);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(int) $row->desk_number] = (int) $row->cnt;
+        }
+        return $out;
+    }
+
+    /**
+     * Approved learners currently seated at a desk.
+     */
+    public static function desk_approved_count(int $sessionid, int $deskno): int {
+        global $DB;
+        if ($deskno < 1) {
+            return 0;
+        }
+        return (int) $DB->count_records('local_tm_course_enrolments', [
+            'sessionid' => $sessionid,
+            'status' => self::ENROL_APPROVED,
+            'desk_number' => $deskno,
+        ]);
+    }
+
+    /**
+     * Whether a desk has reached persons_per_desk (approved only).
+     */
+    public static function is_desk_full(\stdClass $session, int $deskno): bool {
+        if (self::is_online_session($session) || $deskno < 1) {
+            return false;
+        }
+        $ppd = max(1, (int) ($session->persons_per_desk ?? self::PERSONS_CLASSROOM));
+        return self::desk_approved_count((int) $session->id, $deskno) >= $ppd;
+    }
+
+    /**
      * Remaining desks by assigned desk slots.
      */
     public static function remaining_desks(\stdClass $session): int {
@@ -687,13 +755,13 @@ class session_manager {
             return; // Manually closed — don't touch
         }
 
-        // Online: never auto-mark full. Onsite: full when every desk has an approved assignee.
+        // Online: never auto-mark full. Onsite: full when approved count reaches suggested capacity.
         if (self::is_online_session($session)) {
             $new_status = self::STATUS_OPEN;
-        } else if ((int) $session->num_desks <= 0) {
+        } else if (self::total_capacity($session) <= 0) {
             $new_status = self::STATUS_OPEN;
         } else {
-            $new_status = (self::remaining_desks($session) <= 0) ? self::STATUS_FULL : self::STATUS_OPEN;
+            $new_status = (self::remaining_persons($session) <= 0) ? self::STATUS_FULL : self::STATUS_OPEN;
         }
 
         if ($new_status !== (int)$session->status) {

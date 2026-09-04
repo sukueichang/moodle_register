@@ -39,6 +39,7 @@
 可做：
 
 - 使用批次報名入口執行批次加入（開放中場次）
+- 前台場次列表可直接看到所有「視訊且已填連結」場次的「加入視訊課程」按鈕（不需本人已報名）
 
 限制：
 
@@ -69,6 +70,6 @@
 | [`docs/SPEC.md`](docs/SPEC.md) | 規格書（Single Source of Truth） |
 | [`docs/FEATURE_LOG.md`](docs/FEATURE_LOG.md) | 功能開發進度與決策 |
 | [`docs/BUGFIX_LOG.md`](docs/BUGFIX_LOG.md) | Bug 回報與處理／回歸檢查（原 `lesson-learned.md`） |
-| [`docs/DEV_WORKFLOW.md`](docs/DEV_WORKFLOW.md) | 開發流程 SOP（含驗收後 PR／push） |
+| [`docs/DEV_WORKFLOW.md`](docs/DEV_WORKFLOW.md) | 開發流程 SOP（含驗收後 PR／push、Windows 打包 zip） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 版本異動歷史 |
 | [`links.md`](links.md) | 入口 URL |

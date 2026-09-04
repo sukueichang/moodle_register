@@ -48,7 +48,7 @@ if (!session_manager::can_submit_enrolment($session, false)) {
 
         && ((int) $session->status === session_manager::STATUS_FULL
 
-            || session_manager::is_onsite_desks_full($session))) {
+            || session_manager::is_onsite_persons_full($session))) {
 
         redirect(new moodle_url('/local/tm_course/index.php'),
 

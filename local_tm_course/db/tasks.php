@@ -55,8 +55,9 @@ $tasks = [
     [
         'classname' => 'local_tm_course\\task\\sync_tcms_sessions',
         'blocking' => 0,
+        // Wake every hour at :15; execute() still gates on tcms_sync_reconcile_interval.
         'minute' => '15',
-        'hour' => '3',
+        'hour' => '*',
         'day' => '*',
         'dayofweek' => '*',
         'month' => '*',

@@ -1648,6 +1648,91 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026072401, 'local', 'tm_course');
     }
 
+    // 2026081001 — Onsite FULL = suggested person capacity; admin may ignore FULL on manage paths.
+    if ($oldversion < 2026081001) {
+        require_once($CFG->dirroot . '/local/tm_course/classes/session_manager.php');
+        $ids = $DB->get_fieldset_select(
+            'local_tm_course_sessions',
+            'id',
+            'status IN (?, ?)',
+            [\local_tm_course\session_manager::STATUS_OPEN, \local_tm_course\session_manager::STATUS_FULL]
+        );
+        foreach ($ids as $sid) {
+            \local_tm_course\session_manager::recalculate_status((int) $sid);
+        }
+        upgrade_plugin_savepoint(true, 2026081001, 'local', 'tm_course');
+    }
+
+    // 2026082601 — Onsite desk map for batch enrol + admin desk-board review / drag move.
+    if ($oldversion < 2026082601) {
+        upgrade_plugin_savepoint(true, 2026082601, 'local', 'tm_course');
+    }
+
+    // 2026082602 — Batch desk pick shows pending learners (all sales).
+    if ($oldversion < 2026082602) {
+        upgrade_plugin_savepoint(true, 2026082602, 'local', 'tm_course');
+    }
+
+    // 2026082603 — Admin "view enrolment status" opens interactive enrolments desk board.
+    if ($oldversion < 2026082603) {
+        upgrade_plugin_savepoint(true, 2026082603, 'local', 'tm_course');
+    }
+
+    // 2026082604 — Diet edit permissions: admin all, sales own batch, learner own/linked.
+    if ($oldversion < 2026082604) {
+        upgrade_plugin_savepoint(true, 2026082604, 'local', 'tm_course');
+    }
+
+    // 2026082605 — TCMS sync targets VM https://tcms.tm-robot.com; reconcile task hourly :15.
+    if ($oldversion < 2026082605) {
+        $olddefault = 'https://tcms-e49a5.web.app';
+        $newdefault = 'https://tcms.tm-robot.com';
+        $current = trim((string) get_config('local_tm_course', 'tcms_api_base_url'));
+        if ($current === '' || $current === $olddefault || stripos($current, 'tcms-e49a5') !== false) {
+            set_config('tcms_api_base_url', $newdefault, 'local_tm_course');
+        } else {
+            // Strip accidental frontend /Project path from saved base URL.
+            $normalized = rtrim($current, '/');
+            if (preg_match('#/Project$#i', $normalized)) {
+                $normalized = rtrim((string) preg_replace('#/Project$#i', '', $normalized), '/');
+                if ($normalized !== '') {
+                    set_config('tcms_api_base_url', $normalized, 'local_tm_course');
+                }
+            }
+        }
+
+        // Apply new schedule (db/tasks.php only applies on first install).
+        $classnames = [
+            '\local_tm_course\task\sync_tcms_sessions',
+            'local_tm_course\\task\\sync_tcms_sessions',
+        ];
+        foreach ($classnames as $classname) {
+            if ($DB->record_exists('task_scheduled', ['classname' => $classname])) {
+                $DB->set_field('task_scheduled', 'minute', '15', ['classname' => $classname]);
+                $DB->set_field('task_scheduled', 'hour', '*', ['classname' => $classname]);
+                $DB->set_field('task_scheduled', 'day', '*', ['classname' => $classname]);
+                $DB->set_field('task_scheduled', 'dayofweek', '*', ['classname' => $classname]);
+                $DB->set_field('task_scheduled', 'month', '*', ['classname' => $classname]);
+            }
+        }
+
+        upgrade_plugin_savepoint(true, 2026082605, 'local', 'tm_course');
+    }
+
+    // 2026090101 — Pending overdue reminder enable/disable toggle (config only).
+    if ($oldversion < 2026090101) {
+        // Preserve existing behaviour: default enabled when unset.
+        if (get_config('local_tm_course', 'reminder_threshold_enabled') === false) {
+            set_config('reminder_threshold_enabled', 1, 'local_tm_course');
+        }
+        upgrade_plugin_savepoint(true, 2026090101, 'local', 'tm_course');
+    }
+
+    // 2026090400 — Roster link for attendance staff; manage-without-approve stays read-only (PHP only).
+    if ($oldversion < 2026090400) {
+        upgrade_plugin_savepoint(true, 2026090400, 'local', 'tm_course');
+    }
+
     return true;
 }
 

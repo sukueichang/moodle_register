@@ -408,6 +408,86 @@
     padding-top: 1rem;
 }
 
+/* ---- Batch desk pick / admin desk board ---- */
+.tm-batch-desk-grid .tm-roster-desk-card,
+.tm-admin-desk-grid .tm-roster-desk-card {
+    position: relative;
+    min-height: 8rem;
+    transition: box-shadow .15s ease, border-color .15s ease;
+}
+.tm-desk-card-open:hover {
+    border-color: var(--tm-green);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.tm-desk-card-full {
+    background: #f3f5f7;
+}
+.tm-batch-learner-pending .tm-roster-learner-name,
+.tm-batch-pending-mark {
+    color: #9a6b00;
+}
+.tm-batch-pending-mark {
+    font-weight: 600;
+    font-size: .9em;
+}
+.tm-admin-learner-card {
+    border: 1px solid var(--tm-border);
+    border-radius: 6px;
+    padding: .55rem .65rem;
+    margin-bottom: .5rem;
+    background: #fff;
+    cursor: grab;
+}
+.tm-admin-learner-card.is-pending {
+    border-left: 3px solid #e6a700;
+    background: #fffbeb;
+}
+.tm-admin-learner-card.is-approved {
+    border-left: 3px solid var(--tm-green);
+}
+.tm-admin-learner-card.tm-dragging {
+    opacity: .55;
+}
+.tm-admin-learner-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .35rem;
+    margin-bottom: .2rem;
+}
+.tm-admin-desk-dropzone.tm-desk-drop-hover {
+    border-color: var(--tm-blue);
+    box-shadow: inset 0 0 0 2px rgba(0, 95, 126, 0.25);
+    background: #f0f8fb;
+}
+.tm-admin-unassigned-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: .75rem;
+}
+.tm-admin-reject-form .form-control {
+    max-width: 100%;
+}
+.tm-desk-diet-editable {
+    text-decoration: underline dotted;
+    color: var(--tm-blue);
+    cursor: pointer;
+}
+.tm-desk-diet-editor {
+    border: 1px solid var(--tm-border);
+    border-radius: 6px;
+    padding: .45rem .55rem;
+    background: #f8fafb;
+    margin-top: .25rem;
+}
+.tm-desk-diet-editor-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+    align-items: center;
+}
+
 /* ---- Index session card: roster link near desks ---- */
 .tm-session-desks-head {
     display: flex;
@@ -1560,6 +1640,15 @@ tr.tm-batch-is-prototype {
     flex-wrap: wrap;
     align-items: center;
     gap: 4px;
+}
+a.tm-attendance-learner-profile-link {
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+a.tm-attendance-learner-profile-link:hover,
+a.tm-attendance-learner-profile-link:focus {
+    text-decoration: underline;
 }
 .tm-attendance-actions {
     display: inline-flex;

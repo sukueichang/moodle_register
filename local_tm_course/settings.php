@@ -60,6 +60,12 @@ if ($hassiteconfig) {
         get_string('nav_m5_settings', 'local_tm_course')
     );
     if ($ADMIN->fulltree) {
+        $m5settings->add(new admin_setting_configcheckbox(
+            'local_tm_course/reminder_threshold_enabled',
+            get_string('setting_reminder_threshold_enabled', 'local_tm_course'),
+            get_string('setting_reminder_threshold_enabled_desc', 'local_tm_course'),
+            1
+        ));
         $choices = [];
         for ($m = 5; $m <= 55; $m += 5) {
             $choices[$m * MINSECS] = get_string('reminder_minutes_option', 'local_tm_course', $m);
@@ -226,8 +232,8 @@ if ($hassiteconfig) {
         $tcmssettings->add(new admin_setting_configtext(
             'local_tm_course/tcms_api_base_url',
             $str('setting_tcms_api_base_url', 'TCMS API base URL'),
-            $str('setting_tcms_api_base_url_desc', 'Example: https://tcms-e49a5.web.app'),
-            'https://tcms-e49a5.web.app',
+            $str('setting_tcms_api_base_url_desc', 'Example: https://tcms.tm-robot.com (API root only — do not include /Project/).'),
+            'https://tcms.tm-robot.com',
             PARAM_URL
         ));
         $tcmssettings->add(new admin_setting_configpasswordunmask(
