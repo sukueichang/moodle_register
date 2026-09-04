@@ -1728,6 +1728,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026090101, 'local', 'tm_course');
     }
 
+    // 2026090400 — Roster link for attendance staff; manage-without-approve stays read-only (PHP only).
+    if ($oldversion < 2026090400) {
+        upgrade_plugin_savepoint(true, 2026090400, 'local', 'tm_course');
+    }
+
     return true;
 }
 

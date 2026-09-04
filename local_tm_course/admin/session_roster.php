@@ -3,6 +3,10 @@
  * Read-only session roster: desk layout (onsite) or learner list (online).
  * URL: /local/tm_course/admin/session_roster.php?sessionid=N
  *
+ * Access: siteadmin, manage, batch enrol, or attendance/class-prep.
+ * Users who can open enrolments.php (approve / siteadmin) are redirected there.
+ * manage without approve stays on this read-only page (matches enrolments.php gate).
+ *
  * @package    local_tm_course
  */
 require_once(__DIR__ . '/../../../config.php');
@@ -18,17 +22,17 @@ require_login();
 $ctx = context_system::instance();
 $canview = is_siteadmin()
     || has_capability('local/tm_course:manage', $ctx)
-    || permissions_manager::user_can_batch_enrol();
+    || permissions_manager::user_can_batch_enrol()
+    || permissions_manager::user_can_attendance();
 if (!$canview) {
     throw new required_capability_exception($ctx, 'local/tm_course:manage', 'nopermissions', '');
 }
 
 $sessionid = required_param('sessionid', PARAM_INT);
 
-// Approvers/admins: interactive desk board (drag / approve / batch add). Sales stay on read-only.
-if (is_siteadmin()
-    || has_capability('local/tm_course:approve', $ctx)
-    || has_capability('local/tm_course:manage', $ctx)) {
+// Only users who can pass enrolments.php require_capability(approve) go to the board.
+// manage-without-approve, batch sales, and class-prep staff stay on read-only.
+if (is_siteadmin() || has_capability('local/tm_course:approve', $ctx)) {
     redirect(new moodle_url('/local/tm_course/admin/enrolments.php', ['sessionid' => $sessionid]));
 }
 

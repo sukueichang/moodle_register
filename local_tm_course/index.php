@@ -32,13 +32,18 @@ $PAGE->requires->js(new moodle_url('https://cdn.jsdelivr.net/npm/fullcalendar@6.
 $is_admin = has_capability('local/tm_course:manage', context_system::instance());
 $can_viewall = has_capability('local/tm_course:viewall', context_system::instance());
 $can_batch_enrol = permissions_manager::user_can_batch_enrol();
-$can_approve_enrolments = has_capability('local/tm_course:approve', context_system::instance()) || $is_admin || is_siteadmin();
-$can_view_session_roster = $can_approve_enrolments || $can_batch_enrol;
+// Must match enrolments.php gate (approve only). Do NOT treat manage alone as approver —
+// manage without approve must stay on read-only session_roster.php.
+$can_open_enrolments_board = has_capability('local/tm_course:approve', context_system::instance())
+    || is_siteadmin();
+$can_approve_enrolments = $can_open_enrolments_board || $is_admin;
 $can_attendance_access = permissions_manager::user_can_attendance();
+// Approvers, managers, batch sales, and class-prep/attendance staff may open roster.
+$can_view_session_roster = $can_approve_enrolments || $can_batch_enrol || $can_attendance_access;
 $can_self_enrol_by_role = permissions_manager::user_can_self_enrol_by_role();
 
-// Admin/approvers open the interactive desk board; sales keep read-only roster.
-$roster_url_path = $can_approve_enrolments
+// Only real approvers open the interactive desk board; others get read-only roster.
+$roster_url_path = $can_open_enrolments_board
     ? '/local/tm_course/admin/enrolments.php'
     : '/local/tm_course/admin/session_roster.php';
 
