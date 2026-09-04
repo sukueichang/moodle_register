@@ -1,15 +1,15 @@
 ---
-description: Always tell the user when pushing or opening/updating a PR
+description: Always tell the user when pushing, opening/updating a PR, or merging
 alwaysApply: true
 ---
 
-# Notify on push / PR
+# Notify on push / PR / merge
 
-Whenever you **push** to a remote, **create** a PR, or **update** a PR (description / draft→ready / URL), tell the user in the same turn:
+Whenever you **push** to a remote, **create** a PR, **update** a PR (description / draft→ready / URL), **merge** a PR, or **delete** a remote branch, tell the user in the same turn:
 
-- What you did (push / open PR / update PR)
+- What you did (push / open PR / update PR / merge / delete branch)
 - Branch name
 - PR URL (if any)
 - Short what landed (1 line)
 
-Do this even when the push/PR was already authorized by `ok` / workflow SOP. Never silently push or open a PR.
+Do this even when the push/PR/merge was already authorized by `ok` / workflow SOP. Never silently push, open a PR, or merge.

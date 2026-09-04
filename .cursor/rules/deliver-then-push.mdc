@@ -1,9 +1,9 @@
 ---
-description: After feature delivery, prompt for test OK then commit+push
+description: After feature delivery, prompt for test OK then commit+push; then ask whether to merge
 alwaysApply: true
 ---
 
-# Feature delivery → test confirm → push
+# Feature delivery → test confirm → push → ask merge
 
 When you **finish delivering a feature** (implementation done, ready for the user to verify):
 
@@ -17,5 +17,14 @@ When the user confirms (e.g. 「ok」「可以」「沒問題」「push」「推
 1. Create a commit if there are uncommitted changes (follow the repo commit protocol).
 2. Push to the tracked remote branch (`git push` / `-u` if needed).
 3. Tell them branch + remote result (and PR URL if you open/update one). Follow `notify-git-remote.mdc`.
+4. **Always ask** whether to merge the PR into `main` in the same turn, e.g.:
+   - 「要不要把這個 PR merge 進 `main`？回覆『merge』／『合進去』我就合併；不需要就說『先留著』。」
+5. Do **not** merge until they explicitly say to merge. 「ok／可以 push」 alone is **not** merge authorization.
 
-Do not treat a vague early 「ok」 mid-discussion as push authorization—only after delivery + explicit post-test confirmation (or a clear push request).
+When the user later says merge / 合進去 / 合併 main (after that ask, or a clear merge request):
+
+1. Merge the PR into `main` (`gh pr merge` or equivalent).
+2. Clean up superseded branches/PRs only if they asked or it is clearly obsolete.
+3. Report merge result + PR URL. Follow `notify-git-remote.mdc`.
+
+Do not treat a vague early 「ok」 mid-discussion as push or merge authorization—only after delivery + explicit post-test confirmation (or a clear push/merge request).

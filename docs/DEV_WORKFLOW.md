@@ -2,7 +2,8 @@
 
 > **文件角色：** 每次提需求或修 bug 時雙方（你與 AI）應遵循的標準流程。  
 > **驗收訊號：** 你回覆 **`ok`**／**`測試無誤`**／**`測試無誤了`** → AI 才把實作結果 push 到已開的 PR。  
-> **通知義務：** AI 只要有 **push**、**開 PR**、或 **更新 PR**（描述／Draft→Ready），當輪回覆都要主動說清楚（做了什麼、分支、PR URL）。不可默默上遠端。  
+> **合併訊號：** push／驗收後，AI **必須主動問**你是否要把該分支 **merge 進 `main`**；未明確說 merge／合進去前，**不**自行合併。  
+> **通知義務：** AI 只要有 **push**、**開／更新 PR**、或 **merge／刪分支**，當輪回覆都要主動說清楚（做了什麼、分支、PR URL）。不可默默上遠端。  
 > **相關：** [`SPEC.md`](SPEC.md)／[`FEATURE_LOG.md`](FEATURE_LOG.md)／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)
 
 ---
@@ -24,7 +25,8 @@
 | 3 | 說 **「開始開發」** | 見 §3a：先開／更新 **Draft PR** 記錄本輪規格 |
 | 4 | — | 實作（本機）；遵守 BUGFIX_LOG 預防準則。過程中規格變更 → **同步更新同一支 PR 描述**與 FEATURE_LOG／SPEC |
 | 5 | 在 Moodle 環境自行測試 | 依回報修正；問題寫入 BUGFIX_LOG |
-| 6 | 回覆 **ok／測試無誤** | 見 §3b：commit 實作 → **push** 到該 PR 分支 → 更新 PR 描述 |
+| 6 | 回覆 **ok／測試無誤** | 見 §3b：commit 實作 → **push** 到該 PR 分支 → 更新 PR 描述 → **問是否 merge** |
+| 7 | 明確回覆要不要 merge | 見 §3c：要 → merge 進 `main`；不要 → 維持 PR 開啟 |
 
 ---
 
@@ -35,7 +37,7 @@
 | 1 | 現象、重現步驟、期望行為 | 定位根因；對照 BUGFIX_LOG 是否舊疾 |
 | 2 | 確認修復方向後說 **「開始開發」**（若尚未開 PR） | 見 §3a：Draft PR 記錄本輪修復範圍；再實作。**先**在 BUGFIX_LOG 記一條 |
 | 3 | 回歸測試（含清單相關項） | 依回報再修；規格／範圍變更則更新同一 PR |
-| 4 | 回覆 **ok／測試無誤** | 見 §3b |
+| 4 | 回覆 **ok／測試無誤** | 見 §3b → **問是否 merge**（§3c） |
 
 ---
 
@@ -66,10 +68,26 @@
 3. **Push** 到已開 PR 的分支（`-u` 若尚未追蹤）  
 4. **更新 PR 描述**（Summary／Test plan），反映最終 FEATURE／BUGFIX；必要時標為 Ready for review  
 5. **主動告知使用者**：已 push／已更新 PR（分支名 + PR URL + 本輪內容一句話）  
-6. **文件收尾**  
+6. **立刻問是否 merge**（§3c）——測完／push 後的固定收尾，不可省略  
+7. **文件收尾**  
    - FEATURE_LOG 該節 →「已驗收」  
    - BUGFIX_LOG 已有條目則確認預防準則寫入檢查清單（若為新類型）  
    - 新入口 URL → 評估更新根目錄 `links.md`
+
+---
+
+## 3c. 驗收／push 後：問是否 merge 進 `main`
+
+**原則：** 功能測完並 push 到 PR 分支後，AI **每次都要直接問**你要不要把該分支 **merge 進 `main`**。未得到明確 merge 授權前，**禁止**自行 `gh pr merge`／把 PR 合進 `main`。
+
+1. **問法範例**（push 回報同一則訊息末尾即可）：  
+   - 「要不要把這個 PR merge 進 `main`？回覆『merge』／『合進去』我就合併；不需要就說『先留著』。」
+2. **你說要 merge**（如 `merge`／`合進去`／`合併 main`）：  
+   - 以 `gh pr merge`（或等價流程）合進 `main`  
+   - 依你指示刪除已合併遠端分支／關閉被取代的舊 PR  
+   - **主動回報**：已 merge、目標分支、PR URL、一句話結果  
+3. **你說先不要**：維持 PR OPEN，不 merge、不刪進行中分支  
+4. **勿混淆訊號**：僅「ok／可以 push」＝授權 push；**不等于**授權 merge。merge 必須另一次明確指示。
 
 ### PowerShell 注意（Windows）
 
@@ -152,6 +170,7 @@ Moodle：Site administration → Plugins → Install plugins → 上傳 ZIP → 
 - [ ] 規格變更時：同一 PR 描述已同步  
 - [ ] 未在使用者 ok 前 push **實作**  
 - [ ] 使用者 ok 後：commit 實作 → push → 更新 PR → 回報 URL  
+- [ ] push／驗收後：**已問**是否 merge 進 `main`（未授權不 merge）  
 - [ ] 交付 zip 時：用 `tar.exe` 打包，且反斜線檢查為 0  
 
 ---
