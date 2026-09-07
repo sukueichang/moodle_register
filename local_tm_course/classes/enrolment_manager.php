@@ -1329,6 +1329,7 @@ class enrolment_manager {
     /**
      * Universal search: find enrolments by name / email / institution.
      * Admins see all; others see only their own.
+     * Placeholder seats also match linked learner profile / linked_email.
      */
     public static function search(string $query, bool $admin_view = false, int $current_userid = 0): array {
         global $DB;
@@ -1339,11 +1340,14 @@ class enrolment_manager {
         $like = $DB->sql_like_escape($query);
 
         $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
+                       u.institution AS profile_institution,
+                       lu.firstname AS lu_firstname, lu.lastname AS lu_lastname, lu.email AS lu_email,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
                        s.delivery_mode AS session_delivery_mode
                   FROM {local_tm_course_enrolments} e
                   JOIN {user} u ON u.id = e.userid
+             LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                  WHERE (
@@ -1352,6 +1356,15 @@ class enrolment_manager {
                     OR " . $DB->sql_like('u.email',     ':q3', false) . "
                     OR " . $DB->sql_like('u.institution',':q4', false) . "
                     OR " . $DB->sql_like("CONCAT(u.firstname,' ',u.lastname)", ':q5', false) . "
+                    OR " . $DB->sql_like('lu.firstname', ':q6', false) . "
+                    OR " . $DB->sql_like('lu.lastname',  ':q7', false) . "
+                    OR " . $DB->sql_like('lu.email',     ':q8', false) . "
+                    OR " . $DB->sql_like('lu.institution',':q9', false) . "
+                    OR " . $DB->sql_like("CONCAT(lu.firstname,' ',lu.lastname)", ':q10', false) . "
+                    OR " . $DB->sql_like('e.linked_email', ':q11', false) . "
+                    OR " . $DB->sql_like('e.placeholder_name', ':q12', false) . "
+                    OR " . $DB->sql_like('e.seat_company', ':q13', false) . "
+                    OR " . $DB->sql_like('e.institution', ':q14', false) . "
                  )";
 
         $params = [
@@ -1360,11 +1373,21 @@ class enrolment_manager {
             'q3' => "%$like%",
             'q4' => "%$like%",
             'q5' => "%$like%",
+            'q6' => "%$like%",
+            'q7' => "%$like%",
+            'q8' => "%$like%",
+            'q9' => "%$like%",
+            'q10' => "%$like%",
+            'q11' => "%$like%",
+            'q12' => "%$like%",
+            'q13' => "%$like%",
+            'q14' => "%$like%",
         ];
 
         if (!$admin_view && $current_userid) {
-            $sql .= ' AND e.userid = :uid';
+            $sql .= ' AND (e.userid = :uid OR e.linked_userid = :uidlinked)';
             $params['uid'] = $current_userid;
+            $params['uidlinked'] = $current_userid;
         }
 
         $sql .= ' ORDER BY s.starttime DESC';
@@ -1436,6 +1459,7 @@ class enrolment_manager {
     /**
      * Search enrolment records by Moodle user profile fields.
      * Each non-empty filter uses substring match (LIKE %value%); conditions are combined with AND.
+     * Placeholder seats also match linked learner profile / linked_email / seat display fields.
      *
      * @param array $filters keys: firstname, lastname, institution, email (trimmed text)
      * @param bool $admin_view allow viewing all records
@@ -1473,32 +1497,46 @@ class enrolment_manager {
         $conditions = [];
         $params = [];
         $idx = 0;
-        foreach ([
-            'u.firstname' => $firstname,
-            'u.lastname' => $lastname,
-            'u.institution' => $institution,
-            'u.email' => $email,
-        ] as $col => $val) {
-            if ($val === '') {
-                continue;
+
+        $addlikeor = static function(array $cols, string $val) use (&$conditions, &$params, &$idx, $DB): void {
+            $parts = [];
+            foreach ($cols as $col) {
+                $idx++;
+                $param = 'lk' . $idx;
+                $params[$param] = '%' . $DB->sql_like_escape($val) . '%';
+                $parts[] = $DB->sql_like($col, ':' . $param, false);
             }
-            $idx++;
-            $param = 'lk' . $idx;
-            $params[$param] = '%' . $DB->sql_like_escape($val) . '%';
-            $conditions[] = $DB->sql_like($col, ':' . $param, false);
+            $conditions[] = '(' . implode(' OR ', $parts) . ')';
+        };
+
+        if ($firstname !== '') {
+            $addlikeor(['u.firstname', 'lu.firstname', 'e.placeholder_name'], $firstname);
+        }
+        if ($lastname !== '') {
+            $addlikeor(['u.lastname', 'lu.lastname', 'e.placeholder_name'], $lastname);
+        }
+        if ($institution !== '') {
+            $addlikeor(['u.institution', 'lu.institution', 'e.institution', 'e.seat_company'], $institution);
+        }
+        if ($email !== '') {
+            $addlikeor(['u.email', 'lu.email', 'e.linked_email'], $email);
         }
 
         if (!$admin_view && $current_userid) {
-            $conditions[] = 'e.userid = :uid';
+            $conditions[] = '(e.userid = :uid OR e.linked_userid = :uidlinked)';
             $params['uid'] = $current_userid;
+            $params['uidlinked'] = $current_userid;
         }
 
         $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
+                       u.institution AS profile_institution,
+                       lu.firstname AS lu_firstname, lu.lastname AS lu_lastname, lu.email AS lu_email,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
                        s.delivery_mode AS session_delivery_mode
                   FROM {local_tm_course_enrolments} e
                   JOIN {user} u ON u.id = e.userid
+             LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                  WHERE " . implode(' AND ', $conditions) . "
@@ -1508,7 +1546,7 @@ class enrolment_manager {
     }
 
     /**
-     * Get all enrolment records of one user.
+     * Get all enrolment records of one user (holder userid or linked real learner).
      *
      * @param int $userid
      * @return array
@@ -1517,16 +1555,22 @@ class enrolment_manager {
         global $DB;
 
         $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
+                       u.institution AS profile_institution,
+                       lu.firstname AS lu_firstname, lu.lastname AS lu_lastname, lu.email AS lu_email,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
                        s.delivery_mode AS session_delivery_mode
                   FROM {local_tm_course_enrolments} e
                   JOIN {user} u ON u.id = e.userid
+             LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
-                 WHERE e.userid = :userid
+                 WHERE e.userid = :userid OR e.linked_userid = :useridlinked
               ORDER BY s.starttime DESC, e.timecreated DESC";
-        return $DB->get_records_sql($sql, ['userid' => $userid]);
+        return $DB->get_records_sql($sql, [
+            'userid' => $userid,
+            'useridlinked' => $userid,
+        ]);
     }
 
     /**

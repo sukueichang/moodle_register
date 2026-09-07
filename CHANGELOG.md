@@ -3,6 +3,17 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.19.5] - 2026-09-07 - 卡位報名搜尋／完課綁定真實學員
+
+### Fixed
+- 搜尋課程紀錄（`search.php`／universal search）改同時比對卡位的 `linked_email`／`linked_userid` 真實學員資料，不再只查佔位帳號。
+- 點名「已出席」同步課程完成時改用與 `mod_attendance` 相同的真實學員 userid（`linked_userid` 優先）。
+- 「我的紀錄」會列出本人為 `linked_userid` 的卡位報名列。
+- 搜尋結果姓名／email 改走卡位顯示 helper，避免顯示佔位帳號假資料。
+
+### Docs
+- `docs/FEATURE_LOG.md`、`docs/BUGFIX_LOG.md`。
+
 ## [5.19.3] - 2026-09-03 - 業務可看全部視訊連結按鈕
 
 ### Changed
