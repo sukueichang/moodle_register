@@ -672,11 +672,12 @@ class attendance_manager {
         }
 
         // Trigger course completion when student is marked present
+        // (use linked real learner for placeholder seats, same as mod_attendance).
         if ($attended === self::ATTEND_PRESENT) {
             $session = $DB->get_record('local_tm_course_sessions',
                                        ['id' => $enrol->sessionid], '*', MUST_EXIST);
             if (!empty($session->courseid)) {
-                self::sync_completion((int)$enrol->userid, (int)$session->courseid);
+                self::sync_completion(self::attendance_log_userid($enrol), (int)$session->courseid);
             }
         }
     }

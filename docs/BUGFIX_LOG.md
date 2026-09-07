@@ -9,6 +9,7 @@
 
 ## 強制檢查清單（開工前必跑）
 
+- [ ] 卡位報名：搜尋／完課／attendance 是否同時認 `linked_userid`／`linked_email`？（不可只 join `e.userid`）
 - [ ] 新增資料表：表名長度 **≤ 28**（Moodle XMLDB）
 - [ ] 新增 CHAR 欄位：禁止 `NOTNULL + DEFAULT ''`
 - [ ] 新增 `AJAX_SCRIPT`：`require_login()` 後立刻 `$PAGE->set_context()`
@@ -23,6 +24,28 @@
 - [ ] 同課程互斥：已結束場次（endtime 已過）的 approved 不應擋重報；駁回／取消本來就不擋
 - [ ] Windows 打包 zip：用 `tar.exe`，內部路徑必須是 `/` 而非 `\`（完整步驟見 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) §4）
 - [ ] 升級頁 `cURL`／遠端 plugin API 錯誤 ≠ DB 升級失敗，可繼續本地升級
+
+---
+
+## 2026-09-07 — 卡位學員已點名，搜尋課程紀錄仍為 0
+
+### 問題現象
+- 學員實際有上課、講師已勾「已出席」，管理清單也看得到真實 email／姓名。
+- `/local/tm_course/search.php` 用真實 email 搜尋，「課程相關紀錄」為 0。
+
+### 根因判斷
+- 批次卡位 `userid` 仍是 `@local.tm.placeholder` 佔位帳號；真實 email 只在 `linked_email`／`linked_userid`。
+- 搜尋 SQL 只 `JOIN user` on `e.userid`，比對不到真實 email。
+- `mark_attended` 寫 `mod_attendance` 會用 `linked_userid`，但 `sync_completion` 一律用 `enrol->userid`（佔位帳號），邏輯不一致。
+
+### 解決方式
+- 搜尋／universal search／`get_user_records`：同時比對 holder 與 linked 欄位。
+- 完課：改呼叫 `attendance_log_userid($enrol)`。
+- 搜尋結果顯示：改用 `format_attendance_roster_cells()`。
+
+### 預防準則
+- 凡「學員身分」讀寫，卡位列必須同時考慮 `linked_userid`／`linked_email`，不可只看 `e.userid`。
+- 出席相關同步（attendance log／completion／group）必須共用同一 userid 解析函式。
 
 ---
 

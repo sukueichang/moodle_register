@@ -282,11 +282,12 @@ echo $OUTPUT->header();
 <tbody>
 <?php foreach ($results as $r):
     [$badge_cls, $badge_lbl] = $learning_status_meta($r);
+    $display = enrolment_manager::format_attendance_roster_cells($r);
 ?>
 <tr>
-    <td><?php echo s($r->firstname.' '.$r->lastname); ?></td>
-    <td><?php echo s($r->email); ?></td>
-    <td><?php echo s($r->user_institution); ?></td>
+    <td><?php echo s($display['displayname']); ?></td>
+    <td><?php echo s($display['email']); ?></td>
+    <td><?php echo s($display['institution']); ?></td>
     <td><?php echo s($enrol_source_label($r)); ?></td>
     <td><?php echo s($r->session_name); ?></td>
     <td><?php echo userdate($r->starttime, get_string('strftimedatetimeshort')); ?></td>
