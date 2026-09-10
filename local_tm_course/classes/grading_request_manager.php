@@ -43,6 +43,14 @@ class grading_request_manager {
         return self::user_is_admin($user) || permissions_manager::user_can_batch_enrol($user);
     }
 
+    /**
+     * Name columns required by fullname() (phonetic / middle / alternate, etc.).
+     */
+    private static function user_name_fields_sql(string $tablealias = 'u'): string {
+        $fields = get_all_user_name_fields(true, $tablealias);
+        return $fields !== '' ? $fields : $tablealias . '.firstname, ' . $tablealias . '.lastname';
+    }
+
     public static function require_can_apply(): void {
         if (!self::user_can_apply()) {
             throw new \required_capability_exception(
@@ -306,8 +314,9 @@ class grading_request_manager {
             'q3' => $esc,
             'q4' => $esc,
         ];
+        $namefields = self::user_name_fields_sql('u');
         if ($activity['modname'] === 'assign') {
-            $sql = "SELECT DISTINCT u.id, u.firstname, u.lastname, u.email
+            $sql = "SELECT DISTINCT u.id, u.email, $namefields
                       FROM {assign_submission} s
                       JOIN {user} u ON u.id = s.userid AND u.deleted = 0
                      WHERE s.assignment = :aid
@@ -318,7 +327,7 @@ class grading_request_manager {
             $params['aid'] = $activity['instanceid'];
             $params['st'] = 'submitted';
         } else {
-            $sql = "SELECT DISTINCT u.id, u.firstname, u.lastname, u.email
+            $sql = "SELECT DISTINCT u.id, u.email, $namefields
                       FROM {quiz_attempts} qa
                       JOIN {user} u ON u.id = qa.userid AND u.deleted = 0
                      WHERE qa.quiz = :qid
@@ -611,8 +620,9 @@ class grading_request_manager {
             return [];
         }
         $cap = $modname === 'quiz' ? 'mod/quiz:grade' : 'mod/assign:grade';
-        $bycap = get_users_by_capability($ctx, $cap, 'u.id, u.firstname, u.lastname, u.email', 'u.lastname ASC, u.firstname ASC');
-        $byedit = get_users_by_capability($ctx, 'moodle/grade:edit', 'u.id, u.firstname, u.lastname, u.email', 'u.lastname ASC, u.firstname ASC');
+        $fields = 'u.id, u.email, ' . self::user_name_fields_sql('u');
+        $bycap = get_users_by_capability($ctx, $cap, $fields, 'u.lastname ASC, u.firstname ASC');
+        $byedit = get_users_by_capability($ctx, 'moodle/grade:edit', $fields, 'u.lastname ASC, u.firstname ASC');
         $merged = [];
         foreach ([$bycap, $byedit] as $set) {
             foreach ($set as $u) {
