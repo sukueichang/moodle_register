@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<XMLDB PATH="local/tm_course/db" VERSION="2026072401" COMMENT="TM Course Management DB Schema">
+<XMLDB PATH="local/tm_course/db" VERSION="2026091000" COMMENT="TM Course Management DB Schema">
   <TABLES>
 
     <!-- =========================================================
@@ -501,6 +501,77 @@
       <INDEXES>
         <INDEX NAME="idx_sessionid" UNIQUE="false" FIELDS="sessionid"/>
         <INDEX NAME="idx_itemid" UNIQUE="false" FIELDS="itemid"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_course_grreq
+         Sales grading request header (one activity, many learners)
+         ========================================================= -->
+    <TABLE NAME="local_tm_course_grreq" COMMENT="Sales grading request for one assign/quiz">
+      <FIELDS>
+        <FIELD NAME="id"            TYPE="int"  LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="courseid"      TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="mdl_course.id"/>
+        <FIELD NAME="cmid"          TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="mdl_course_modules.id"/>
+        <FIELD NAME="modname"       TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="assign"
+               COMMENT="assign | quiz"/>
+        <FIELD NAME="requesterid"   TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Sales user who submitted the request"/>
+        <FIELD NAME="assigneeid"    TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Assigned grader; 0 = unassigned"/>
+        <FIELD NAME="status"        TYPE="int"  LENGTH="2"  NOTNULL="true" DEFAULT="0"
+               COMMENT="0 pending, 1 assigned, 2 in progress, 3 completed, 4 rejected, 5 cancelled"/>
+        <FIELD NAME="note"          TYPE="text" NOTNULL="false"
+               COMMENT="Optional note from sales"/>
+        <FIELD NAME="rejectreason"  TYPE="text" NOTNULL="false"
+               COMMENT="Admin reject reason"/>
+        <FIELD NAME="activitygone"  TYPE="int"  LENGTH="1"  NOTNULL="true" DEFAULT="0"
+               COMMENT="1 if the cm/activity vanished after submit"/>
+        <FIELD NAME="timecreated"   TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timecompleted" TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_grreq_status" UNIQUE="false" FIELDS="status"/>
+        <INDEX NAME="idx_grreq_assignee" UNIQUE="false" FIELDS="assigneeid, status"/>
+        <INDEX NAME="idx_grreq_requester" UNIQUE="false" FIELDS="requesterid"/>
+        <INDEX NAME="idx_grreq_cmid" UNIQUE="false" FIELDS="cmid"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_course_gritem
+         Learners on a grading request
+         ========================================================= -->
+    <TABLE NAME="local_tm_course_gritem" COMMENT="Learners listed on a grading request">
+      <FIELDS>
+        <FIELD NAME="id"            TYPE="int"  LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="requestid"     TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="FK local_tm_course_grreq.id"/>
+        <FIELD NAME="userid"        TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="mdl_user.id"/>
+        <FIELD NAME="itemstatus"    TYPE="int"  LENGTH="2"  NOTNULL="true" DEFAULT="0"
+               COMMENT="0 pending, 1 graded, 2 missing"/>
+        <FIELD NAME="snapfirst"     TYPE="char" LENGTH="100" NOTNULL="false"
+               COMMENT="Firstname snapshot"/>
+        <FIELD NAME="snaplast"      TYPE="char" LENGTH="100" NOTNULL="false"
+               COMMENT="Lastname snapshot"/>
+        <FIELD NAME="snapemail"     TYPE="char" LENGTH="100" NOTNULL="false"
+               COMMENT="Email snapshot"/>
+        <FIELD NAME="timemodified"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="uq_gritem_req_user" TYPE="unique" FIELDS="requestid, userid"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_gritem_userid" UNIQUE="false" FIELDS="userid"/>
+        <INDEX NAME="idx_gritem_status" UNIQUE="false" FIELDS="itemstatus"/>
       </INDEXES>
     </TABLE>
 

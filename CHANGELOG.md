@@ -3,6 +3,16 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.20.0] - 2026-09-10 - 業務批改申請
+
+### Added
+- 業務可在連動課程中查已繳交的作業／測驗並送出批改申請；admin 分派有課程批改權限的同事，或自己開始批改。
+- 同事從外掛進入 Moodle 原生評分；成績與進度（如 `3/5`）回寫申請單給業務查看。
+- 首頁 Dashboard「申請批改」「待批改 (N)」與左側導覽數字；通知併入既有通知設定頁。
+
+### Docs
+- `docs/SPEC.md` §58、`docs/FEATURE_LOG.md`。
+
 ## [5.19.3] - 2026-09-03 - 業務可看全部視訊連結按鈕
 
 ### Changed

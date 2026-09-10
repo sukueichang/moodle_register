@@ -62,5 +62,14 @@ $tasks = [
         'dayofweek' => '*',
         'month' => '*',
     ],
+    [
+        'classname' => 'local_tm_course\\task\\sync_grading_request_grades',
+        'blocking' => 0,
+        'minute' => '*/10',
+        'hour' => '*',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
+    ],
 ];
 

@@ -1733,6 +1733,49 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026090400, 'local', 'tm_course');
     }
 
+    // 2026091000 — Sales grading requests (assign/quiz dispatch).
+    if ($oldversion < 2026091000) {
+        if (!$dbman->table_exists('local_tm_course_grreq')) {
+            $table = new xmldb_table('local_tm_course_grreq');
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+            $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('cmid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('modname', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'assign');
+            $table->add_field('requesterid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('assigneeid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('status', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('note', XMLDB_TYPE_TEXT, null, null, null, null);
+            $table->add_field('rejectreason', XMLDB_TYPE_TEXT, null, null, null, null);
+            $table->add_field('activitygone', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timecompleted', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('idx_grreq_status', XMLDB_INDEX_NOTUNIQUE, ['status']);
+            $table->add_index('idx_grreq_assignee', XMLDB_INDEX_NOTUNIQUE, ['assigneeid', 'status']);
+            $table->add_index('idx_grreq_requester', XMLDB_INDEX_NOTUNIQUE, ['requesterid']);
+            $table->add_index('idx_grreq_cmid', XMLDB_INDEX_NOTUNIQUE, ['cmid']);
+            $dbman->create_table($table);
+        }
+        if (!$dbman->table_exists('local_tm_course_gritem')) {
+            $table = new xmldb_table('local_tm_course_gritem');
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+            $table->add_field('requestid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('itemstatus', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('snapfirst', XMLDB_TYPE_CHAR, '100', null, null, null, null);
+            $table->add_field('snaplast', XMLDB_TYPE_CHAR, '100', null, null, null, null);
+            $table->add_field('snapemail', XMLDB_TYPE_CHAR, '100', null, null, null, null);
+            $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_key('uq_gritem_req_user', XMLDB_KEY_UNIQUE, ['requestid', 'userid']);
+            $table->add_index('idx_gritem_userid', XMLDB_INDEX_NOTUNIQUE, ['userid']);
+            $table->add_index('idx_gritem_status', XMLDB_INDEX_NOTUNIQUE, ['itemstatus']);
+            $dbman->create_table($table);
+        }
+        upgrade_plugin_savepoint(true, 2026091000, 'local', 'tm_course');
+    }
+
     return true;
 }
 

@@ -632,6 +632,145 @@ class notification_helper {
         return get_string('none');
     }
 
+    public static function notify_grading_submitted(int $requestid): void {
+        $ctx = self::grading_notify_context($requestid);
+        if (!$ctx) {
+            return;
+        }
+        $settings = self::get_event_target_settings('grading_submitted');
+        $ids = [];
+        if (in_array(self::TARGET_APPROVER, $settings['targets'], true)) {
+            $ids = array_merge($ids, self::collect_grading_admin_ids());
+        }
+        $ids = array_merge($ids, self::collect_role_user_ids($settings['roleids']));
+        foreach (self::normalise_user_ids($ids) as $userid) {
+            self::send_event_message($userid, 'grading_request', 'grading_submitted', $ctx['tokens']);
+        }
+    }
+
+    public static function notify_grading_assigned(int $requestid): void {
+        $ctx = self::grading_notify_context($requestid);
+        if (!$ctx) {
+            return;
+        }
+        $settings = self::get_event_target_settings('grading_assigned');
+        $ids = [];
+        if ((int)$ctx['req']->assigneeid > 0) {
+            $ids[] = (int)$ctx['req']->assigneeid;
+        }
+        $ids = array_merge($ids, self::collect_role_user_ids($settings['roleids']));
+        foreach (self::normalise_user_ids($ids) as $userid) {
+            self::send_event_message($userid, 'grading_request', 'grading_assigned', $ctx['tokens']);
+        }
+    }
+
+    public static function notify_grading_closed(int $requestid, string $action): void {
+        $ctx = self::grading_notify_context($requestid);
+        if (!$ctx) {
+            return;
+        }
+        $tokens = $ctx['tokens'];
+        $tokens['status'] = $action === 'rejected'
+            ? get_string('grading_status_rejected', 'local_tm_course')
+            : get_string('grading_status_cancelled', 'local_tm_course');
+        $tokens['reason'] = $action === 'rejected'
+            ? trim((string)($ctx['req']->rejectreason ?? ''))
+            : '';
+        $settings = self::get_event_target_settings('grading_closed');
+        $ids = [];
+        if ($action === 'rejected' && in_array(self::TARGET_REQUESTER, $settings['targets'], true)) {
+            $ids[] = (int)$ctx['req']->requesterid;
+        }
+        if ($action === 'cancelled' && in_array(self::TARGET_APPROVER, $settings['targets'], true)) {
+            $ids = array_merge($ids, self::collect_grading_admin_ids());
+        }
+        $ids = array_merge($ids, self::collect_role_user_ids($settings['roleids']));
+        foreach (self::normalise_user_ids($ids) as $userid) {
+            self::send_event_message($userid, 'grading_request', 'grading_closed', $tokens);
+        }
+    }
+
+    public static function notify_grading_completed(int $requestid): void {
+        $ctx = self::grading_notify_context($requestid);
+        if (!$ctx) {
+            return;
+        }
+        $settings = self::get_event_target_settings('grading_completed');
+        $ids = [];
+        if (in_array(self::TARGET_REQUESTER, $settings['targets'], true)) {
+            $ids[] = (int)$ctx['req']->requesterid;
+        }
+        $ids = array_merge($ids, self::collect_role_user_ids($settings['roleids']));
+        foreach (self::normalise_user_ids($ids) as $userid) {
+            self::send_event_message($userid, 'grading_request', 'grading_completed', $ctx['tokens']);
+        }
+        if (!in_array(self::TARGET_LEARNER, $settings['targets'], true)) {
+            return;
+        }
+        $activity = grading_request_manager::get_activity((int)$ctx['req']->cmid);
+        foreach (grading_request_manager::get_items($requestid) as $item) {
+            $uid = (int)$item->userid;
+            if ($uid <= 0) {
+                continue;
+            }
+            $grade = ['has' => false, 'str' => ''];
+            if ($activity && $activity['exists']) {
+                $grade = grading_request_manager::gradebook_grade(
+                    (int)$ctx['req']->courseid,
+                    (string)$ctx['req']->modname,
+                    (int)$activity['instanceid'],
+                    $uid
+                );
+            }
+            $ltokens = $ctx['tokens'];
+            $ltokens['learner'] = grading_request_manager::display_item_name($item);
+            $ltokens['grade'] = !empty($grade['has']) ? (string)$grade['str'] : get_string('grading_item_missing', 'local_tm_course');
+            $ltokens['link'] = (new \moodle_url('/mod/' . $ctx['req']->modname . '/view.php', ['id' => (int)$ctx['req']->cmid]))->out(false);
+            self::send_event_message($uid, 'grading_request', 'grading_completed', $ltokens);
+        }
+    }
+
+    private static function grading_notify_context(int $requestid): ?array {
+        require_once(__DIR__ . '/grading_request_manager.php');
+        $req = grading_request_manager::get_request($requestid);
+        if (!$req) {
+            return null;
+        }
+        global $DB;
+        $requester = $DB->get_record('user', ['id' => (int)$req->requesterid, 'deleted' => 0], '*', IGNORE_MISSING);
+        $course = $DB->get_record('course', ['id' => (int)$req->courseid], 'id, fullname', IGNORE_MISSING);
+        $activity = grading_request_manager::get_activity((int)$req->cmid);
+        $counts = grading_request_manager::progress_counts($req);
+        $actname = $activity['name'] ?? get_string('grading_activity_missing', 'local_tm_course');
+        $link = (new \moodle_url('/local/tm_course/grading/request.php', ['id' => $requestid]))->out(false);
+        $tokens = [
+            'requestid' => (string)$requestid,
+            'requester' => $requester ? fullname($requester) : '',
+            'course' => $course ? format_string((string)$course->fullname) : '',
+            'activity' => $actname,
+            'count' => (string)$counts['total'],
+            'note' => trim((string)($req->note ?? '')),
+            'link' => $link,
+            'learner' => '',
+            'grade' => '',
+            'status' => grading_request_manager::status_label((int)$req->status),
+            'reason' => trim((string)($req->rejectreason ?? '')),
+        ];
+        return ['req' => $req, 'tokens' => $tokens];
+    }
+
+    private static function collect_grading_admin_ids(): array {
+        $users = get_users_by_capability(\context_system::instance(), 'local/tm_course:manage', 'u.id');
+        $ids = [];
+        foreach ($users as $u) {
+            $ids[] = (int)$u->id;
+        }
+        foreach (get_admins() as $admin) {
+            $ids[] = (int)$admin->id;
+        }
+        return $ids;
+    }
+
     public static function get_notification_events_config(): array {
         return [
             'new_enrolment' => [
@@ -722,6 +861,38 @@ class notification_helper {
                 'defaultbody_zh_tw' => "您好 {{learner}}：\n歡迎註冊 Moodle 學習帳號。\n登入信箱：{{learner_email}}\n登入帳號：{{username}}\n初始密碼：{{initial_password}}\n登入網址：{{login_url}}\n來源場次：{{session}}\n提交業務：{{submitter}}\n請首次登入後立即變更密碼（系統可能會要求變更）。\n若無法登入，可使用忘記密碼：{{reset_url}}",
                 'defaultsubject_en' => '[TM Course] Your Moodle learning account is ready',
                 'defaultbody_en' => "Hello {{learner}},\nYour Moodle learning account has been created.\nEmail on file: {{learner_email}}\nUsername: {{username}}\nInitial password: {{initial_password}}\nSign-in: {{login_url}}\nSession: {{session}}\nSubmitted by: {{submitter}}\nPlease change your password after first sign-in (you may be prompted to do so).\nIf you cannot sign in, use Forgot password: {{reset_url}}",
+            ],
+            'grading_submitted' => [
+                'label' => get_string('notify_event_grading_submitted', 'local_tm_course'),
+                'tokens' => ['{{requestid}}', '{{requester}}', '{{course}}', '{{activity}}', '{{count}}', '{{note}}', '{{link}}'],
+                'defaultsubject_zh_tw' => '【TM 課程】批改申請已送出：#{{requestid}}（{{activity}}）',
+                'defaultbody_zh_tw' => "申請編號：#{{requestid}}\n申請業務：{{requester}}\n課程：{{course}}\n活動：{{activity}}\n學員人數：{{count}}\n備註：{{note}}\n連結：{{link}}",
+                'defaultsubject_en' => '[TM Course] Grading request submitted: #{{requestid}} ({{activity}})',
+                'defaultbody_en' => "Request #: {{requestid}}\nSales: {{requester}}\nCourse: {{course}}\nActivity: {{activity}}\nLearners: {{count}}\nNote: {{note}}\nLink: {{link}}",
+            ],
+            'grading_assigned' => [
+                'label' => get_string('notify_event_grading_assigned', 'local_tm_course'),
+                'tokens' => ['{{requestid}}', '{{requester}}', '{{course}}', '{{activity}}', '{{count}}', '{{note}}', '{{link}}'],
+                'defaultsubject_zh_tw' => '【TM 課程】有批改任務分派給您：#{{requestid}}',
+                'defaultbody_zh_tw' => "申請編號：#{{requestid}}\n申請業務：{{requester}}\n課程：{{course}}\n活動：{{activity}}\n學員人數：{{count}}\n備註：{{note}}\n請由此進入：{{link}}",
+                'defaultsubject_en' => '[TM Course] A grading task was assigned to you: #{{requestid}}',
+                'defaultbody_en' => "Request #: {{requestid}}\nSales: {{requester}}\nCourse: {{course}}\nActivity: {{activity}}\nLearners: {{count}}\nNote: {{note}}\nOpen: {{link}}",
+            ],
+            'grading_closed' => [
+                'label' => get_string('notify_event_grading_closed', 'local_tm_course'),
+                'tokens' => ['{{requestid}}', '{{status}}', '{{reason}}', '{{course}}', '{{activity}}', '{{link}}'],
+                'defaultsubject_zh_tw' => '【TM 課程】批改申請 #{{requestid}} — {{status}}',
+                'defaultbody_zh_tw' => "申請編號：#{{requestid}}\n課程：{{course}}\n活動：{{activity}}\n結果：{{status}}\n原因：{{reason}}\n連結：{{link}}",
+                'defaultsubject_en' => '[TM Course] Grading request #{{requestid}} — {{status}}',
+                'defaultbody_en' => "Request #: {{requestid}}\nCourse: {{course}}\nActivity: {{activity}}\nResult: {{status}}\nReason: {{reason}}\nLink: {{link}}",
+            ],
+            'grading_completed' => [
+                'label' => get_string('notify_event_grading_completed', 'local_tm_course'),
+                'tokens' => ['{{requestid}}', '{{requester}}', '{{course}}', '{{activity}}', '{{learner}}', '{{grade}}', '{{link}}'],
+                'defaultsubject_zh_tw' => '【TM 課程】批改完成：#{{requestid}}（{{activity}}）',
+                'defaultbody_zh_tw' => "申請編號：#{{requestid}}\n課程：{{course}}\n活動：{{activity}}\n學員：{{learner}}\n成績：{{grade}}\n連結：{{link}}",
+                'defaultsubject_en' => '[TM Course] Grading completed: #{{requestid}} ({{activity}})',
+                'defaultbody_en' => "Request #: {{requestid}}\nCourse: {{course}}\nActivity: {{activity}}\nLearner: {{learner}}\nGrade: {{grade}}\nLink: {{link}}",
             ],
         ];
     }
@@ -826,6 +997,18 @@ class notification_helper {
         }
         if ($eventkey === 'batch_account_created') {
             return [self::TARGET_LEARNER, self::TARGET_BATCH_SUBMITTER];
+        }
+        if ($eventkey === 'grading_submitted') {
+            return [self::TARGET_APPROVER];
+        }
+        if ($eventkey === 'grading_assigned') {
+            return [];
+        }
+        if ($eventkey === 'grading_closed') {
+            return [self::TARGET_REQUESTER, self::TARGET_APPROVER];
+        }
+        if ($eventkey === 'grading_completed') {
+            return [self::TARGET_REQUESTER];
         }
         return [];
     }

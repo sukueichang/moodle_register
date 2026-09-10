@@ -1855,3 +1855,24 @@ a.tm-attendance-learner-profile-link:focus {
 .tm-equip-desk-details[open] .tm-equip-desk-arrow {
     transform: rotate(90deg);
 }
+
+.tm-grading-search-row {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+.tm-grading-search-row .form-control {
+    flex: 1;
+}
+.tm-grading-search-row-item,
+.tm-grading-cart-row {
+    padding: 0.35rem 0;
+}
+.tm-grading-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+.tm-grading-apply {
+    max-width: 52rem;
+}
