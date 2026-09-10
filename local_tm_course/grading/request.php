@@ -56,6 +56,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             grading_request_manager::cancel($id, (int)$USER->id);
             redirect($PAGE->url, get_string('grading_cancelled_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
         }
+        if ($action === 'restore' && $isadmin) {
+            grading_request_manager::restore($id);
+            redirect($PAGE->url, get_string('grading_restored_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
+        }
     } catch (moodle_exception $e) {
         \core\notification::error($e->getMessage());
         $req = grading_request_manager::get_request($id);
@@ -197,6 +201,27 @@ if ($cancancel) {
     echo html_writer::tag('button', get_string('grading_cancel_submit', 'local_tm_course'), [
         'type' => 'submit',
         'class' => 'btn tm-dashboard-btn',
+    ]);
+    echo html_writer::end_tag('form');
+}
+
+$canrestore = $isadmin && in_array((int)$req->status, [
+    grading_request_manager::STATUS_REJECTED,
+    grading_request_manager::STATUS_CANCELLED,
+], true);
+if ($canrestore) {
+    echo html_writer::start_tag('form', [
+        'method' => 'post',
+        'class' => 'tm-card tm-card-body mb-3',
+        'onsubmit' => 'return confirm(' . json_encode(get_string('grading_restore_confirm', 'local_tm_course')) . ');',
+    ]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'restore']);
+    echo html_writer::tag('h4', get_string('grading_restore_heading', 'local_tm_course'), ['class' => 'tm-dashboard-section-title']);
+    echo html_writer::div(get_string('grading_restore_help', 'local_tm_course'), 'mb-2');
+    echo html_writer::tag('button', get_string('grading_restore_submit', 'local_tm_course'), [
+        'type' => 'submit',
+        'class' => 'btn tm-dashboard-btn tm-dashboard-btn-active',
     ]);
     echo html_writer::end_tag('form');
 }

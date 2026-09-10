@@ -266,7 +266,7 @@ class grading_request_manager {
         ];
     }
 
-    public static function open_duplicate_requestid(int $cmid, int $userid): int {
+    public static function open_duplicate_requestid(int $cmid, int $userid, int $excludeid = 0): int {
         global $DB;
         if ($cmid <= 0 || $userid <= 0) {
             return 0;
@@ -274,13 +274,19 @@ class grading_request_manager {
         list($insql, $params) = $DB->get_in_or_equal(self::OPEN_STATUSES, SQL_PARAMS_NAMED);
         $params['cmid'] = $cmid;
         $params['uid'] = $userid;
+        $exclude = '';
+        if ($excludeid > 0) {
+            $exclude = ' AND r.id <> :exid';
+            $params['exid'] = $excludeid;
+        }
         $id = $DB->get_field_sql(
             "SELECT r.id
                FROM {local_tm_course_grreq} r
                JOIN {local_tm_course_gritem} i ON i.requestid = r.id
               WHERE r.cmid = :cmid
                 AND i.userid = :uid
-                AND r.status $insql",
+                AND r.status $insql
+                $exclude",
             $params,
             IGNORE_MULTIPLE
         );
@@ -741,6 +747,35 @@ class grading_request_manager {
         } catch (\Throwable $e) {
             debugging('TM grading notify closed failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
         }
+    }
+
+    /**
+     * Admin reopen of a rejected or cancelled request.
+     */
+    public static function restore(int $requestid): void {
+        global $DB;
+        $req = self::get_request($requestid);
+        if (!$req) {
+            throw new \moodle_exception('grading_error_notfound', 'local_tm_course');
+        }
+        if (!self::user_is_admin()) {
+            throw new \moodle_exception('nopermissions', 'error');
+        }
+        if (!in_array((int)$req->status, [self::STATUS_REJECTED, self::STATUS_CANCELLED], true)) {
+            throw new \moodle_exception('grading_error_cannot_restore', 'local_tm_course');
+        }
+        foreach (self::get_items($requestid) as $item) {
+            $dup = self::open_duplicate_requestid((int)$req->cmid, (int)$item->userid, $requestid);
+            if ($dup > 0) {
+                throw new \moodle_exception('grading_error_restore_duplicate', 'local_tm_course', '', $dup);
+            }
+        }
+        $now = time();
+        $status = ((int)$req->assigneeid > 0) ? self::STATUS_ASSIGNED : self::STATUS_PENDING;
+        $DB->set_field('local_tm_course_grreq', 'status', $status, ['id' => $requestid]);
+        $DB->set_field('local_tm_course_grreq', 'rejectreason', null, ['id' => $requestid]);
+        $DB->set_field('local_tm_course_grreq', 'timemodified', $now, ['id' => $requestid]);
+        self::sync_request($requestid);
     }
 
     /**
