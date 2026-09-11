@@ -521,6 +521,8 @@
                COMMENT="Sales user who submitted the request"/>
         <FIELD NAME="assigneeid"    TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
                COMMENT="Assigned grader; 0 = unassigned"/>
+        <FIELD NAME="timeassigned"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Time of current assignment"/>
         <FIELD NAME="status"        TYPE="int"  LENGTH="2"  NOTNULL="true" DEFAULT="0"
                COMMENT="0 pending, 1 assigned, 2 in progress, 3 completed, 4 rejected, 5 cancelled"/>
         <FIELD NAME="note"          TYPE="text" NOTNULL="false"
@@ -541,6 +543,35 @@
         <INDEX NAME="idx_grreq_assignee" UNIQUE="false" FIELDS="assigneeid, status"/>
         <INDEX NAME="idx_grreq_requester" UNIQUE="false" FIELDS="requesterid"/>
         <INDEX NAME="idx_grreq_cmid" UNIQUE="false" FIELDS="cmid"/>
+      </INDEXES>
+    </TABLE>
+
+    <!-- =========================================================
+         Table: local_tm_course_grasn
+         Assignment / reassignment history for a grading request
+         ========================================================= -->
+    <TABLE NAME="local_tm_course_grasn" COMMENT="Grading request assignment history">
+      <FIELDS>
+        <FIELD NAME="id"            TYPE="int"  LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="requestid"     TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="FK local_tm_course_grreq.id"/>
+        <FIELD NAME="assigneeid"    TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Assigned grader"/>
+        <FIELD NAME="assignedby"    TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"
+               COMMENT="Admin who assigned"/>
+        <FIELD NAME="snapfirst"     TYPE="char" LENGTH="100" NOTNULL="false"
+               COMMENT="Assignee firstname snapshot"/>
+        <FIELD NAME="snaplast"      TYPE="char" LENGTH="100" NOTNULL="false"
+               COMMENT="Assignee lastname snapshot"/>
+        <FIELD NAME="snapemail"     TYPE="char" LENGTH="100" NOTNULL="false"
+               COMMENT="Assignee email snapshot"/>
+        <FIELD NAME="timecreated"   TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_grasn_request" UNIQUE="false" FIELDS="requestid"/>
       </INDEXES>
     </TABLE>
 

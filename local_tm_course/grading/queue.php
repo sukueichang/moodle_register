@@ -26,13 +26,7 @@ if (!$isadmin && !$canapply && !$canqueue) {
 
 $view = optional_param('view', '', PARAM_ALPHANUMEXT);
 if ($view === '') {
-    if ($isadmin) {
-        $view = 'pending';
-    } else if ($canqueue && !$canapply) {
-        $view = 'assigned';
-    } else {
-        $view = 'mine';
-    }
+    $view = grading_request_manager::queue_landing_view();
 }
 
 $PAGE->set_url(new moodle_url('/local/tm_course/grading/queue.php', ['view' => $view]));

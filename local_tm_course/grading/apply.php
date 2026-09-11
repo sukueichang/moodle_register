@@ -125,6 +125,26 @@ echo html_writer::end_tag('form');
     var cart = document.getElementById('tm-gr-cart');
     var cartEmpty = document.getElementById('tm-gr-cart-empty');
     var selected = {};
+    var pendingLabel = <?php echo json_encode(get_string('grading_item_pending', 'local_tm_course')); ?>;
+    var gradedLabel = <?php echo json_encode(get_string('grading_item_graded', 'local_tm_course')); ?>;
+
+    function gradePreviewText(u) {
+        if (u && Number(u.graded)) {
+            return u.gradestr ? (gradedLabel + ' ' + u.gradestr) : gradedLabel;
+        }
+        return pendingLabel;
+    }
+
+    function appendUserLine(parent, u, extra) {
+        var name = document.createElement('div');
+        name.className = 'tm-grading-user-name';
+        name.textContent = u.fullname + ' (' + u.email + ')' + (extra || '');
+        var meta = document.createElement('div');
+        meta.className = 'tm-grading-user-meta' + (u && Number(u.graded) ? ' is-graded' : '');
+        meta.textContent = gradePreviewText(u);
+        parent.appendChild(name);
+        parent.appendChild(meta);
+    }
 
     function renderCart() {
         var ids = Object.keys(selected);
@@ -134,7 +154,9 @@ echo html_writer::end_tag('form');
             var u = selected[id];
             var row = document.createElement('div');
             row.className = 'tm-grading-cart-row';
-            row.textContent = u.fullname + ' (' + u.email + ') ';
+            var info = document.createElement('div');
+            info.className = 'tm-grading-user-info';
+            appendUserLine(info, u);
             var rm = document.createElement('button');
             rm.type = 'button';
             rm.className = 'btn btn-sm tm-dashboard-btn';
@@ -147,6 +169,7 @@ echo html_writer::end_tag('form');
             hid.type = 'hidden';
             hid.name = 'userids[]';
             hid.value = id;
+            row.appendChild(info);
             row.appendChild(rm);
             row.appendChild(hid);
             cart.appendChild(row);
@@ -223,11 +246,14 @@ echo html_writer::end_tag('form');
                         renderCart();
                     });
                     label.appendChild(cb);
-                    var text = u.fullname + ' (' + u.email + ')';
+                    var extra = '';
                     if (u.blocked) {
-                        text += ' — ' + <?php echo json_encode(get_string('grading_already_on_request', 'local_tm_course')); ?> + ' #' + u.blockrequestid;
+                        extra = ' — ' + <?php echo json_encode(get_string('grading_already_on_request', 'local_tm_course')); ?> + ' #' + u.blockrequestid;
                     }
-                    label.appendChild(document.createTextNode(' ' + text));
+                    var info = document.createElement('div');
+                    info.className = 'tm-grading-user-info';
+                    appendUserLine(info, u, extra);
+                    label.appendChild(info);
                     row.appendChild(label);
                     results.appendChild(row);
                 });

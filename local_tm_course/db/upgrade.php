@@ -1743,6 +1743,7 @@ function xmldb_local_tm_course_upgrade($oldversion) {
             $table->add_field('modname', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, 'assign');
             $table->add_field('requesterid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('assigneeid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $table->add_field('timeassigned', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('status', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, '0');
             $table->add_field('note', XMLDB_TYPE_TEXT, null, null, null, null);
             $table->add_field('rejectreason', XMLDB_TYPE_TEXT, null, null, null, null);
@@ -1774,6 +1775,88 @@ function xmldb_local_tm_course_upgrade($oldversion) {
             $dbman->create_table($table);
         }
         upgrade_plugin_savepoint(true, 2026091000, 'local', 'tm_course');
+    }
+
+    // 2026091001 — Restore language strings for rejected/cancelled tickets.
+    if ($oldversion < 2026091001) {
+        upgrade_plugin_savepoint(true, 2026091001, 'local', 'tm_course');
+    }
+
+    // 2026091100 — Apply-page grade preview and dashboard rename.
+    if ($oldversion < 2026091100) {
+        upgrade_plugin_savepoint(true, 2026091100, 'local', 'tm_course');
+    }
+
+    // 2026091101 — Assignment time + reassignment history.
+    if ($oldversion < 2026091101) {
+        $table = new xmldb_table('local_tm_course_grreq');
+        $field = new xmldb_field('timeassigned', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'assigneeid');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        if (!$dbman->table_exists('local_tm_course_grasn')) {
+            $hist = new xmldb_table('local_tm_course_grasn');
+            $hist->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+            $hist->add_field('requestid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $hist->add_field('assigneeid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $hist->add_field('assignedby', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $hist->add_field('snapfirst', XMLDB_TYPE_CHAR, '100', null, null, null, null);
+            $hist->add_field('snaplast', XMLDB_TYPE_CHAR, '100', null, null, null, null);
+            $hist->add_field('snapemail', XMLDB_TYPE_CHAR, '100', null, null, null, null);
+            $hist->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $hist->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $hist->add_index('idx_grasn_request', XMLDB_INDEX_NOTUNIQUE, ['requestid']);
+            $dbman->create_table($hist);
+        }
+        $assigned = $DB->get_records_select('local_tm_course_grreq', 'assigneeid > 0');
+        foreach ($assigned as $req) {
+            if ($DB->record_exists('local_tm_course_grasn', ['requestid' => (int)$req->id])) {
+                continue;
+            }
+            $u = $DB->get_record('user', ['id' => (int)$req->assigneeid], 'id, firstname, lastname, email', IGNORE_MISSING);
+            $when = (int)($req->timeassigned ?? 0);
+            if ($when <= 0) {
+                $when = (int)($req->timemodified ?: $req->timecreated);
+            }
+            $DB->insert_record('local_tm_course_grasn', (object) [
+                'requestid' => (int)$req->id,
+                'assigneeid' => (int)$req->assigneeid,
+                'assignedby' => 0,
+                'snapfirst' => $u ? (string)$u->firstname : null,
+                'snaplast' => $u ? (string)$u->lastname : null,
+                'snapemail' => $u ? (string)$u->email : null,
+                'timecreated' => $when,
+            ]);
+            if ((int)($req->timeassigned ?? 0) <= 0 && $when > 0) {
+                $DB->set_field('local_tm_course_grreq', 'timeassigned', $when, ['id' => (int)$req->id]);
+            }
+        }
+        upgrade_plugin_savepoint(true, 2026091101, 'local', 'tm_course');
+    }
+
+    // 2026091102 — Assignee pending-grade badge uses item count.
+    if ($oldversion < 2026091102) {
+        upgrade_plugin_savepoint(true, 2026091102, 'local', 'tm_course');
+    }
+
+    // 2026091103 — Assignee badge even if the user is also admin/manage.
+    if ($oldversion < 2026091103) {
+        upgrade_plugin_savepoint(true, 2026091103, 'local', 'tm_course');
+    }
+
+    // 2026091104 — Assigned graders cannot reassign / reject / restore.
+    if ($oldversion < 2026091104) {
+        upgrade_plugin_savepoint(true, 2026091104, 'local', 'tm_course');
+    }
+
+    // 2026091105 — Dashboard group labels.
+    if ($oldversion < 2026091105) {
+        upgrade_plugin_savepoint(true, 2026091105, 'local', 'tm_course');
+    }
+
+    // 2026091106 — Sales grading-request tracking button.
+    if ($oldversion < 2026091106) {
+        upgrade_plugin_savepoint(true, 2026091106, 'local', 'tm_course');
     }
 
     return true;

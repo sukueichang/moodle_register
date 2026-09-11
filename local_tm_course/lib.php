@@ -93,11 +93,18 @@ function local_tm_course_extend_navigation(global_navigation $nav): void {
         || \local_tm_course\grading_request_manager::has_any_assigned((int)$USER->id);
     if ($cangradingapply) {
         $node->add(
-            $safe('dashboard_grading_apply', 'Request grading'),
+            $safe('dashboard_grading_apply', 'Assignment / quiz grading request'),
             new moodle_url('/local/tm_course/grading/apply.php'),
             navigation_node::TYPE_CUSTOM,
             null,
             'tm_course_grading_apply'
+        );
+        $node->add(
+            $safe('dashboard_grading_tracking', 'Application tracking'),
+            new moodle_url('/local/tm_course/grading/queue.php', ['view' => 'mine']),
+            navigation_node::TYPE_CUSTOM,
+            null,
+            'tm_course_grading_tracking'
         );
     }
     if ($cangradingqueue) {
@@ -105,7 +112,7 @@ function local_tm_course_extend_navigation(global_navigation $nav): void {
         if ($gradingn > 0) {
             $qlabel .= ' (' . $gradingn . ')';
         }
-        $qview = \local_tm_course\grading_request_manager::user_is_admin() ? 'pending' : 'assigned';
+        $qview = \local_tm_course\grading_request_manager::queue_landing_view();
         $node->add(
             $qlabel,
             new moodle_url('/local/tm_course/grading/queue.php', ['view' => $qview]),
@@ -420,7 +427,7 @@ function local_tm_course_before_standard_top_of_body_html(): string {
         : 'My learning and enrolment records';
 
     $out .= html_writer::start_div('tm-dashboard-action-groups');
-    // 學習與報名：探索、我的紀錄、搜尋（業務）
+    // 既有課程：探索、我的紀錄、搜尋（業務）
     $out .= html_writer::start_div('tm-dashboard-action-group');
     $out .= html_writer::tag('h4', get_string('dashboard_group_learning', 'local_tm_course'),
         ['class' => 'tm-dashboard-group-title']);
@@ -462,13 +469,18 @@ function local_tm_course_before_standard_top_of_body_html(): string {
                 get_string('dashboard_grading_apply', 'local_tm_course'),
                 ['class' => 'btn tm-dashboard-btn']
             );
+            $out .= html_writer::link(
+                (new moodle_url('/local/tm_course/grading/queue.php', ['view' => 'mine']))->out(false),
+                get_string('dashboard_grading_tracking', 'local_tm_course'),
+                ['class' => 'btn tm-dashboard-btn']
+            );
         }
         if ($canqueuegrading) {
             $qlabel = get_string('dashboard_grading_queue', 'local_tm_course');
             if ($gradingbadge > 0) {
                 $qlabel .= ' (' . $gradingbadge . ')';
             }
-            $qview = \local_tm_course\grading_request_manager::user_is_admin() ? 'pending' : 'assigned';
+            $qview = \local_tm_course\grading_request_manager::queue_landing_view();
             $out .= html_writer::link(
                 (new moodle_url('/local/tm_course/grading/queue.php', ['view' => $qview]))->out(false),
                 $qlabel,

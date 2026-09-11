@@ -36,18 +36,18 @@ $PAGE->set_title(get_string('grading_request_title', 'local_tm_course', $id));
 $PAGE->set_heading(get_string('grading_request_title', 'local_tm_course', $id));
 $PAGE->requires->css('/local/tm_course/styles.css');
 
-$isadmin = grading_request_manager::user_is_admin();
+$candispatch = grading_request_manager::user_can_dispatch_request($req);
 $isowner = ((int)$req->requesterid === (int)$USER->id);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
     $action = required_param('action', PARAM_ALPHANUMEXT);
     try {
-        if ($action === 'assign' && $isadmin) {
+        if ($action === 'assign' && $candispatch) {
             $assignee = required_param('assigneeid', PARAM_INT);
             grading_request_manager::assign_to($id, $assignee, (int)$USER->id);
             redirect($PAGE->url, get_string('grading_assigned_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
         }
-        if ($action === 'reject' && $isadmin) {
+        if ($action === 'reject' && $candispatch) {
             $reason = optional_param('rejectreason', '', PARAM_RAW_TRIMMED);
             grading_request_manager::reject($id, $reason);
             redirect($PAGE->url, get_string('grading_rejected_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
@@ -56,7 +56,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
             grading_request_manager::cancel($id, (int)$USER->id);
             redirect($PAGE->url, get_string('grading_cancelled_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
         }
-        if ($action === 'restore' && $isadmin) {
+        if ($action === 'restore' && $candispatch) {
+            grading_request_manager::restore($id);
+            redirect($PAGE->url, get_string('grading_restored_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
+        }
+    } catch (moodle_exception $e) {
+        \core\notification::error($e->getMessage());
+        $req = grading_request_manager::get_request($id);
+        $candispatch = grading_request_manager::user_can_dispatch_request($req);
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
+    $action = required_param('action', PARAM_ALPHANUMEXT);
+    try {
+        if ($action === 'assign' && $candispatch) {
+            $assignee = required_param('assigneeid', PARAM_INT);
+            grading_request_manager::assign_to($id, $assignee, (int)$USER->id);
+            redirect($PAGE->url, get_string('grading_assigned_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
+        }
+        if ($action === 'reject' && $candispatch) {
+            $reason = optional_param('rejectreason', '', PARAM_RAW_TRIMMED);
+            grading_request_manager::reject($id, $reason);
+            redirect($PAGE->url, get_string('grading_rejected_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
+        }
+        if ($action === 'cancel') {
+            grading_request_manager::cancel($id, (int)$USER->id);
+            redirect($PAGE->url, get_string('grading_cancelled_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
+        }
+        if ($action === 'restore' && $candispatch) {
             grading_request_manager::restore($id);
             redirect($PAGE->url, get_string('grading_restored_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
         }
@@ -94,6 +122,43 @@ echo html_writer::div(html_writer::tag('strong', get_string('grading_label_activ
 echo html_writer::div(html_writer::tag('strong', get_string('status') . ': ')
     . s(grading_request_manager::status_label((int)$req->status))
     . ' (' . $counts['done'] . '/' . $counts['total'] . ')');
+$assignhist = grading_request_manager::assignment_history($id);
+if ((int)$req->assigneeid > 0) {
+    $current = $assignhist ? end($assignhist) : null;
+    $assigneename = $current
+        ? grading_request_manager::assignment_display_name($current)
+        : grading_request_manager::assignment_display_name((object) ['assigneeid' => (int)$req->assigneeid]);
+    $assignedat = (int)($req->timeassigned ?? 0);
+    if ($assignedat <= 0 && $current) {
+        $assignedat = (int)$current->timecreated;
+    }
+    echo html_writer::div(html_writer::tag('strong', get_string('grading_label_assignee', 'local_tm_course') . ': ')
+        . s($assigneename));
+    if ($assignedat > 0) {
+        echo html_writer::div(html_writer::tag('strong', get_string('grading_label_assigned_at', 'local_tm_course') . ': ')
+            . s(userdate($assignedat, get_string('strftimedatetimeshort'))));
+    }
+}
+if (count($assignhist) > 1) {
+    echo html_writer::div(html_writer::tag('strong', get_string('grading_assign_history', 'local_tm_course')), 'mt-2');
+    echo html_writer::start_tag('ul', ['class' => 'tm-grading-assign-history']);
+    $lasti = count($assignhist) - 1;
+    foreach ($assignhist as $i => $row) {
+        $label = ($i === $lasti)
+            ? get_string('grading_assign_current', 'local_tm_course')
+            : get_string('grading_assign_previous', 'local_tm_course');
+        $when = (int)$row->timecreated > 0
+            ? userdate((int)$row->timecreated, get_string('strftimedatetimeshort'))
+            : '—';
+        echo html_writer::tag('li',
+            html_writer::span($label . '：', 'tm-grading-assign-role')
+            . s(grading_request_manager::assignment_display_name($row))
+            . ' — '
+            . s($when)
+        );
+    }
+    echo html_writer::end_tag('ul');
+}
 if (trim((string)($req->note ?? '')) !== '') {
     echo html_writer::div(html_writer::tag('strong', get_string('grading_label_note', 'local_tm_course') . ': ')
         . s((string)$req->note));
@@ -154,7 +219,7 @@ foreach ($items as $item) {
 }
 echo html_writer::table($table);
 
-if ($isadmin && $open && !$activitygone) {
+if ($candispatch && $open && !$activitygone) {
     $graders = grading_request_manager::list_graders((int)$req->courseid, (string)$req->modname);
     echo html_writer::start_tag('form', ['method' => 'post', 'class' => 'tm-card tm-card-body mb-3']);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
@@ -193,7 +258,7 @@ if ($isadmin && $open && !$activitygone) {
     echo html_writer::end_tag('form');
 }
 
-$cancancel = $open && ($isadmin || ($isowner && (int)$req->assigneeid === 0));
+$cancancel = $open && ($candispatch || ($isowner && (int)$req->assigneeid === 0));
 if ($cancancel) {
     echo html_writer::start_tag('form', ['method' => 'post', 'class' => 'mb-3']);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
@@ -205,7 +270,7 @@ if ($cancancel) {
     echo html_writer::end_tag('form');
 }
 
-$canrestore = $isadmin && in_array((int)$req->status, [
+$canrestore = $candispatch && in_array((int)$req->status, [
     grading_request_manager::STATUS_REJECTED,
     grading_request_manager::STATUS_CANCELLED,
 ], true);

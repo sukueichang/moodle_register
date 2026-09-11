@@ -39,6 +39,22 @@ class grading_request_manager {
         return is_siteadmin($user) || has_capability('local/tm_course:manage', \context_system::instance(), $user);
     }
 
+    /**
+     * Assign / reject / restore this request. Assigned graders cannot reassign
+     * even if they also have manage (unless they are a site admin).
+     */
+    public static function user_can_dispatch_request(\stdClass $req, ?\stdClass $user = null): bool {
+        global $USER;
+        $user = $user ?? $USER;
+        if (!self::user_is_admin($user)) {
+            return false;
+        }
+        if ((int)$req->assigneeid === (int)$user->id && !is_siteadmin($user)) {
+            return false;
+        }
+        return true;
+    }
+
     public static function user_can_apply(?\stdClass $user = null): bool {
         return self::user_is_admin($user) || permissions_manager::user_can_batch_enrol($user);
     }
@@ -62,30 +78,80 @@ class grading_request_manager {
         }
     }
 
-    public static function badge_count(?\stdClass $user = null): int {
-        global $DB, $USER;
-        $user = $user ?? $USER;
-        if (empty($user->id)) {
+    /**
+     * Pending assign/quiz rows on open tickets assigned to this user.
+     */
+    public static function pending_item_count_for_assignee(int $userid): int {
+        global $DB;
+        if ($userid <= 0) {
             return 0;
         }
+        if (!$DB->get_manager()->table_exists('local_tm_course_gritem')) {
+            return 0;
+        }
+        list($insql, $params) = $DB->get_in_or_equal(self::OPEN_STATUSES, SQL_PARAMS_NAMED);
+        $params['uid'] = $userid;
+        $params['pending'] = self::ITEM_PENDING;
+        return (int)$DB->count_records_sql(
+            "SELECT COUNT(i.id)
+               FROM {local_tm_course_gritem} i
+               JOIN {local_tm_course_grreq} r ON r.id = i.requestid
+              WHERE r.status $insql
+                AND r.assigneeid = :uid
+                AND i.itemstatus = :pending",
+            $params
+        );
+    }
+
+    /**
+     * Unassigned open tickets (admin dispatch queue).
+     */
+    public static function unassigned_ticket_count(): int {
+        global $DB;
         if (!$DB->get_manager()->table_exists('local_tm_course_grreq')) {
             return 0;
         }
         list($insql, $params) = $DB->get_in_or_equal(self::OPEN_STATUSES, SQL_PARAMS_NAMED);
-        if (self::user_is_admin($user)) {
-            $params['assignee'] = 0;
-            return (int)$DB->count_records_select(
-                'local_tm_course_grreq',
-                "status $insql AND assigneeid = :assignee",
-                $params
-            );
-        }
-        $params['uid'] = (int)$user->id;
+        $params['assignee'] = 0;
         return (int)$DB->count_records_select(
             'local_tm_course_grreq',
-            "status $insql AND assigneeid = :uid",
+            "status $insql AND assigneeid = :assignee",
             $params
         );
+    }
+
+    public static function badge_count(?\stdClass $user = null): int {
+        global $USER;
+        $user = $user ?? $USER;
+        if (empty($user->id)) {
+            return 0;
+        }
+        $mine = self::pending_item_count_for_assignee((int)$user->id);
+        if ($mine > 0) {
+            return $mine;
+        }
+        if (self::user_is_admin($user)) {
+            return self::unassigned_ticket_count();
+        }
+        return 0;
+    }
+
+    /**
+     * Default queue tab: assigned work first, else admin pending, else my requests.
+     */
+    public static function queue_landing_view(?\stdClass $user = null): string {
+        global $USER;
+        $user = $user ?? $USER;
+        if (self::pending_item_count_for_assignee((int)$user->id) > 0) {
+            return 'assigned';
+        }
+        if (self::user_is_admin($user)) {
+            return 'pending';
+        }
+        if (self::user_can_apply($user)) {
+            return 'mine';
+        }
+        return 'assigned';
     }
 
     public static function user_can_see_queue(?\stdClass $user = null): bool {
@@ -266,6 +332,53 @@ class grading_request_manager {
         ];
     }
 
+    /**
+     * @param int[] $userids
+     * @return array<int, array{has:bool,str:string,time:int}>
+     */
+    public static function gradebook_grades_for_users(int $courseid, string $modname, int $instanceid, array $userids): array {
+        global $CFG;
+        $empty = ['has' => false, 'str' => '', 'time' => 0];
+        $userids = array_values(array_unique(array_filter(array_map('intval', $userids), static function(int $id): bool {
+            return $id > 0;
+        })));
+        $map = [];
+        foreach ($userids as $uid) {
+            $map[$uid] = $empty;
+        }
+        if ($courseid <= 0 || $instanceid <= 0 || $modname === '' || empty($userids)) {
+            return $map;
+        }
+        require_once($CFG->libdir . '/gradelib.php');
+        $grades = \grade_get_grades($courseid, 'mod', $modname, $instanceid, $userids);
+        if (empty($grades->items)) {
+            return $map;
+        }
+        $item = reset($grades->items);
+        if (empty($item->grades)) {
+            return $map;
+        }
+        foreach ($userids as $uid) {
+            if (empty($item->grades[$uid])) {
+                continue;
+            }
+            $g = $item->grades[$uid];
+            if ($g->grade === null || $g->grade === '') {
+                continue;
+            }
+            $str = trim((string)($g->str_long_grade ?? ''));
+            if ($str === '') {
+                $str = trim((string)($g->str_grade ?? ''));
+            }
+            $map[$uid] = [
+                'has' => true,
+                'str' => $str,
+                'time' => (int)($g->dategraded ?? 0),
+            ];
+        }
+        return $map;
+    }
+
     public static function open_duplicate_requestid(int $cmid, int $userid, int $excludeid = 0): int {
         global $DB;
         if ($cmid <= 0 || $userid <= 0) {
@@ -294,7 +407,7 @@ class grading_request_manager {
     }
 
     /**
-     * @return array{id:int,fullname:string,email:string,blocked:int,blockrequestid:int}[]
+     * @return array{id:int,fullname:string,email:string,blocked:int,blockrequestid:int,graded:int,gradestr:string}[]
      */
     public static function search_submitted_users(int $cmid, string $query): array {
         global $DB;
@@ -344,15 +457,29 @@ class grading_request_manager {
             $params['st'] = 'finished';
         }
         $users = $DB->get_records_sql($sql, $params, 0, 50);
+        $userids = [];
+        foreach ($users as $u) {
+            $userids[] = (int)$u->id;
+        }
+        $grademap = self::gradebook_grades_for_users(
+            (int)$activity['courseid'],
+            (string)$activity['modname'],
+            (int)$activity['instanceid'],
+            $userids
+        );
         $out = [];
         foreach ($users as $u) {
-            $dup = self::open_duplicate_requestid($cmid, (int)$u->id);
+            $uid = (int)$u->id;
+            $dup = self::open_duplicate_requestid($cmid, $uid);
+            $g = $grademap[$uid] ?? ['has' => false, 'str' => ''];
             $out[] = [
-                'id' => (int)$u->id,
+                'id' => $uid,
                 'fullname' => fullname($u),
                 'email' => (string)$u->email,
                 'blocked' => $dup > 0 ? 1 : 0,
                 'blockrequestid' => $dup,
+                'graded' => !empty($g['has']) ? 1 : 0,
+                'gradestr' => (string)($g['str'] ?? ''),
             ];
         }
         return $out;
@@ -398,6 +525,7 @@ class grading_request_manager {
             'modname' => $activity['modname'],
             'requesterid' => $requesterid,
             'assigneeid' => 0,
+            'timeassigned' => 0,
             'status' => self::STATUS_PENDING,
             'note' => $note !== '' ? $note : null,
             'rejectreason' => null,
@@ -470,6 +598,37 @@ class grading_request_manager {
     public static function get_items(int $requestid): array {
         global $DB;
         return array_values($DB->get_records('local_tm_course_gritem', ['requestid' => $requestid], 'id ASC'));
+    }
+
+    /**
+     * @return \stdClass[] oldest first
+     */
+    public static function assignment_history(int $requestid): array {
+        global $DB;
+        if ($requestid <= 0 || !$DB->get_manager()->table_exists('local_tm_course_grasn')) {
+            return [];
+        }
+        return array_values($DB->get_records('local_tm_course_grasn', ['requestid' => $requestid], 'timecreated ASC, id ASC'));
+    }
+
+    public static function assignment_display_name(\stdClass $row): string {
+        global $DB;
+        $first = trim((string)($row->snapfirst ?? ''));
+        $last = trim((string)($row->snaplast ?? ''));
+        $name = trim($first . ' ' . $last);
+        if ($name !== '') {
+            return $name;
+        }
+        $uid = (int)($row->assigneeid ?? 0);
+        if ($uid > 0) {
+            $namefields = get_all_user_name_fields(true);
+            $select = 'id' . ($namefields !== '' ? ', ' . $namefields : ', firstname, lastname');
+            $u = $DB->get_record('user', ['id' => $uid], $select, IGNORE_MISSING);
+            if ($u) {
+                return fullname($u);
+            }
+        }
+        return get_string('grading_unknown_user', 'local_tm_course');
     }
 
     public static function display_item_name(\stdClass $item): string {
@@ -647,7 +806,7 @@ class grading_request_manager {
         if (!$req) {
             throw new \moodle_exception('grading_error_notfound', 'local_tm_course');
         }
-        if (!self::user_is_admin()) {
+        if (!self::user_can_dispatch_request($req)) {
             throw new \moodle_exception('nopermissions', 'error');
         }
         if (!in_array((int)$req->status, self::OPEN_STATUSES, true)) {
@@ -663,12 +822,25 @@ class grading_request_manager {
         if (!$ok) {
             throw new \moodle_exception('grading_error_not_grader', 'local_tm_course');
         }
+        if ((int)$req->assigneeid === $assigneeid && (int)$req->assigneeid > 0) {
+            return;
+        }
         $now = time();
+        $u = $DB->get_record('user', ['id' => $assigneeid], 'id, firstname, lastname, email', IGNORE_MISSING);
+        $DB->insert_record('local_tm_course_grasn', (object) [
+            'requestid' => $requestid,
+            'assigneeid' => $assigneeid,
+            'assignedby' => $actorid,
+            'snapfirst' => $u ? (string)$u->firstname : null,
+            'snaplast' => $u ? (string)$u->lastname : null,
+            'snapemail' => $u ? (string)$u->email : null,
+            'timecreated' => $now,
+        ]);
         $DB->set_field('local_tm_course_grreq', 'assigneeid', $assigneeid, ['id' => $requestid]);
+        $DB->set_field('local_tm_course_grreq', 'timeassigned', $now, ['id' => $requestid]);
         $status = ((int)$req->status === self::STATUS_IN_PROGRESS) ? self::STATUS_IN_PROGRESS : self::STATUS_ASSIGNED;
         $DB->set_field('local_tm_course_grreq', 'status', $status, ['id' => $requestid]);
         $DB->set_field('local_tm_course_grreq', 'timemodified', $now, ['id' => $requestid]);
-        unset($actorid);
         try {
             notification_helper::notify_grading_assigned($requestid);
         } catch (\Throwable $e) {
@@ -682,7 +854,7 @@ class grading_request_manager {
         if (!$req) {
             throw new \moodle_exception('grading_error_notfound', 'local_tm_course');
         }
-        if (!self::user_is_admin()) {
+        if (!self::user_can_dispatch_request($req)) {
             throw new \moodle_exception('nopermissions', 'error');
         }
         if (!in_array((int)$req->status, self::OPEN_STATUSES, true)) {
@@ -710,13 +882,14 @@ class grading_request_manager {
             throw new \moodle_exception('grading_error_notfound', 'local_tm_course');
         }
         $isowner = ((int)$req->requesterid === $userid) && self::user_can_apply();
-        if (!self::user_is_admin() && !$isowner) {
+        $candispatch = self::user_can_dispatch_request($req);
+        if (!$candispatch && !$isowner) {
             throw new \moodle_exception('nopermissions', 'error');
         }
         if (!in_array((int)$req->status, self::OPEN_STATUSES, true)) {
             throw new \moodle_exception('grading_error_closed', 'local_tm_course');
         }
-        if ($isowner && !self::user_is_admin()) {
+        if ($isowner && !$candispatch) {
             if ((int)$req->assigneeid > 0) {
                 throw new \moodle_exception('grading_error_cannot_cancel', 'local_tm_course');
             }
@@ -758,7 +931,7 @@ class grading_request_manager {
         if (!$req) {
             throw new \moodle_exception('grading_error_notfound', 'local_tm_course');
         }
-        if (!self::user_is_admin()) {
+        if (!self::user_can_dispatch_request($req)) {
             throw new \moodle_exception('nopermissions', 'error');
         }
         if (!in_array((int)$req->status, [self::STATUS_REJECTED, self::STATUS_CANCELLED], true)) {

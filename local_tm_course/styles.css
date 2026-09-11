@@ -1866,7 +1866,40 @@ a.tm-attendance-learner-profile-link:focus {
 }
 .tm-grading-search-row-item,
 .tm-grading-cart-row {
-    padding: 0.35rem 0;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid #e2e8f0;
+}
+.tm-grading-search-row-item label {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0;
+}
+.tm-grading-search-row-item input[type="checkbox"] {
+    margin-top: 0.25rem;
+}
+.tm-grading-cart-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+.tm-grading-user-info {
+    min-width: 0;
+    flex: 1;
+}
+.tm-grading-user-name {
+    font-size: 14px;
+    color: #1e293b;
+}
+.tm-grading-user-meta {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #64748b;
+}
+.tm-grading-user-meta.is-graded {
+    color: #15803d;
+    font-weight: 600;
 }
 .tm-grading-tabs {
     display: flex;
@@ -1875,4 +1908,17 @@ a.tm-attendance-learner-profile-link:focus {
 }
 .tm-grading-apply {
     max-width: 52rem;
+}
+.tm-grading-assign-history {
+    margin: 0.35rem 0 0;
+    padding-left: 1.2rem;
+    color: #334155;
+    font-size: 13px;
+}
+.tm-grading-assign-role {
+    display: inline-block;
+    min-width: 2.5rem;
+    margin-right: 0.35rem;
+    color: #64748b;
+    font-size: 12px;
 }

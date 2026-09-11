@@ -470,8 +470,9 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
     - `教室管理`（`/local/tm_course/classroom/index.php`）
     - `課程連動設定`（`/local/tm_course/settings/course_mapping.php`）
     - `報名審核`（`/local/tm_course/admin/enrolments.php`）
-  - **批改申請（§58）：**
-    - `申請批改`：業務；`manage`／site admin 亦可見
+  - **作業/測驗批改申請（§58）：**
+    - `作業/測驗批改申請`：業務；`manage`／site admin 亦可見
+    - `申請追蹤`：業務；看自己送出的單（`queue.php?view=mine`）
     - `待批改 (N)`：admin 與被分派同事（N 的定義見 §58.6；可見性含 §14 批改申請例外）
 
 - 視覺規範：
@@ -1221,8 +1222,9 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
 
 - Dashboard 快捷入口分類（全站共用心智模型）：
   - 快捷入口改分組顯示（沿用既有配色風格）：
-    - `學習與報名`
-    - `申請與流程`
+    - `既有課程`
+    - `客制專班`
+    - `學員服務`
     - `營運與設定`
   - 角色差異僅影響可見群組/按鈕，不改分組語意本身。
 
@@ -1627,7 +1629,7 @@ delivery_mode = onsite：
 | 項目 | 說明 |
 |------|------|
 | 注入機制 | `local_tm_course_before_standard_top_of_body_html()` 注入首頁主內容區；**不在**該 hook 使用 `$PAGE->requires`（改 inline／延遲載入），見 `docs/BUGFIX_LOG.md`。 |
-| 標題與區塊 | 「實體/線上課程報名系統」、快捷按鈕分組（學習與報名／申請與流程／營運與設定）。 |
+| 標題與區塊 | 「實體/線上課程報名系統」、快捷按鈕分組（既有課程／客制專班／學員服務／營運與設定）。 |
 | 位置與可見性 | `dashboard_control.php`（sesskey + site admin）；集中設定：`settings.php` → Dashboard 顯示設定。 |
 | 角色化區塊 | 一般使用者／業務／管理員各組獨立 `dashboard_widget_{role}_{*}`，缺值回退舊全域 key。 |
 | 區塊內容 | 即將到來的課程、審核中的課程、近期開班申請、近期批次報名、課程月視圖（FullCalendar + `calendar_events.php`）。 |
@@ -2158,7 +2160,7 @@ delivery_mode = onsite：
 - 活動清單：該連動課所有 `assign`／`quiz`，且課程模組**未隱藏**（`course_modules.visible`）。**不管**開放時間／完成條件。
 - 已送出的單不受之後隱藏影響：同事開始批改仍走 Moodle。
 - 沒交的人不能勾；≥1 人已交才能送。
-- 組單：選課程 → 選一個活動 → 姓名／email 搜尋後才列出符合的已繳交者（名單預設空，欄位至少 2 字元）→ 已勾者進購物車，再搜不清掉，可移除。
+- 組單：選課程 → 選一個活動 → 姓名／email 搜尋後才列出符合的已繳交者（名單預設空，欄位至少 2 字元）→ 搜尋結果與購物車同時預覽該學員作業／測驗是否已評分與分數 → 已勾者進購物車，再搜不清掉，可移除。已評分不阻擋送出。
 - 選填備註。學員看不到備註。
 - **重複：** 同一「活動 cm + 學員」不能同時出現在兩張未完成單。已完成／已駁回／已取消後可再送，產生**新單**。
 
@@ -2166,7 +2168,7 @@ delivery_mode = onsite：
 
 | 動作 | 效果 |
 |------|------|
-| 分派／改派 | 誰收到「已分派」信、誰的「待批改 (N)」±1。未完成才能改派。改派不另寄「你被取消」給原同事。 |
+| 分派／改派 | 誰收到「已分派」信、誰的「待批改 (N)」增減。同事的 N＝分派給他、尚未評完的作業／測驗列數（不是申請單張數）。未完成才能改派。改派不另寄「你被取消」給原同事。詳情狀態列顯示目前負責人與分派時間；改派後保留先前與目前分派紀錄。**被分派人不可再分派／改派／駁回**（即使其 Moodle 角色帶有 `manage`）；網站管理員除外。 |
 | 開始批改 | 看得到這張單的 admin 或被分派人，跳 Moodle 原生評分頁。**不**默默分派給自己、**不**搶單。 |
 
 未分派的單只出現在 admin 佇列。Admin 可以只改不分派、只分派自己不改、或兩個都做。一張單不支援同時分派多人。
@@ -2195,10 +2197,11 @@ delivery_mode = onsite：
 
 ### 58.6 入口與數字 N
 
-1. **申請批改** — 業務；具 `manage`／site admin 亦可見。
-2. **待批改 (N)** — admin 與被分派同事。
+1. **作業/測驗批改申請** — 業務；具 `manage`／site admin 亦可見。
+2. **申請追蹤** — 業務；看自己送出的單。
+3. **待批改 (N)** — admin 與被分派同事。
 
-**N：** Admin = 未分派且未完成；同事 = 分派給我且未完成。已分派給別人的不計入 admin 的 N，但仍可在「全部」看到並開始批改。
+**N：** 若目前使用者有被分派且未完成的列，N＝那些待評分的作業／測驗列數（即使該人同時是 admin／`manage`）。否則 admin 的 N＝未分派且未完成的申請單張數。已分派給別人的不計入 admin 的未分派 N，但仍可在「全部」看到並開始批改。
 
 左側全域導覽同一顆數字。有待辦的被分派者即使不是 site admin／業務也必須看到（見 §14 例外）。
 
@@ -2221,7 +2224,8 @@ delivery_mode = onsite：
 
 | 表 | 角色 |
 |----|------|
-| `local_tm_course_grreq` | 申請主檔：courseid、cmid、modname、requesterid、assigneeid、status、note、rejectreason、時間戳 |
+| `local_tm_course_grreq` | 申請主檔：courseid、cmid、modname、requesterid、assigneeid、timeassigned、status、note、rejectreason、時間戳 |
+| `local_tm_course_grasn` | 分派／改派歷史：requestid、assigneeid、assignedby、姓名快照、timecreated |
 | `local_tm_course_gritem` | 學員列：requestid、userid、itemstatus、姓名／email 快照 |
 
 不存作業檔案；成績每次從 gradebook 讀。
