@@ -11,7 +11,7 @@
 
 ### 0.1 目的
 
-在 Moodle 上提供 Techman 實體／視訊課程的**場次管理、報名審核、批次報名、先修條件、專屬開班預約、課前檢核、出缺席、通知、證書與 TCMS 同步**，並維持品牌色與多語系（至少 `en` / `zh_tw`）。
+在 Moodle 上提供 Techman 實體／視訊課程的**場次管理、報名審核、批次報名、先修條件、專屬開班預約、課前檢核、出缺席、通知、證書、TCMS 同步與業務批改申請**，並維持品牌色與多語系（至少 `en` / `zh_tw`）。
 
 ### 0.2 元件與路徑
 
@@ -26,9 +26,9 @@
 
 | 角色 | 主要能力 |
 |------|----------|
-| Admin / Manager | `manage`、`approve`、`viewall`、設定頁、審核中心 |
-| Sales（業務） | `batchenrol` 或權限規則命中 → 批次報名、專屬開班申請／追蹤 |
-| Learner | `enrol` → 瀏覽場次、報名／取消、我的紀錄 |
+| Admin / Manager | `manage`、`approve`、`viewall`、設定頁、審核中心、批改申請分派／改派／駁回 |
+| Sales（業務） | `batchenrol` 或權限規則命中 → 批次報名、專屬開班申請／追蹤、批改申請 |
+| Learner | `enrol` → 瀏覽場次、報名／取消、我的紀錄。**不使用**批改申請外掛畫面（成績回 Moodle 作業／測驗） |
 
 規則型業務授權：`/local/tm_course/settings/permissions.php`（idnumber / institution / name 等）。
 
@@ -50,6 +50,7 @@
 | 課程連動 | `settings/course_mapping.php`、`classes/enabled_course_manager.php` |
 | TCMS 同步 | `classes/tcms_sync_manager.php`、`classes/tcms_endpoint.php`（VM：`https://tcms.tm-robot.com`） |
 | 證書 | 整合 `mod_customcert` |
+| 批改申請 | `grading/*`、`classes/grading_request_manager.php`（見 §58） |
 
 ### 0.4a TCMS 同步（Moodle → VM，5.19.0）
 
@@ -422,6 +423,7 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
   - 權限規則：管理批次報名自動授權規則（`settings/permissions.php`）。
   - 報名查詢：可看全部報名紀錄（`local/tm_course:viewall`）。
   - 批次報名：可執行批次加入，且可對**已額滿／已截止**場次批次加入（admin override）。
+  - **批改申請：** 看全部單、分派／改派、駁回、自己按「開始批改」（與被分派同事同一行為；見 §58）。 site admin 視同具 `manage`。
 
 - 業務（Sales，`permissions_manager::user_can_batch_enrol()` 為 true）：
   - 可用批次報名入口（前提：符合角色 capability 或規則命中）。
@@ -429,11 +431,13 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
   - 已額滿／已截止場次不可批次加入（由 `batch_enrol.php` 擋下，僅管理者可 override）。
   - 一般情境不可看全部報名（除非另授 `local/tm_course:viewall`）。
   - **視訊連結按鈕：** 前台場次列表對所有「視訊且已填 meeting_link」的場次，可直接看到「加入視訊課程」按鈕（不需本人已報名／已核准）。一般學員仍僅在本人該場次報名已核准時可見。
+  - **批改申請：** 可查連動課已繳交作業／測驗並送出申請、追蹤自己的單與成績（見 §58）。不可分派同事。
 
 - 一般使用者（Learner，具 `local/tm_course:enrol`）：
   - 可在前台瀏覽場次、報名/重報、取消報名。
   - 不可審核、不可批次報名、不可進入管理設定頁。
   - 對已額滿／已截止場次不可報名。
+  - **不使用**批改申請外掛畫面；作業／測驗結果回 Moodle 原活動查看（§58）。
 
 ## 14. 首頁 Dashboard（方案 A，2026-04-10）
 
@@ -455,6 +459,7 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
     - 一般用戶不顯示 dashboard
     - 系統管理員仍可見控制列，以便重新啟用
   - 控制操作走專用端點 `dashboard_control.php`，需 `sesskey` 且僅 `is_siteadmin()` 可操作。
+  - **批改申請例外（§58）：** 使用者只要有「分派給我且未完成」的批改單，即使 audience 為一般使用者、即使營運區只給 site admin、即使 `front_dashboard_visible` 對一般使用者關閉，仍須看到「待批改 (N)」（至少左側全域導覽數字仍在；首頁能顯示 Dashboard 時亦顯示該按鈕）。
 
 - Dashboard 按鈕：
   - 一般使用者可見：
@@ -465,6 +470,10 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
     - `教室管理`（`/local/tm_course/classroom/index.php`）
     - `課程連動設定`（`/local/tm_course/settings/course_mapping.php`）
     - `報名審核`（`/local/tm_course/admin/enrolments.php`）
+  - **作業/測驗批改申請（§58）：**
+    - `作業/測驗批改申請`：業務；`manage`／site admin 亦可見
+    - `申請追蹤`：業務；看自己送出的單（`queue.php?view=mine`）
+    - `待批改 (N)`：admin 與被分派同事（N 的定義見 §58.6；可見性含 §14 批改申請例外）
 
 - 視覺規範：
   - 保持 M6 風格（實心卡片、Techman Blue/Green）。
@@ -1213,8 +1222,9 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
 
 - Dashboard 快捷入口分類（全站共用心智模型）：
   - 快捷入口改分組顯示（沿用既有配色風格）：
-    - `學習與報名`
-    - `申請與流程`
+    - `既有課程`
+    - `客制專班`
+    - `學員服務`
     - `營運與設定`
   - 角色差異僅影響可見群組/按鈕，不改分組語意本身。
 
@@ -1619,7 +1629,7 @@ delivery_mode = onsite：
 | 項目 | 說明 |
 |------|------|
 | 注入機制 | `local_tm_course_before_standard_top_of_body_html()` 注入首頁主內容區；**不在**該 hook 使用 `$PAGE->requires`（改 inline／延遲載入），見 `docs/BUGFIX_LOG.md`。 |
-| 標題與區塊 | 「實體/線上課程報名系統」、快捷按鈕分組（學習與報名／申請與流程／營運與設定）。 |
+| 標題與區塊 | 「實體/線上課程報名系統」、快捷按鈕分組（既有課程／客制專班／學員服務／營運與設定）。 |
 | 位置與可見性 | `dashboard_control.php`（sesskey + site admin）；集中設定：`settings.php` → Dashboard 顯示設定。 |
 | 角色化區塊 | 一般使用者／業務／管理員各組獨立 `dashboard_widget_{role}_{*}`，缺值回退舊全域 key。 |
 | 區塊內容 | 即將到來的課程、審核中的課程、近期開班申請、近期批次報名、課程月視圖（FullCalendar + `calendar_events.php`）。 |
@@ -1676,7 +1686,7 @@ delivery_mode = onsite：
 |------|------|
 | 設定頁 | `settings/notifications.php`：accordion、模板變數、預設與額外角色收件者、去重。 |
 | 通道 | 站內 + Email 分離處理；關鍵流程不因 email processor 失敗而中斷。 |
-| 情境擴充 | 含 `batch_enrol_completed`、新報名、取消報名、客製審核結果等（細項見 §37、§40）。 |
+| 情境擴充 | 含 `batch_enrol_completed`、新報名、取消報名、客製審核結果等（細項見 §37、§40）；**批改申請四事件見 §58.7**。 |
 
 ### 46.8 我的紀錄與證書
 
@@ -1696,6 +1706,7 @@ delivery_mode = onsite：
 | `send_pre_class_notification` | 課前通知：明日實體課程摘要信（見 §51）。 |
 | `close_incomplete_reservation_sessions` | 專屬開班檢核逾期自動關閉場次。 |
 | `audit_approved_enrolment_sync`（若有啟用） | 核准報名與 Moodle 選課一致性稽核。 |
+| 批改成績同步（§58） | 重讀 gradebook，讓未回外掛的評分仍能完成單據、消去 N。 |
 
 ---
 
@@ -2113,3 +2124,117 @@ delivery_mode = onsite：
 - `classes/enrolment_manager.php`：`build_session_attendance_view()` 增加 `profile_userid`
 - `admin/attendance_roster_partial.php`：姓名渲染 helper
 - `styles.css`、`lang/en`、`lang/zh_tw`
+
+---
+
+## 58. 業務批改申請（2026-09-10）
+
+**狀態**：進行中（開始開發）。  
+**目的**：讓業務代替郵件流程，為客戶的 Moodle 作業／測驗申請批改；admin 分派課程管理員（也可自己改）；成績回到外掛給**業務**看。繳交者（學員）不使用此外掛畫面。
+
+### 58.1 範圍與非範圍
+
+| 做 | 不做 |
+|----|------|
+| 派工單：查已繳交 → 申請 → 分派／改派／駁回 → Moodle 評分入口 → 成績回顯 | 新作業／測驗、外掛內看影片／打分／寫評語 |
+| 僅 `mod_assign`、`mod_quiz` | 其他模組 |
+| 僅「課程連動」啟用課 | 全站任意課、必須先有 TM 場次報名 |
+| 業務／admin／被分派同事 | 學員 Dashboard、我的紀錄加成績區、學員外掛連結 |
+| 信件 + 首頁 Dashboard 數字 + 左側導覽數字 | 新 block、以全站鈴鐺當主提示 |
+| 選填備註（admin／同事可見） | 評語／批改者姓名、全班已繳交名冊（不搜就列出）、隱藏活動出現在申請清單、一張單多人多題、同時分派多人 |
+
+### 58.2 角色
+
+| 角色 | 權限 |
+|------|------|
+| 業務（`permissions_manager::user_can_batch_enrol()`） | 組單、送出、看**自己的**單與成績、未分派且尚無任何成績時可取消 |
+| Admin（`local/tm_course:manage` **或** site admin） | 全部單、分派／改派、駁回（必填原因）、自己「開始批改」 |
+| 被分派同事 | 該 Moodle 課**已有批改權限**的人；只看被分到的單；可開始批改；**不能關單** |
+| 學員（繳交者） | 外掛零入口；回 Moodle 作業／測驗看結果（與現況相同） |
+
+「開始批改」：admin 與同事同一顆按鈕、同一行為（開 Moodle 原生評分，指向該學員該次繳交）。
+
+### 58.3 單據形狀
+
+- 一張單＝**多名學員 × 同一個**作業或測驗。
+- 活動清單：該連動課所有 `assign`／`quiz`，且課程模組**未隱藏**（`course_modules.visible`）。**不管**開放時間／完成條件。
+- 已送出的單不受之後隱藏影響：同事開始批改仍走 Moodle。
+- 沒交的人不能勾；≥1 人已交才能送。
+- 組單：選課程 → 選一個活動 → 姓名／email 搜尋後才列出符合的已繳交者（名單預設空，欄位至少 2 字元）→ 搜尋結果與購物車同時預覽該學員作業／測驗是否已評分與分數 → 已勾者進購物車，再搜不清掉，可移除。已評分不阻擋送出。
+- 選填備註。學員看不到備註。
+- **重複：** 同一「活動 cm + 學員」不能同時出現在兩張未完成單。已完成／已駁回／已取消後可再送，產生**新單**。
+
+### 58.4 分派 vs 開始批改
+
+| 動作 | 效果 |
+|------|------|
+| 分派／改派 | 誰收到「已分派」信、誰的「待批改 (N)」增減。同事的 N＝分派給他、尚未評完的作業／測驗列數（不是申請單張數）。未完成才能改派。改派不另寄「你被取消」給原同事。詳情狀態列顯示目前負責人與分派時間；改派後保留先前與目前分派紀錄。**被分派人不可再分派／改派／駁回**（即使其 Moodle 角色帶有 `manage`）；網站管理員除外。 |
+| 開始批改 | 看得到這張單的 admin 或被分派人，跳 Moodle 原生評分頁。**不**默默分派給自己、**不**搶單。 |
+
+未分派的單只出現在 admin 佇列。Admin 可以只改不分派、只分派自己不改、或兩個都做。一張單不支援同時分派多人。
+
+### 58.5 狀態與完成
+
+| 狀態 | 意義 |
+|------|------|
+| 待分派 | 未指定同事 |
+| 已分派 | 有被分派人 |
+| 進行中 | 名單上已有部分成績（顯示如 `3/5`） |
+| 已完成 | 每一列都是「已評分」或「查無」；或整份活動已不存在 |
+| 已駁回／已取消 | 終態 |
+
+**成績來源**
+
+- 作業：Moodle 視為最終的已交繳交（通常最新已交、非草稿）。
+- 測驗：最新一份**已完成** attempt；不可停在「待人工評分」。
+- 外掛只讀 gradebook。顯示格式化成績 + 評分時間。
+
+**同步：** 打開／重新整理該張單即重讀；另加排程（約每 10–15 分）。
+
+**查無：** 送出後帳號／繳交／活動消失 → 標「查無此人的作業／測驗」或「活動已不存在」，**不提供**會開出 error 的連結。查無列為終態，不擋整張完成。
+
+**關單：** Admin 可駁回（必填原因）。業務僅在未分派且尚無任何成績時可取消。已分派或已有成績只有 admin 能關。Admin 可把**已駁回／已取消**的單復原（若同一學員＋活動已在另一張未完成單則擋下）。
+
+### 58.6 入口與數字 N
+
+1. **作業/測驗批改申請** — 業務；具 `manage`／site admin 亦可見。
+2. **申請追蹤** — 業務；看自己送出的單。
+3. **待批改 (N)** — admin 與被分派同事。
+
+**N：** 若目前使用者有被分派且未完成的列，N＝那些待評分的作業／測驗列數（即使該人同時是 admin／`manage`）。否則 admin 的 N＝未分派且未完成的申請單張數。已分派給別人的不計入 admin 的未分派 N，但仍可在「全部」看到並開始批改。
+
+左側全域導覽同一顆數字。有待辦的被分派者即使不是 site admin／業務也必須看到（見 §14 例外）。
+
+### 58.7 通知
+
+併入 `settings/notifications.php`。事件：
+
+| 事件 | 預設 |
+|------|------|
+| `grading_submitted` | 給 admin，開 |
+| `grading_assigned` | 給該同事，開 |
+| `grading_closed` | 駁回給業務、取消給 admin，開 |
+| `grading_completed` | 給申請業務，開；學員對象可勾、預設不勾 |
+
+開始批改不寄信。通知失敗不阻斷主流程。
+
+### 58.8 資料模型
+
+表名 ≤28 字元：
+
+| 表 | 角色 |
+|----|------|
+| `local_tm_course_grreq` | 申請主檔：courseid、cmid、modname、requesterid、assigneeid、timeassigned、status、note、rejectreason、時間戳 |
+| `local_tm_course_grasn` | 分派／改派歷史：requestid、assigneeid、assignedby、姓名快照、timecreated |
+| `local_tm_course_gritem` | 學員列：requestid、userid、itemstatus、姓名／email 快照 |
+
+不存作業檔案；成績每次從 gradebook 讀。
+
+### 58.9 相關檔案
+
+- `local_tm_course/grading/`（申請、佇列、單據、搜尋 API）
+- `classes/grading_request_manager.php`
+- `lib.php` Dashboard／導覽數字
+- `classes/notification_helper.php`、`settings/notifications.php`
+- `db/install.xml`、`db/upgrade.php`、`db/tasks.php`、`db/messages.php`
+- 語系 `en`、`zh_tw`

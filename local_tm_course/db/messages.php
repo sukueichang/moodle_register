@@ -13,5 +13,6 @@ $messageproviders = [
     'batch_enrol_completed' => [],
     'batch_account_created' => [],
     'reservation_submitted' => [],
+    'grading_request' => [],
 ];
 

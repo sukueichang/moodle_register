@@ -43,6 +43,10 @@ $eventdescriptions = [
     'reservation_submitted' => $str('notify_event_reservation_submitted_desc', 'Triggered when a user formally submits a dedicated class application (step 3/3).'),
     'batch_enrol_completed' => $str('notify_event_batch_enrol_completed_desc', 'Triggered when a user successfully submits a batch enrolment (pending records created).'),
     'batch_account_created' => $str('notify_event_batch_account_created_desc', 'Triggered when batch enrolment auto-creates a new Moodle account.'),
+    'grading_submitted' => $str('notify_event_grading_submitted_desc', 'Triggered when sales submits a grading request.'),
+    'grading_assigned' => $str('notify_event_grading_assigned_desc', 'Triggered when an admin assigns a grading request to a colleague.'),
+    'grading_closed' => $str('notify_event_grading_closed_desc', 'Triggered when a grading request is rejected or cancelled.'),
+    'grading_completed' => $str('notify_event_grading_completed_desc', 'Triggered when every learner on a grading request is graded or missing. Learner target is off by default.'),
 ];
 
 $preclasscolumnsfromrequest = function (): array {

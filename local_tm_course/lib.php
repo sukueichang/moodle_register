@@ -85,6 +85,43 @@ function local_tm_course_extend_navigation(global_navigation $nav): void {
     $node->showinflatnavigation = true;
     $node->force_open();
 
+    require_once(__DIR__ . '/classes/grading_request_manager.php');
+    $cangradingapply = \local_tm_course\grading_request_manager::user_can_apply();
+    $gradingn = \local_tm_course\grading_request_manager::badge_count();
+    $cangradingqueue = \local_tm_course\grading_request_manager::user_is_admin()
+        || $gradingn > 0
+        || \local_tm_course\grading_request_manager::has_any_assigned((int)$USER->id);
+    if ($cangradingapply) {
+        $node->add(
+            $safe('dashboard_grading_apply', 'Assignment / quiz grading request'),
+            new moodle_url('/local/tm_course/grading/apply.php'),
+            navigation_node::TYPE_CUSTOM,
+            null,
+            'tm_course_grading_apply'
+        );
+        $node->add(
+            $safe('dashboard_grading_tracking', 'Application tracking'),
+            new moodle_url('/local/tm_course/grading/queue.php', ['view' => 'mine']),
+            navigation_node::TYPE_CUSTOM,
+            null,
+            'tm_course_grading_tracking'
+        );
+    }
+    if ($cangradingqueue) {
+        $qlabel = $safe('dashboard_grading_queue', 'Grading queue');
+        if ($gradingn > 0) {
+            $qlabel .= ' (' . $gradingn . ')';
+        }
+        $qview = \local_tm_course\grading_request_manager::queue_landing_view();
+        $node->add(
+            $qlabel,
+            new moodle_url('/local/tm_course/grading/queue.php', ['view' => $qview]),
+            navigation_node::TYPE_CUSTOM,
+            null,
+            'tm_course_grading_queue'
+        );
+    }
+
     // Sub-item: My records (all logged-in users).
     $node->add(
         $safe('nav_my_records', 'My learning and enrolment records'),
@@ -279,6 +316,7 @@ function local_tm_course_before_standard_top_of_body_html(): string {
     require_once(__DIR__ . '/classes/user_dashboard_helper.php');
     require_once(__DIR__ . '/classes/enrolment_manager.php');
     require_once(__DIR__ . '/classes/permissions_manager.php');
+    require_once(__DIR__ . '/classes/grading_request_manager.php');
     if (!class_exists('local_tm_course\permissions_manager', false)
         && class_exists('local_tm_course_beta\permissions_manager', false)) {
         class_alias('local_tm_course_beta\permissions_manager', 'local_tm_course\permissions_manager');
@@ -286,9 +324,14 @@ function local_tm_course_before_standard_top_of_body_html(): string {
 
     $issiteadmin = is_siteadmin($USER);
     $canreservation = $issiteadmin || \local_tm_course\permissions_manager::user_can_batch_enrol();
+    $canapplygrading = \local_tm_course\grading_request_manager::user_can_apply();
+    $gradingbadge = \local_tm_course\grading_request_manager::badge_count();
+    $canqueuegrading = \local_tm_course\grading_request_manager::user_is_admin()
+        || $gradingbadge > 0
+        || \local_tm_course\grading_request_manager::has_any_assigned((int)$USER->id);
     $visiblecfg = get_config('local_tm_course', 'front_dashboard_visible');
     $isvisible = ($visiblecfg === false) ? 1 : (int)$visiblecfg;
-    if (!$isvisible && !$issiteadmin) {
+    if (!$isvisible && !$issiteadmin && !$canqueuegrading) {
         return '';
     }
     $positioncfg = (string)(get_config('local_tm_course', 'front_dashboard_position') ?: 'afternews');
@@ -384,7 +427,7 @@ function local_tm_course_before_standard_top_of_body_html(): string {
         : 'My learning and enrolment records';
 
     $out .= html_writer::start_div('tm-dashboard-action-groups');
-    // 學習與報名：探索、我的紀錄、搜尋（業務）
+    // 既有課程：探索、我的紀錄、搜尋（業務）
     $out .= html_writer::start_div('tm-dashboard-action-group');
     $out .= html_writer::tag('h4', get_string('dashboard_group_learning', 'local_tm_course'),
         ['class' => 'tm-dashboard-group-title']);
@@ -411,6 +454,39 @@ function local_tm_course_before_standard_top_of_body_html(): string {
         $out .= html_writer::link((new moodle_url('/local/tm_course/reservation/tracking.php'))->out(false),
             get_string('dashboard_reservation_tracking_cta', 'local_tm_course'),
             ['class' => 'btn tm-dashboard-btn']);
+        $out .= html_writer::end_div();
+        $out .= html_writer::end_div();
+    }
+
+    if ($canapplygrading || $canqueuegrading) {
+        $out .= html_writer::start_div('tm-dashboard-action-group');
+        $out .= html_writer::tag('h4', get_string('dashboard_group_grading', 'local_tm_course'),
+            ['class' => 'tm-dashboard-group-title']);
+        $out .= html_writer::start_div('tm-dashboard-action-row');
+        if ($canapplygrading) {
+            $out .= html_writer::link(
+                (new moodle_url('/local/tm_course/grading/apply.php'))->out(false),
+                get_string('dashboard_grading_apply', 'local_tm_course'),
+                ['class' => 'btn tm-dashboard-btn']
+            );
+            $out .= html_writer::link(
+                (new moodle_url('/local/tm_course/grading/queue.php', ['view' => 'mine']))->out(false),
+                get_string('dashboard_grading_tracking', 'local_tm_course'),
+                ['class' => 'btn tm-dashboard-btn']
+            );
+        }
+        if ($canqueuegrading) {
+            $qlabel = get_string('dashboard_grading_queue', 'local_tm_course');
+            if ($gradingbadge > 0) {
+                $qlabel .= ' (' . $gradingbadge . ')';
+            }
+            $qview = \local_tm_course\grading_request_manager::queue_landing_view();
+            $out .= html_writer::link(
+                (new moodle_url('/local/tm_course/grading/queue.php', ['view' => $qview]))->out(false),
+                $qlabel,
+                ['class' => 'btn tm-dashboard-btn' . ($gradingbadge > 0 ? ' tm-dashboard-btn-active' : '')]
+            );
+        }
         $out .= html_writer::end_div();
         $out .= html_writer::end_div();
     }
