@@ -3,6 +3,16 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.21.0] - 2026-09-15 - Attendance 二元成績同步
+
+### Added
+- 點名同步 `attendance_log` 後，重掃該學員在同一 Attendance 活動的全部紀錄：任一 Present → Gradebook 100%；無 Present → 0%。
+- Present 以 status acronym／穩定描述判斷（不含 Late／Absent／Excused）。
+- PHPUnit：`tests/attendance_binary_grade_test.php`。
+
+### Notes
+- 使用既有 `mod/attendance` grade item（`grade_update`）；不呼叫原生平均 `attendance_update_users_grade`；本階段不做原生頁事件回補。
+
 ## [5.20.8] - 2026-09-11 - 學員服務申請追蹤
 
 ### Added

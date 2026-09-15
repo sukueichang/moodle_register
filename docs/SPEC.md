@@ -1048,6 +1048,7 @@ Moodle Plugin Spec: TM Physical Course Management (`local_tm_course`) V5.7
   - slot 對應採「同 attendance 活動 + 同日 + 同場次名稱」優先，避免同日多時段誤寫。
   - 若場次綁定 slot 遺失，會自動回查/重建並再同步。
   - 寫入 `attendance_log` 時同步帶入 `statusset`，提高 take 頁可見一致性。
+  - **5.21.0：** 同步 log 後重掃該學員在同一 Attendance 活動的全部紀錄；任一 Present（穩定 status 識別，不含 Late／Absent／Excused）→ `grade_update` 寫入既有 `mod/attendance` grade item 為滿分，否則 0。不呼叫原生 `attendance_update_users_grade`。
 
 - 管理端快捷入口：
   - `admin/attendance.php` 新增「開啟 Moodle 出缺席點名頁」按鈕，連結帶齊 `id`、`sessionid`、`grouptype=0`。
