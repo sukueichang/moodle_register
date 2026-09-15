@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.20.8
+ * Version: 5.21.0
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026091106;   // Sales grading request tracking on dashboard
-$plugin->release   = '5.20.8';
+$plugin->version   = 2026091500;   // Binary attendance grade: any Present => 100%
+$plugin->release   = '5.21.0';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

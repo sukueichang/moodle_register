@@ -22,6 +22,19 @@
 
 ---
 
+## 2026-09-15 — Attendance 二元成績（有 Present＝100%）
+
+- **需求：** 外掛點名同步 Attendance log 後，Gradebook 不要用原生累計平均（缺→參=50%）；改為「該活動只要有一筆 Present → 100%，否則 0%」。每次異動須重掃全部 log。
+- **決策（本階段方案 A）：**
+  1. 維持 `sync_to_mod_attendance` 寫 log；成功後呼叫 `sync_binary_attendance_grade_for_user`。
+  2. Present 以 status acronym／English description 穩定識別（不含 Late／Absent／Excused）。
+  3. 用 `grade_update('mod/attendance', …)` 更新**既有** Attendance grade item；不呼叫 `attendance_update_users_grade`；不做事件回補／override／No grade／第二成績項／cron；不改 core。
+  4. 前提：TM 出缺席只由此外掛操作。
+- **影響範圍：** `attendance_manager.php`、`tests/attendance_binary_grade_test.php`、version 5.21.0。
+- **版本／狀態：** **5.21.0；進行中（待測試環境人工驗收）**
+
+---
+
 ## 2026-09-10 — 業務批改申請（作業／測驗派工）
 
 - **需求：** 業務現況用郵件請 admin 去 Moodle 找某客戶的作業／測驗繳交、複製連結再轉給課程管理員批改，改完再用截圖回報。改成外掛派工：業務自己查已繳交並申請 → admin 分派（也可自己改）→ 同事從外掛進 Moodle 評分 → 成績回外掛給業務看。

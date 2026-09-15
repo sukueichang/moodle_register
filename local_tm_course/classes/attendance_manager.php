@@ -906,6 +906,171 @@ class attendance_manager {
 
         // Required so Moodle take.php loads sessionlog and shows Pr/La/Ab selection.
         self::mark_mod_attendance_session_taken($att_sessionid);
+
+        // Binary Gradebook sync: any Present on this activity => 100%, else 0%.
+        // Re-scan all logs for the student (do not infer from this single mark alone).
+        try {
+            self::sync_binary_attendance_grade_for_user((int)$att_instance, $courseid, $studentid);
+        } catch (\Throwable $t) {
+            error_log('TM Course binary attendance grade sync failed: ' . $t->getMessage());
+        }
+    }
+
+    /**
+     * Whether an attendance_statuses row counts as Present for binary grading.
+     * Uses stable acronym / English description — not locale-specific UI labels alone.
+     * Late / Absent / Excused return false.
+     *
+     * @param \stdClass $status attendance_statuses row
+     */
+    public static function status_row_is_present(\stdClass $status): bool {
+        $acronym = \core_text::strtoupper(trim((string)($status->acronym ?? '')));
+        // Stable Present identifiers used by TM preset and common Moodle attendance setups.
+        if (in_array($acronym, ['PR', 'P', 'PRESENT'], true)) {
+            return true;
+        }
+        // Explicit non-present statuses.
+        if (in_array($acronym, ['LA', 'L', 'LATE', 'AB', 'A', 'ABSENT', 'E', 'EX', 'EXCUSED'], true)) {
+            return false;
+        }
+
+        $desc = \core_text::strtolower(trim((string)($status->description ?? '')));
+        if ($desc === '') {
+            return false;
+        }
+        if (\core_text::strpos($desc, 'absent') !== false
+            || \core_text::strpos($desc, 'late') !== false
+            || \core_text::strpos($desc, 'excus') !== false
+            || \core_text::strpos($desc, '缺席') !== false
+            || \core_text::strpos($desc, '遲到') !== false
+            || \core_text::strpos($desc, '迟到') !== false
+            || \core_text::strpos($desc, '請假') !== false
+            || \core_text::strpos($desc, '请假') !== false) {
+            return false;
+        }
+        // English Present; also allow exact traditional/simplified 出席 as secondary stable label.
+        if ($desc === 'present' || $desc === '出席') {
+            return true;
+        }
+        if (\core_text::strpos($desc, 'present') !== false) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Status ids on an attendance activity that count as Present.
+     *
+     * @return int[]
+     */
+    public static function get_present_status_ids(int $attendanceid): array {
+        global $DB;
+        if ($attendanceid <= 0 || !self::is_mod_attendance_installed()) {
+            return [];
+        }
+        $rows = $DB->get_records('attendance_statuses', [
+            'attendanceid' => $attendanceid,
+            'deleted' => 0,
+        ]);
+        $ids = [];
+        foreach ($rows as $row) {
+            if (self::status_row_is_present($row)) {
+                $ids[] = (int)$row->id;
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * True when the learner currently has at least one Present mark on this attendance activity
+     * (any session slot belonging to the activity).
+     */
+    public static function user_has_present_on_attendance_activity(int $attendanceid, int $userid): bool {
+        global $DB;
+        if ($attendanceid <= 0 || $userid < 2 || !self::is_mod_attendance_installed()) {
+            return false;
+        }
+        $statusids = self::get_present_status_ids($attendanceid);
+        if (empty($statusids)) {
+            return false;
+        }
+        list($insql, $inparams) = $DB->get_in_or_equal($statusids, SQL_PARAMS_NAMED, 'st');
+        $params = array_merge($inparams, [
+            'aid' => $attendanceid,
+            'uid' => $userid,
+        ]);
+        $sql = "SELECT l.id
+                  FROM {attendance_log} l
+                  JOIN {attendance_sessions} s ON s.id = l.sessionid
+                 WHERE s.attendanceid = :aid
+                   AND l.studentid = :uid
+                   AND l.statusid $insql";
+        return $DB->record_exists_sql($sql, $params);
+    }
+
+    /**
+     * Compute raw grade for binary rule against an attendance activity max grade.
+     * Present anywhere => full marks; otherwise 0. Returns null when activity has no numeric grade.
+     */
+    public static function compute_binary_attendance_rawgrade(int $attendanceid, int $userid): ?float {
+        global $DB;
+        if ($attendanceid <= 0 || $userid < 2 || !self::is_mod_attendance_installed()) {
+            return null;
+        }
+        $att = $DB->get_record('attendance', ['id' => $attendanceid], 'id,grade', IGNORE_MISSING);
+        if (!$att) {
+            return null;
+        }
+        $grademax = (float)$att->grade;
+        // Only point-value grade items (TM creates grade=100). Scales / no-grade skipped.
+        if ($grademax <= 0) {
+            return null;
+        }
+        if (self::user_has_present_on_attendance_activity($attendanceid, $userid)) {
+            return $grademax;
+        }
+        return 0.0;
+    }
+
+    /**
+     * Update the existing mod/attendance grade item for one user via grade_update API.
+     * Does not call attendance_update_users_grade (native average).
+     * Does not create a second grade item — uses itemmodule=attendance + iteminstance=attendanceid.
+     */
+    public static function sync_binary_attendance_grade_for_user(
+        int $attendanceid,
+        int $courseid,
+        int $userid
+    ): void {
+        global $CFG;
+        if ($attendanceid <= 0 || $courseid <= 0 || $userid < 2) {
+            return;
+        }
+        if (!self::is_mod_attendance_installed()) {
+            return;
+        }
+
+        $raw = self::compute_binary_attendance_rawgrade($attendanceid, $userid);
+        if ($raw === null) {
+            return;
+        }
+
+        require_once($CFG->libdir . '/gradelib.php');
+
+        $grade = new \stdClass();
+        $grade->userid = $userid;
+        $grade->rawgrade = $raw;
+
+        // Same identity Attendance core uses: mod/attendance + instance id.
+        grade_update(
+            'mod/attendance',
+            $courseid,
+            'mod',
+            'attendance',
+            $attendanceid,
+            0,
+            [$userid => $grade]
+        );
     }
 
     /**
