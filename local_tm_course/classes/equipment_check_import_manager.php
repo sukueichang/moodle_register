@@ -23,17 +23,30 @@ class equipment_check_import_manager {
     public const SESSION_KEY = 'tm_equip_check_import';
     public const TOKEN_TTL = 1800; // 30 minutes
 
-    /** Headers written to DB. */
+    /** Headers written to DB / used for ordering. */
     private const COL_ITEMNAME = 'itemname';
     private const COL_SCOPE = 'scope';
     private const COL_CHECKTYPE = 'checktype';
     private const COL_ENABLED = 'enabled';
+    private const COL_ORDER = 'order';
 
-    /** Ignored headers (read for column detection only). */
-    private const IGNORED_HEADERS = ['課程', '分类', '分類', '備註', '备注', 'course', 'category', 'remark', 'note'];
+    /** Required columns for a valid header row. */
+    private const REQUIRED_COLS = [
+        self::COL_ITEMNAME,
+        self::COL_SCOPE,
+        self::COL_CHECKTYPE,
+    ];
+
+    /** Display labels for required columns (error messages). */
+    private const REQUIRED_LABELS = [
+        self::COL_ITEMNAME => '檢查項目內容',
+        self::COL_SCOPE => '適用範圍',
+        self::COL_CHECKTYPE => '檢查型態',
+    ];
 
     /**
      * Map Chinese (or known) header label → internal column key.
+     * Unknown / ignored columns (課程、分類、備註, …) return null.
      */
     public static function map_header(string $header): ?string {
         $h = self::normalize_label($header);
@@ -51,6 +64,10 @@ class equipment_check_import_manager {
             '啟用' => self::COL_ENABLED,
             '启用' => self::COL_ENABLED,
             'enabled' => self::COL_ENABLED,
+            '順序' => self::COL_ORDER,
+            '顺序' => self::COL_ORDER,
+            'order' => self::COL_ORDER,
+            'sortorder' => self::COL_ORDER,
         ];
         return $map[$h] ?? null;
     }
@@ -123,6 +140,70 @@ class equipment_check_import_manager {
     }
 
     /**
+     * Optional Excel「順序」→ positive int, or null when blank / non-numeric.
+     */
+    public static function map_order(string $raw): ?int {
+        $v = trim($raw);
+        if ($v === '') {
+            return null;
+        }
+        if (!is_numeric($v)) {
+            return null;
+        }
+        $n = (int) round((float) $v);
+        return ($n > 0) ? $n : null;
+    }
+
+    /**
+     * Find the first row that contains all required header labels.
+     *
+     * @param array<int,array{excel_row:int,cells:array<int,string>}> $rows
+     * @return array{index:int,excel_row:int,colmap:array<string,int>}
+     * @throws \moodle_exception
+     */
+    public static function find_header_row(array $rows): array {
+        $bestpartial = null;
+        foreach ($rows as $index => $row) {
+            $cells = $row['cells'] ?? [];
+            if (!is_array($cells)) {
+                continue;
+            }
+            $colmap = self::build_column_map($cells);
+            $missing = [];
+            foreach (self::REQUIRED_COLS as $col) {
+                if (!isset($colmap[$col])) {
+                    $missing[] = self::REQUIRED_LABELS[$col];
+                }
+            }
+            $found = count(self::REQUIRED_COLS) - count($missing);
+            if ($found === count(self::REQUIRED_COLS)) {
+                return [
+                    'index' => (int) $index,
+                    'excel_row' => (int) ($row['excel_row'] ?? ($index + 1)),
+                    'colmap' => $colmap,
+                ];
+            }
+            // Row that clearly looks like a header but is incomplete.
+            if ($found >= 2 && ($bestpartial === null || $found > (int) $bestpartial['found'])) {
+                $bestpartial = [
+                    'found' => $found,
+                    'missing' => $missing,
+                    'excel_row' => (int) ($row['excel_row'] ?? ($index + 1)),
+                ];
+            }
+        }
+        if ($bestpartial !== null) {
+            throw new \moodle_exception(
+                'equipment_check_import_error_missing_column',
+                'local_tm_course',
+                '',
+                implode('、', $bestpartial['missing'])
+            );
+        }
+        throw new \moodle_exception('equipment_check_import_error_no_header', 'local_tm_course');
+    }
+
+    /**
      * Validate uploaded file metadata before parse.
      *
      * @param array $fileinfo one $_FILES entry
@@ -163,18 +244,15 @@ class equipment_check_import_manager {
         self::assert_course_allowed($courseid);
         self::assert_upload_ok($fileinfo);
 
-        $matrix = equipment_check_xlsx_reader::read_first_sheet((string) $fileinfo['tmp_name']);
-        if (empty($matrix)) {
+        $sheetrows = equipment_check_xlsx_reader::read_first_sheet((string) $fileinfo['tmp_name']);
+        if (empty($sheetrows)) {
             throw new \moodle_exception('equipment_check_import_error_empty_sheet', 'local_tm_course');
         }
 
-        $headerrow = array_shift($matrix);
-        $colmap = self::build_column_map($headerrow);
-        foreach ([self::COL_ITEMNAME, self::COL_SCOPE, self::COL_CHECKTYPE, self::COL_ENABLED] as $required) {
-            if (!isset($colmap[$required])) {
-                throw new \moodle_exception('equipment_check_import_error_missing_columns', 'local_tm_course');
-            }
-        }
+        $header = self::find_header_row($sheetrows);
+        $colmap = $header['colmap'];
+        $hasenabled = isset($colmap[self::COL_ENABLED]);
+        $hasorder = isset($colmap[self::COL_ORDER]);
 
         $dbkeys = equipment_check_manager::get_duplicate_key_set($courseid);
         $excelkeys = [];
@@ -182,17 +260,19 @@ class equipment_check_import_manager {
         $commitrozs = [];
         $summary = ['total' => 0, 'ok' => 0, 'duplicate' => 0, 'error' => 0];
 
-        // Excel row numbers: header is row 1; first data row is 2.
-        $excelrownum = 1;
-        foreach ($matrix as $line) {
-            $excelrownum++;
+        $start = $header['index'] + 1;
+        $count = count($sheetrows);
+        for ($i = $start; $i < $count; $i++) {
+            $line = $sheetrows[$i]['cells'] ?? [];
+            $excelrownum = (int) ($sheetrows[$i]['excel_row'] ?? ($i + 1));
             $rawitem = self::cell($line, $colmap[self::COL_ITEMNAME]);
             $rawscope = self::cell($line, $colmap[self::COL_SCOPE]);
             $rawtype = self::cell($line, $colmap[self::COL_CHECKTYPE]);
-            $rawenabled = self::cell($line, $colmap[self::COL_ENABLED]);
+            $rawenabled = $hasenabled ? self::cell($line, $colmap[self::COL_ENABLED]) : '';
+            $raworder = $hasorder ? self::cell($line, $colmap[self::COL_ORDER]) : '';
 
-            // Skip fully blank data lines (reader already drops blank rows, but defensive).
-            if ($rawitem === '' && $rawscope === '' && $rawtype === '' && $rawenabled === '') {
+            // Skip fully blank data lines.
+            if ($rawitem === '' && $rawscope === '' && $rawtype === '' && $rawenabled === '' && $raworder === '') {
                 continue;
             }
 
@@ -228,13 +308,29 @@ class equipment_check_import_manager {
                 ]);
             }
 
-            $enabled = self::map_enabled($rawenabled);
-            if ($enabled === null) {
-                $errors[] = get_string('equipment_check_import_err_enabled', 'local_tm_course', (object) [
-                    'row' => $excelrownum,
-                    'value' => $rawenabled,
-                ]);
+            // 「啟用」optional: missing column or blank cell → default enabled=1.
+            $enabled = 1;
+            $enabledlabel = get_string('equipment_check_import_enabled_default', 'local_tm_course');
+            if ($hasenabled) {
+                if (trim($rawenabled) === '') {
+                    $enabled = 1;
+                    $enabledlabel = get_string('equipment_check_import_enabled_default', 'local_tm_course');
+                } else {
+                    $mappedenabled = self::map_enabled($rawenabled);
+                    if ($mappedenabled === null) {
+                        $errors[] = get_string('equipment_check_import_err_enabled', 'local_tm_course', (object) [
+                            'row' => $excelrownum,
+                            'value' => $rawenabled,
+                        ]);
+                        $enabledlabel = $rawenabled;
+                    } else {
+                        $enabled = $mappedenabled;
+                        $enabledlabel = $enabled ? '是' : '否';
+                    }
+                }
             }
+
+            $order = $hasorder ? self::map_order($raworder) : null;
 
             $result = self::RESULT_OK;
             if (!empty($errors)) {
@@ -248,7 +344,6 @@ class equipment_check_import_manager {
                     $reason = isset($excelkeys[$key])
                         ? get_string('equipment_check_import_err_dup_excel', 'local_tm_course', $excelrownum)
                         : get_string('equipment_check_import_err_dup_db', 'local_tm_course', $excelrownum);
-                    // Duplicate is a warning message, not a blocking error.
                     $errors[] = $reason;
                 } else {
                     $excelkeys[$key] = $excelrownum;
@@ -258,6 +353,7 @@ class equipment_check_import_manager {
                         'scope' => $scope,
                         'checktype' => $checktype,
                         'enabled' => $enabled,
+                        'order' => $order,
                         'excel_row' => $excelrownum,
                     ];
                 }
@@ -268,7 +364,7 @@ class equipment_check_import_manager {
                 'itemname' => $itemname !== '' ? $itemname : $rawitem,
                 'scope_label' => $rawscope,
                 'checktype_label' => $rawtype,
-                'enabled_label' => $rawenabled,
+                'enabled_label' => $enabledlabel,
                 'result' => $result,
                 'errors' => $errors,
             ];
@@ -277,6 +373,21 @@ class equipment_check_import_manager {
         if ($summary['total'] === 0) {
             throw new \moodle_exception('equipment_check_import_error_empty_sheet', 'local_tm_course');
         }
+
+        usort($commitrozs, static function (array $a, array $b): int {
+            $ao = $a['order'] ?? null;
+            $bo = $b['order'] ?? null;
+            if ($ao !== null && $bo !== null && (int) $ao !== (int) $bo) {
+                return (int) $ao <=> (int) $bo;
+            }
+            if ($ao !== null && $bo === null) {
+                return -1;
+            }
+            if ($ao === null && $bo !== null) {
+                return 1;
+            }
+            return ((int) ($a['excel_row'] ?? 0)) <=> ((int) ($b['excel_row'] ?? 0));
+        });
 
         $token = random_string(32);
         self::store_session($token, $courseid, $commitrozs, $summary);
@@ -287,6 +398,7 @@ class equipment_check_import_manager {
             'summary_text' => get_string('equipment_check_import_summary', 'local_tm_course', (object) $summary),
             'rows' => $previewrows,
             'can_commit' => ($summary['error'] === 0 && $summary['total'] > 0),
+            'header_excel_row' => $header['excel_row'],
         ];
     }
 
@@ -382,14 +494,6 @@ class equipment_check_import_manager {
             $key = self::map_header((string) $label);
             if ($key !== null && !isset($map[$key])) {
                 $map[$key] = (int) $idx;
-                continue;
-            }
-            // Ignored columns intentionally skipped.
-            $norm = self::normalize_label((string) $label);
-            foreach (self::IGNORED_HEADERS as $ignored) {
-                if ($norm === self::normalize_label($ignored)) {
-                    continue 2;
-                }
             }
         }
         return $map;

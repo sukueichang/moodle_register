@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.22.0
+ * Version: 5.22.1
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026091510;   // Equipment check Excel batch import (append-only)
-$plugin->release   = '5.22.0';
+$plugin->version   = 2026091511;   // Equipment check Excel: detect official template header row
+$plugin->release   = '5.22.1';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

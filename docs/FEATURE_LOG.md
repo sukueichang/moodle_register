@@ -32,8 +32,9 @@
   4. **Append-only**：新增 `create_item`／`append_items`；**不**呼叫會整課 delete+reinsert 的 `save_items_for_course`。
   5. Duplicate key = `courseid + itemname + scope + checktype`；Excel／DB 重複標 ⚠ 並跳過，不覆蓋。
   6. XLSX 以 ZipArchive + SimpleXML 最小解析（無新 Composer 依賴）；session token 預覽後再 commit。
-- **影響範圍：** `equipment_check_manager.php`、`equipment_check_import_manager.php`、`equipment_check_xlsx_reader.php`、`equipment_check_items.php`、import API、lang、styles、tests；version **5.22.0**。
-- **版本／狀態：** **5.22.0；進行中（待測試環境人工驗收）**
+- **影響範圍：** `equipment_check_manager.php`、`equipment_check_import_manager.php`、`equipment_check_xlsx_reader.php`、`equipment_check_items.php`、import API、lang、styles、tests；version **5.22.0** → **5.22.1**（相容公版標題列／順序欄／啟用選填）。
+- **版本／狀態：** **5.22.1；進行中（待測試環境人工驗收）**
+- **5.22.1 修正：** 公版 `bt_check.xlsx` 第 1–3 列為標題／說明／空白、第 4 列表頭、無「啟用」欄；parser 改為自動尋找表頭，「啟用」改選填（預設 1），支援「順序」排列。
 
 ---
 

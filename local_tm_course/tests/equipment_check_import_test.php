@@ -102,20 +102,62 @@ class equipment_check_import_test extends \advanced_testcase {
     }
 
     public function test_xlsx_reader_roundtrip_minimal_sheet(): void {
+        if (!class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive not available');
+        }
         $this->resetAfterTest(true);
         $path = $this->make_minimal_xlsx([
-            ['檢查項目內容', '適用範圍', '檢查型態', '啟用', '分類', '備註', '課程'],
-            ['AI Server 可正常連線', '僅實體', '設備狀態型（正常／異常＋備註）', '是', '手臂功能', '', 'Ignored Course'],
-            ['', '', '', '', '', '', ''], // blank row should be dropped
-            ['已備妥教具', '兩者皆可', '準備確認型（完成／未完成）', '否', '上課教具', 'x', 'Ignored'],
+            ['Moodle 課前設備檢查項目盤點表', '', '', '', '', '', ''],
+            ['填寫說明', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', ''], // blank → dropped
+            ['課程', '順序', '分類', '檢查項目內容', '適用範圍', '檢查型態', '備註'],
+            ['Ignored Course', '1', '手臂功能', 'AI Server 可正常連線', '僅實體', '設備狀態型（正常／異常＋備註）', ''],
+            ['Ignored Course', '2', '上課教具', '已備妥教具', '兩者皆可', '準備確認型（完成／未完成）', 'x'],
         ]);
         $matrix = equipment_check_xlsx_reader::read_first_sheet($path);
-        $this->assertCount(3, $matrix); // header + 2 data
-        $this->assertSame('檢查項目內容', $matrix[0][0]);
-        $this->assertSame('AI Server 可正常連線', $matrix[1][0]);
-        $this->assertSame('僅實體', $matrix[1][1]);
-        $this->assertSame('已備妥教具', $matrix[2][0]);
+        // blank row dropped → title, instruction, header, 2 data = 5
+        $this->assertCount(5, $matrix);
+        $header = equipment_check_import_manager::find_header_row($matrix);
+        $this->assertSame(4, $header['excel_row']);
+        $this->assertArrayHasKey('itemname', $header['colmap']);
+        $this->assertArrayHasKey('order', $header['colmap']);
+        $this->assertArrayNotHasKey('enabled', $header['colmap']);
+        $this->assertSame('AI Server 可正常連線', $matrix[$header['index'] + 1]['cells'][$header['colmap']['itemname']]);
         @unlink($path);
+    }
+
+    public function test_bt_check_fixture_header_and_validation(): void {
+        if (!class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive not available');
+        }
+        global $CFG;
+        $path = $CFG->dirroot . '/local/tm_course/tests/fixtures/bt_check.xlsx';
+        if (!is_readable($path)) {
+            $this->markTestSkipped('bt_check.xlsx fixture missing');
+        }
+        $matrix = equipment_check_xlsx_reader::read_first_sheet($path);
+        $header = equipment_check_import_manager::find_header_row($matrix);
+        $this->assertSame(4, $header['excel_row']);
+        $this->assertArrayNotHasKey('enabled', $header['colmap']);
+
+        $ok = 0;
+        $errors = [];
+        for ($i = $header['index'] + 1; $i < count($matrix); $i++) {
+            $cells = $matrix[$i]['cells'];
+            $excelrow = (int) $matrix[$i]['excel_row'];
+            $item = trim((string) ($cells[$header['colmap']['itemname']] ?? ''));
+            $scope = equipment_check_import_manager::map_scope((string) ($cells[$header['colmap']['scope']] ?? ''));
+            $type = equipment_check_import_manager::map_checktype((string) ($cells[$header['colmap']['checktype']] ?? ''));
+            $order = equipment_check_import_manager::map_order((string) ($cells[$header['colmap']['order']] ?? ''));
+            if ($item === '' || $scope === null || $type === null) {
+                $errors[] = $excelrow;
+                continue;
+            }
+            $this->assertNotNull($order);
+            $ok++;
+        }
+        $this->assertSame(14, $ok, 'bt_check.xlsx should yield 14 valid data rows');
+        $this->assertSame([], $errors);
     }
 
     /**

@@ -26,10 +26,10 @@ class equipment_check_xlsx_reader {
     public const MAX_COLS = 40;
 
     /**
-     * Read the first worksheet as a matrix of trimmed strings.
-     * Completely blank rows are omitted.
+     * Read the first worksheet as rows with Excel 1-based row numbers.
+     * Completely blank rows are omitted; title / instruction rows are kept.
      *
-     * @return array<int,array<int,string>> 0-based rows of 0-based cells
+     * @return array<int,array{excel_row:int,cells:array<int,string>}>
      * @throws \moodle_exception
      */
     public static function read_first_sheet(string $filepath): array {
@@ -154,7 +154,7 @@ class equipment_check_xlsx_reader {
 
     /**
      * @param string[] $shared
-     * @return array<int,array<int,string>>
+     * @return array<int,array{excel_row:int,cells:array<int,string>}>
      */
     private static function parse_sheet_xml(string $sheetxml, array $shared): array {
         $sx = self::load_xml($sheetxml);
@@ -165,7 +165,13 @@ class equipment_check_xlsx_reader {
         $rows = $sx->xpath('//m:sheetData/m:row') ?: [];
         $matrix = [];
         $datarows = 0;
+        $seq = 0;
         foreach ($rows as $row) {
+            $seq++;
+            $excelrow = (int) ((string) ($row['r'] ?? $seq));
+            if ($excelrow <= 0) {
+                $excelrow = $seq;
+            }
             $cells = [];
             $maxcol = -1;
             foreach ($row->c as $c) {
@@ -187,7 +193,15 @@ class equipment_check_xlsx_reader {
                 } else if ($type === 'b') {
                     $value = ((string) ($c->v ?? '0') === '1') ? '1' : '0';
                 } else {
+                    // Numeric / general: keep as trimmed string (order column may be numeric).
                     $value = (string) ($c->v ?? '');
+                    if ($value !== '' && is_numeric($value) && strpos($value, 'e') === false && strpos($value, 'E') === false) {
+                        // Avoid "1.0" noise for whole numbers commonly used as 順序.
+                        $f = (float) $value;
+                        if (abs($f - round($f)) < 0.0000001) {
+                            $value = (string) (int) round($f);
+                        }
+                    }
                 }
                 $cells[$col] = trim(self::normalize_cell_text($value));
                 if ($col > $maxcol) {
@@ -208,13 +222,13 @@ class equipment_check_xlsx_reader {
             if (!$nonempty) {
                 continue;
             }
-            $matrix[] = $line;
-            // Count non-header rows loosely after first row.
-            if (count($matrix) > 1) {
-                $datarows++;
-                if ($datarows > self::MAX_DATA_ROWS) {
-                    throw new \moodle_exception('equipment_check_import_error_too_many_rows', 'local_tm_course');
-                }
+            $matrix[] = [
+                'excel_row' => $excelrow,
+                'cells' => $line,
+            ];
+            $datarows++;
+            if ($datarows > self::MAX_DATA_ROWS + 20) { // allow title/header overhead
+                throw new \moodle_exception('equipment_check_import_error_too_many_rows', 'local_tm_course');
             }
         }
         return $matrix;
