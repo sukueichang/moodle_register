@@ -22,6 +22,21 @@
 
 ---
 
+## 2026-09-15 — 設備檢查 Excel 批次匯入（單課 append-only）
+
+- **需求：** 在「設備檢查清單維護 → 設定檢查項目」Modal 內，用公版 .xlsx 批次追加檢查項目；禁止選完檔案直接寫 DB。
+- **決策：**
+  1. 匯入目標固定為目前 Modal 的 `courseid`；Excel「課程」欄忽略（不做 fullname mapping）。
+  2. 「分類」「備註」本階段忽略，不改 schema。
+  3. 只寫入 `itemname`／`scope`／`checktype`／`enabled`；嚴格 mapping，非法值算錯誤且禁止 commit。
+  4. **Append-only**：新增 `create_item`／`append_items`；**不**呼叫會整課 delete+reinsert 的 `save_items_for_course`。
+  5. Duplicate key = `courseid + itemname + scope + checktype`；Excel／DB 重複標 ⚠ 並跳過，不覆蓋。
+  6. XLSX 以 ZipArchive + SimpleXML 最小解析（無新 Composer 依賴）；session token 預覽後再 commit。
+- **影響範圍：** `equipment_check_manager.php`、`equipment_check_import_manager.php`、`equipment_check_xlsx_reader.php`、`equipment_check_items.php`、import API、lang、styles、tests；version **5.22.0**。
+- **版本／狀態：** **5.22.0；進行中（待測試環境人工驗收）**
+
+---
+
 ## 2026-09-15 — Attendance 二元成績（有 Present＝100%）
 
 - **需求：** 外掛點名同步 Attendance log 後，Gradebook 不要用原生累計平均（缺→參=50%）；改為「該活動只要有一筆 Present → 100%，否則 0%」。每次異動須重掃全部 log。
@@ -31,7 +46,8 @@
   3. 用 `grade_update('mod/attendance', …)` 更新**既有** Attendance grade item；不呼叫 `attendance_update_users_grade`；不做事件回補／override／No grade／第二成績項／cron；不改 core。
   4. 前提：TM 出缺席只由此外掛操作。
 - **影響範圍：** `attendance_manager.php`、`tests/attendance_binary_grade_test.php`、version 5.21.0。
-- **版本／狀態：** **5.21.0；進行中（待測試環境人工驗收）**
+- **可移植摘要：** [`ATTENDANCE_BINARY_GRADE.md`](ATTENDANCE_BINARY_GRADE.md)（給其他外掛套用同一規則）。
+- **版本／狀態：** **5.21.0；已 merge `main`（PR #6），測試站已驗收。**
 
 ---
 
@@ -179,7 +195,7 @@
 | 專屬開班申請／審核 | 預約、學員、審核中心、日曆排課 | SPEC §專屬開班 |
 | 先修／批次註冊 | 課程預設先修、批次查核與註冊 | SPEC／prerequisite |
 | 出席／點名 | attendance manager、admin | SPEC／attendance |
-| 課前準備／設備檢查 | class prep、equipment check items | 本檔 2026-07 |
+| 課前準備／設備檢查 | class prep、equipment check items、Excel 批次匯入（5.22.0） | 本檔 2026-07／2026-09-15 |
 | 業務批改申請 | 作業／測驗派工單（assign／quiz） | SPEC §58 |
 | 排課規則（面授） | 教室／時段約束 | `local_tm_course/docs/SCHEDULING_REQUIREMENTS.md` |
 

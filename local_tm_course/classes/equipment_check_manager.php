@@ -89,6 +89,113 @@ class equipment_check_manager {
         $tx->allow_commit();
     }
 
+    /**
+     * Build the natural duplicate key used for import / dedupe checks.
+     * Key = itemname (trimmed) + scope + checktype. enabled is intentionally excluded.
+     */
+    public static function make_duplicate_key(string $itemname, string $scope, string $checktype): string {
+        return trim($itemname) . "\0" . $scope . "\0" . $checktype;
+    }
+
+    /**
+     * @return array<string,true> set of duplicate keys already stored for the course
+     */
+    public static function get_duplicate_key_set(int $courseid): array {
+        $set = [];
+        foreach (self::get_items_by_course($courseid) as $row) {
+            $key = self::make_duplicate_key((string) $row->itemname, (string) $row->scope, (string) $row->checktype);
+            $set[$key] = true;
+        }
+        return $set;
+    }
+
+    /**
+     * Next sortorder after the current max for this course (10-step increments, matching save_items_for_course).
+     */
+    public static function get_next_sortorder(int $courseid): int {
+        global $DB;
+        $max = $DB->get_field_sql(
+            'SELECT MAX(sortorder) FROM {local_tm_equip_check_item} WHERE courseid = ?',
+            [$courseid]
+        );
+        if ($max === false || $max === null) {
+            return 10;
+        }
+        return ((int) $max) + 10;
+    }
+
+    /**
+     * Append a single checklist item without deleting existing rows (safe for import).
+     * Caller must pass already-validated scope/checktype/enabled values.
+     *
+     * @return int new record id
+     */
+    public static function create_item(
+        int $courseid,
+        string $itemname,
+        string $scope,
+        string $checktype,
+        int $enabled,
+        ?int $sortorder = null
+    ): int {
+        global $DB;
+        $name = trim($itemname);
+        if ($name === '' || $courseid <= 0) {
+            throw new \invalid_parameter_exception('Invalid equipment check item');
+        }
+        if (!in_array($scope, [self::SCOPE_ONSITE, self::SCOPE_ONLINE, self::SCOPE_BOTH], true)) {
+            throw new \invalid_parameter_exception('Invalid equipment check scope');
+        }
+        if (!in_array($checktype, [self::TYPE_STATUS, self::TYPE_TASK], true)) {
+            throw new \invalid_parameter_exception('Invalid equipment check type');
+        }
+        $now = time();
+        $rec = new \stdClass();
+        $rec->courseid = $courseid;
+        $rec->scope = $scope;
+        $rec->checktype = $checktype;
+        $rec->itemname = clean_param($name, PARAM_TEXT);
+        $rec->enabled = $enabled ? 1 : 0;
+        $rec->sortorder = $sortorder !== null ? (int) $sortorder : self::get_next_sortorder($courseid);
+        $rec->timecreated = $now;
+        $rec->timemodified = $now;
+        return (int) $DB->insert_record('local_tm_equip_check_item', $rec);
+    }
+
+    /**
+     * Append multiple validated items in one transaction. Skips keys already in $skipto or DB.
+     *
+     * @param array<int,array{itemname:string,scope:string,checktype:string,enabled:int}> $items
+     * @return array{inserted:int,skipped:int,ids:int[]}
+     */
+    public static function append_items(int $courseid, array $items): array {
+        global $DB;
+        $existing = self::get_duplicate_key_set($courseid);
+        $sort = self::get_next_sortorder($courseid);
+        $inserted = 0;
+        $skipped = 0;
+        $ids = [];
+        $tx = $DB->start_delegated_transaction();
+        foreach ($items as $item) {
+            $name = trim((string) ($item['itemname'] ?? ''));
+            $scope = (string) ($item['scope'] ?? '');
+            $checktype = (string) ($item['checktype'] ?? '');
+            $enabled = !empty($item['enabled']) ? 1 : 0;
+            $key = self::make_duplicate_key($name, $scope, $checktype);
+            if ($name === '' || isset($existing[$key])) {
+                $skipped++;
+                continue;
+            }
+            $id = self::create_item($courseid, $name, $scope, $checktype, $enabled, $sort);
+            $existing[$key] = true;
+            $ids[] = $id;
+            $inserted++;
+            $sort += 10;
+        }
+        $tx->allow_commit();
+        return ['inserted' => $inserted, 'skipped' => $skipped, 'ids' => $ids];
+    }
+
     // ----------------------------------------------------------------
     // Applicability: which items show for a given session
     // ----------------------------------------------------------------

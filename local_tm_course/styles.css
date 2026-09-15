@@ -1856,6 +1856,23 @@ a.tm-attendance-learner-profile-link:focus {
     transform: rotate(90deg);
 }
 
+.tm-equip-import-hint {
+    color: #555;
+    font-size: 0.92rem;
+}
+.tm-equip-import-table th,
+.tm-equip-import-table td {
+    font-size: 0.85rem;
+    vertical-align: top;
+}
+.tm-equip-import-ok td:last-child { color: #1b7a3d; font-weight: 600; }
+.tm-equip-import-dup td:last-child { color: #9a6b00; font-weight: 600; }
+.tm-equip-import-err td:last-child { color: #b00020; font-weight: 600; }
+#tm-equip-import-errors {
+    color: #b00020;
+    font-size: 0.9rem;
+}
+
 .tm-grading-search-row {
     display: flex;
     gap: 0.5rem;

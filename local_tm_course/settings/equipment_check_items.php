@@ -83,17 +83,52 @@ echo $OUTPUT->header();
 </p>
 
 <div id="tm-equip-modal-backdrop" class="tm-cancel-modal-backdrop" style="display:none;">
-    <div class="tm-cancel-modal-panel" style="max-width:52rem;width:94%;">
+    <div class="tm-cancel-modal-panel" style="max-width:56rem;width:94%;">
         <div style="background:#c9660c;color:#fff;padding:.6rem .9rem;margin:-1rem -1rem .9rem;border-radius:.4rem .4rem 0 0;">
             <strong id="tm-equip-modal-title"></strong>
         </div>
-        <div id="tm-equip-list"></div>
-        <div class="mt-2">
-            <button type="button" id="tm-equip-add" class="btn btn-sm btn-secondary">+ <?php echo get_string('equipment_check_item_add', 'local_tm_course'); ?></button>
+        <div id="tm-equip-panel-edit">
+            <div id="tm-equip-list"></div>
+            <div class="mt-2 d-flex flex-wrap gap-2">
+                <button type="button" id="tm-equip-add" class="btn btn-sm btn-secondary">+ <?php echo get_string('equipment_check_item_add', 'local_tm_course'); ?></button>
+                <button type="button" id="tm-equip-import-open" class="btn btn-sm btn-outline-primary"><?php echo get_string('equipment_check_import_button', 'local_tm_course'); ?></button>
+            </div>
+            <div class="mt-3 d-flex gap-2">
+                <button type="button" id="tm-equip-save" class="btn btn-tm-success"><?php echo get_string('save_changes', 'local_tm_course'); ?></button>
+                <button type="button" id="tm-equip-close" class="btn btn-secondary"><?php echo get_string('cancel', 'local_tm_course'); ?></button>
+            </div>
         </div>
-        <div class="mt-3 d-flex gap-2">
-            <button type="button" id="tm-equip-save" class="btn btn-tm-success"><?php echo get_string('save_changes', 'local_tm_course'); ?></button>
-            <button type="button" id="tm-equip-close" class="btn btn-secondary"><?php echo get_string('cancel', 'local_tm_course'); ?></button>
+        <div id="tm-equip-panel-import" style="display:none;">
+            <p class="tm-equip-import-hint mb-2"><?php echo get_string('equipment_check_import_hint', 'local_tm_course'); ?></p>
+            <div id="tm-equip-import-upload" class="mb-2">
+                <input type="file" id="tm-equip-import-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="form-control-file">
+                <div class="mt-2 d-flex flex-wrap gap-2">
+                    <button type="button" id="tm-equip-import-preview" class="btn btn-sm btn-tm-primary"><?php echo get_string('equipment_check_import_preview', 'local_tm_course'); ?></button>
+                    <button type="button" id="tm-equip-import-back" class="btn btn-sm btn-secondary"><?php echo get_string('equipment_check_import_back', 'local_tm_course'); ?></button>
+                </div>
+            </div>
+            <div id="tm-equip-import-status" class="mb-2" style="display:none;"></div>
+            <div id="tm-equip-import-summary" class="mb-2" style="display:none;"></div>
+            <div id="tm-equip-import-preview-wrap" style="display:none; max-height:40vh; overflow:auto;">
+                <table class="tm-table tm-equip-import-table">
+                    <thead>
+                        <tr>
+                            <th><?php echo get_string('equipment_check_import_col_row', 'local_tm_course'); ?></th>
+                            <th><?php echo get_string('equipment_check_item_text_placeholder', 'local_tm_course'); ?></th>
+                            <th><?php echo get_string('equipment_check_import_col_scope', 'local_tm_course'); ?></th>
+                            <th><?php echo get_string('equipment_check_import_col_type', 'local_tm_course'); ?></th>
+                            <th><?php echo get_string('equipment_check_item_enabled', 'local_tm_course'); ?></th>
+                            <th><?php echo get_string('equipment_check_import_col_result', 'local_tm_course'); ?></th>
+                        </tr>
+                    </thead>
+                    <tbody id="tm-equip-import-preview-body"></tbody>
+                </table>
+            </div>
+            <div id="tm-equip-import-errors" class="mt-2" style="display:none;"></div>
+            <div class="mt-3 d-flex flex-wrap gap-2">
+                <button type="button" id="tm-equip-import-commit" class="btn btn-tm-success" style="display:none;" disabled><?php echo get_string('equipment_check_import_commit', 'local_tm_course'); ?></button>
+                <button type="button" id="tm-equip-import-back2" class="btn btn-secondary"><?php echo get_string('equipment_check_import_back', 'local_tm_course'); ?></button>
+            </div>
         </div>
     </div>
 </div>
@@ -109,10 +144,20 @@ $str = [
     'delete' => get_string('equipment_check_item_delete', 'local_tm_course'),
     'placeholder' => get_string('equipment_check_item_text_placeholder', 'local_tm_course'),
     'title' => get_string('equipment_check_manage_title', 'local_tm_course'),
+    'importtitle' => get_string('equipment_check_import_button', 'local_tm_course'),
+    'resultok' => get_string('equipment_check_import_result_ok', 'local_tm_course'),
+    'resultdup' => get_string('equipment_check_import_result_dup', 'local_tm_course'),
+    'resulterr' => get_string('equipment_check_import_result_err', 'local_tm_course'),
+    'summary' => get_string('equipment_check_import_summary', 'local_tm_course'),
+    'done' => get_string('equipment_check_import_done', 'local_tm_course'),
+    'needfile' => get_string('equipment_check_import_need_file', 'local_tm_course'),
+    'previewing' => get_string('equipment_check_import_previewing', 'local_tm_course'),
+    'committing' => get_string('equipment_check_import_committing', 'local_tm_course'),
 ];
 echo html_writer::script("
 (function() {
     var apiUrl = " . json_encode((new moodle_url('/local/tm_course/settings/equipment_check_items_api.php'))->out(false)) . ";
+    var importApiUrl = " . json_encode((new moodle_url('/local/tm_course/settings/equipment_check_items_import_api.php'))->out(false)) . ";
     var sesskey = " . json_encode(sesskey()) . ";
     var S = " . json_encode($str, JSON_UNESCAPED_UNICODE) . ";
     var modal = document.getElementById('tm-equip-modal-backdrop');
@@ -121,27 +166,50 @@ echo html_writer::script("
     var addBtn = document.getElementById('tm-equip-add');
     var saveBtn = document.getElementById('tm-equip-save');
     var closeBtn = document.getElementById('tm-equip-close');
+    var panelEdit = document.getElementById('tm-equip-panel-edit');
+    var panelImport = document.getElementById('tm-equip-panel-import');
+    var importOpenBtn = document.getElementById('tm-equip-import-open');
+    var importFile = document.getElementById('tm-equip-import-file');
+    var importPreviewBtn = document.getElementById('tm-equip-import-preview');
+    var importCommitBtn = document.getElementById('tm-equip-import-commit');
+    var importBackBtn = document.getElementById('tm-equip-import-back');
+    var importBackBtn2 = document.getElementById('tm-equip-import-back2');
+    var importStatus = document.getElementById('tm-equip-import-status');
+    var importSummary = document.getElementById('tm-equip-import-summary');
+    var importPreviewWrap = document.getElementById('tm-equip-import-preview-wrap');
+    var importPreviewBody = document.getElementById('tm-equip-import-preview-body');
+    var importErrors = document.getElementById('tm-equip-import-errors');
     var currentCourseId = 0;
+    var currentCourseName = '';
+    var importToken = '';
+    var commitBusy = false;
 
+    function esc(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\"/g, '&quot;');
+    }
     function rowHtml(item) {
-        var t = String(item.itemname || '').replace(/\"/g, '&quot;');
+        var t = esc(item.itemname || '');
         var scope = String(item.scope || 'both');
         var checktype = String(item.checktype || 'status');
         var enabled = Number(item.enabled === undefined ? 1 : item.enabled) === 1 ? 'checked' : '';
         return '<div class=\"tm-equip-admin-row border rounded p-2 mb-2\">'
-            + '<input type=\"text\" class=\"form-control form-control-sm js-eq-text\" placeholder=\"' + S.placeholder + '\" value=\"' + t + '\">'
+            + '<input type=\"text\" class=\"form-control form-control-sm js-eq-text\" placeholder=\"' + esc(S.placeholder) + '\" value=\"' + t + '\">'
             + '<div class=\"mt-2 d-flex flex-wrap align-items-center gap-2\">'
             + '<select class=\"form-control form-control-sm js-eq-scope\" style=\"max-width:10rem\">'
-            + '<option value=\"onsite\" ' + (scope === 'onsite' ? 'selected' : '') + '>' + S.onsite + '</option>'
-            + '<option value=\"online\" ' + (scope === 'online' ? 'selected' : '') + '>' + S.online + '</option>'
-            + '<option value=\"both\" ' + (scope === 'both' ? 'selected' : '') + '>' + S.both + '</option>'
+            + '<option value=\"onsite\" ' + (scope === 'onsite' ? 'selected' : '') + '>' + esc(S.onsite) + '</option>'
+            + '<option value=\"online\" ' + (scope === 'online' ? 'selected' : '') + '>' + esc(S.online) + '</option>'
+            + '<option value=\"both\" ' + (scope === 'both' ? 'selected' : '') + '>' + esc(S.both) + '</option>'
             + '</select>'
             + '<select class=\"form-control form-control-sm js-eq-type\" style=\"max-width:16rem\">'
-            + '<option value=\"status\" ' + (checktype === 'status' ? 'selected' : '') + '>' + S.typestatus + '</option>'
-            + '<option value=\"task\" ' + (checktype === 'task' ? 'selected' : '') + '>' + S.typetask + '</option>'
+            + '<option value=\"status\" ' + (checktype === 'status' ? 'selected' : '') + '>' + esc(S.typestatus) + '</option>'
+            + '<option value=\"task\" ' + (checktype === 'task' ? 'selected' : '') + '>' + esc(S.typetask) + '</option>'
             + '</select>'
-            + '<label class=\"mb-0\"><input type=\"checkbox\" class=\"js-eq-enabled\" ' + enabled + '> ' + S.enabled + '</label>'
-            + '<button type=\"button\" class=\"btn btn-sm btn-outline-secondary js-eq-del\">' + S['delete'] + '</button>'
+            + '<label class=\"mb-0\"><input type=\"checkbox\" class=\"js-eq-enabled\" ' + enabled + '> ' + esc(S.enabled) + '</label>'
+            + '<button type=\"button\" class=\"btn btn-sm btn-outline-secondary js-eq-del\">' + esc(S['delete']) + '</button>'
             + '</div></div>';
     }
     function bindDeleteHandlers() {
@@ -153,26 +221,119 @@ echo html_writer::script("
             });
         }
     }
-    function loadItems(courseId, courseName) {
+    function showEditPanel() {
+        panelImport.style.display = 'none';
+        panelEdit.style.display = 'block';
+        title.textContent = S.title + ' - ' + String(currentCourseName || '');
+        resetImportUi();
+    }
+    function showImportPanel() {
+        panelEdit.style.display = 'none';
+        panelImport.style.display = 'block';
+        title.textContent = S.importtitle + ' - ' + String(currentCourseName || '');
+        resetImportUi();
+    }
+    function resetImportUi() {
+        importToken = '';
+        commitBusy = false;
+        if (importFile) { importFile.value = ''; }
+        importStatus.style.display = 'none';
+        importStatus.textContent = '';
+        importSummary.style.display = 'none';
+        importSummary.innerHTML = '';
+        importPreviewWrap.style.display = 'none';
+        importPreviewBody.innerHTML = '';
+        importErrors.style.display = 'none';
+        importErrors.innerHTML = '';
+        importCommitBtn.style.display = 'none';
+        importCommitBtn.disabled = true;
+        importPreviewBtn.disabled = false;
+    }
+    function setImportStatus(msg, isError) {
+        importStatus.style.display = 'block';
+        importStatus.className = 'mb-2 tm-alert ' + (isError ? 'tm-alert-danger' : 'tm-alert-info');
+        importStatus.textContent = msg || '';
+    }
+    function renderPreview(data) {
+        var summary = data.summary || {};
+        importSummary.style.display = 'block';
+        importSummary.textContent = data.summary_text
+            || ('總筆數：' + (summary.total || 0)
+                + '　可匯入：' + (summary.ok || 0)
+                + '　重複：' + (summary.duplicate || 0)
+                + '　錯誤：' + (summary.error || 0));
+        var rows = data.rows || [];
+        var errHtml = [];
+        importPreviewBody.innerHTML = '';
+        for (var i = 0; i < rows.length; i++) {
+            var r = rows[i];
+            var resultLabel = S.resultok;
+            var resultClass = 'tm-equip-import-ok';
+            if (r.result === 'duplicate') {
+                resultLabel = S.resultdup;
+                resultClass = 'tm-equip-import-dup';
+            } else if (r.result === 'error') {
+                resultLabel = S.resulterr;
+                resultClass = 'tm-equip-import-err';
+            }
+            importPreviewBody.insertAdjacentHTML('beforeend',
+                '<tr class=\"' + resultClass + '\">'
+                + '<td>' + esc(r.excel_row) + '</td>'
+                + '<td>' + esc(r.itemname) + '</td>'
+                + '<td>' + esc(r.scope_label) + '</td>'
+                + '<td>' + esc(r.checktype_label) + '</td>'
+                + '<td>' + esc(r.enabled_label) + '</td>'
+                + '<td>' + esc(resultLabel) + '</td>'
+                + '</tr>');
+            if (r.errors && r.errors.length) {
+                for (var j = 0; j < r.errors.length; j++) {
+                    if (r.result === 'error') {
+                        errHtml.push('<li>' + esc(r.errors[j]) + '</li>');
+                    }
+                }
+            }
+        }
+        importPreviewWrap.style.display = 'block';
+        if (errHtml.length) {
+            importErrors.style.display = 'block';
+            importErrors.innerHTML = '<ul class=\"mb-0\">' + errHtml.join('') + '</ul>';
+        } else {
+            importErrors.style.display = 'none';
+            importErrors.innerHTML = '';
+        }
+        importToken = data.token || '';
+        var canCommit = !!data.can_commit;
+        importCommitBtn.style.display = canCommit ? 'inline-block' : 'none';
+        importCommitBtn.disabled = !canCommit;
+    }
+    function fillList(items) {
+        list.innerHTML = '';
+        if (!items.length) {
+            list.innerHTML = rowHtml({itemname:'', scope:'both', checktype:'status', enabled:1});
+        } else {
+            for (var i = 0; i < items.length; i++) {
+                list.insertAdjacentHTML('beforeend', rowHtml(items[i]));
+            }
+        }
+        bindDeleteHandlers();
+    }
+    function loadItems(courseId, courseName, keepOpen) {
         currentCourseId = Number(courseId || 0);
-        title.textContent = S.title + ' - ' + String(courseName || '');
+        currentCourseName = String(courseName || '');
+        title.textContent = S.title + ' - ' + currentCourseName;
         fetch(apiUrl, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
             body: JSON.stringify({action: 'list', courseid: currentCourseId, sesskey: sesskey})
         }).then(function(r){ return r.json(); }).then(function(data) {
-            list.innerHTML = '';
-            var items = (data && data.items) ? data.items : [];
-            if (!items.length) {
-                list.innerHTML = rowHtml({itemname:'', scope:'both', checktype:'status', enabled:1});
+            fillList((data && data.items) ? data.items : []);
+            showEditPanel();
+            if (!keepOpen) {
+                modal.style.display = 'flex';
             } else {
-                for (var i = 0; i < items.length; i++) {
-                    list.insertAdjacentHTML('beforeend', rowHtml(items[i]));
-                }
+                modal.style.display = 'flex';
             }
-            bindDeleteHandlers();
-            modal.style.display = 'flex';
         });
     }
     function collectRows() {
@@ -211,6 +372,85 @@ echo html_writer::script("
         });
     });
     closeBtn.addEventListener('click', function() { modal.style.display = 'none'; });
+    importOpenBtn.addEventListener('click', function() { showImportPanel(); });
+    importBackBtn.addEventListener('click', function() { showEditPanel(); });
+    importBackBtn2.addEventListener('click', function() { showEditPanel(); });
+    importPreviewBtn.addEventListener('click', function() {
+        if (!importFile.files || !importFile.files.length) {
+            setImportStatus(S.needfile, true);
+            return;
+        }
+        var fd = new FormData();
+        fd.append('action', 'preview');
+        fd.append('courseid', String(currentCourseId));
+        fd.append('sesskey', sesskey);
+        fd.append('file', importFile.files[0]);
+        importPreviewBtn.disabled = true;
+        setImportStatus(S.previewing, false);
+        fetch(importApiUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: fd
+        }).then(function(r){ return r.json().then(function(j){ return {http:r, json:j}; }); })
+          .then(function(res) {
+            importPreviewBtn.disabled = false;
+            if (!res.json || !res.json.ok) {
+                setImportStatus((res.json && res.json.error) ? res.json.error : S.resulterr, true);
+                importCommitBtn.style.display = 'none';
+                importCommitBtn.disabled = true;
+                return;
+            }
+            setImportStatus('', false);
+            importStatus.style.display = 'none';
+            renderPreview(res.json);
+        }).catch(function() {
+            importPreviewBtn.disabled = false;
+            setImportStatus(S.resulterr, true);
+        });
+    });
+    importCommitBtn.addEventListener('click', function() {
+        if (commitBusy || !importToken || importCommitBtn.disabled) { return; }
+        commitBusy = true;
+        importCommitBtn.disabled = true;
+        setImportStatus(S.committing, false);
+        var fd = new FormData();
+        fd.append('action', 'commit');
+        fd.append('courseid', String(currentCourseId));
+        fd.append('sesskey', sesskey);
+        fd.append('token', importToken);
+        fetch(importApiUrl, {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: fd
+        }).then(function(r){ return r.json(); }).then(function(data) {
+            if (!data || !data.ok) {
+                commitBusy = false;
+                setImportStatus((data && data.error) ? data.error : S.resulterr, true);
+                importCommitBtn.disabled = false;
+                return;
+            }
+            var msg = (data && data.message) ? data.message
+                : ('匯入完成。成功新增：' + (data.inserted || 0)
+                    + '；重複跳過：' + (data.skipped || 0)
+                    + '；失敗：' + (data.failed || 0));
+            setImportStatus(msg, false);
+            importToken = '';
+            // Reload list so newly appended items appear immediately.
+            fetch(apiUrl, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                credentials: 'same-origin',
+                body: JSON.stringify({action: 'list', courseid: currentCourseId, sesskey: sesskey})
+            }).then(function(r){ return r.json(); }).then(function(listData) {
+                fillList((listData && listData.items) ? listData.items : []);
+                window.setTimeout(function() { showEditPanel(); }, 600);
+            });
+        }).catch(function() {
+            commitBusy = false;
+            importCommitBtn.disabled = false;
+            setImportStatus(S.resulterr, true);
+        });
+    });
 
     var focusCourseId = " . (int) $focuscourseid . ";
     if (focusCourseId > 0) {
