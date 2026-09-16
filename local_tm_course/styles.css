@@ -1823,6 +1823,9 @@ a.tm-attendance-learner-profile-link:focus {
 .tm-equip-form-actions .btn {
     white-space: nowrap;
 }
+.tm-equip-desk-quick .btn {
+    font-weight: 400;
+}
 .tm-equip-grid {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }

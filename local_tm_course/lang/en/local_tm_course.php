@@ -885,6 +885,7 @@ $string['equipment_check_save_success'] = 'Equipment check saved for desk {$a}.'
 $string['equipment_check_save_all_button'] = 'Save All';
 $string['equipment_check_save_all_success'] = 'Saved equipment check results for {$a} desk(s) at once.';
 $string['equipment_check_save_all_none'] = 'No desk data to save.';
+$string['equipment_check_fill_desk_ok'] = 'Mark this desk all OK / done';
 $string['equipment_check_sync_button'] = 'Apply to all other desks';
 $string['equipment_check_sync_confirm'] = 'This will apply this desk\'s current results (status, notes, and completion) to every other desk, overwriting their existing results. Continue?';
 $string['equipment_check_sync_success'] = 'Applied desk {$a->source}\'s results to {$a->count} other desk(s).';

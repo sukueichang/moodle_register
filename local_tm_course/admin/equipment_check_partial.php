@@ -58,7 +58,8 @@ if (empty($equip_items)):
             <summary class="tm-roster-desk-head tm-equip-desk-summary">
                 <strong><?php echo s($deskheading); ?></strong>
                 <span class="tm-equip-desk-summary-right">
-                    <span class="text-muted small"><?php echo (int) $completed; ?>/<?php echo (int) $total; ?></span>
+                    <span class="text-muted small tm-equip-desk-progress"
+                          data-total="<?php echo (int) $total; ?>"><?php echo (int) $completed; ?>/<?php echo (int) $total; ?></span>
                     <span class="tm-equip-desk-arrow" aria-hidden="true">▸</span>
                 </span>
             </summary>
@@ -66,6 +67,12 @@ if (empty($equip_items)):
                 <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
                 <input type="hidden" name="sessionid" value="<?php echo (int) $sessionid; ?>">
                 <input type="hidden" name="desknumber" value="<?php echo $desknumber; ?>">
+
+                <div class="tm-equip-desk-quick mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-equip-fill-desk">
+                        <?php echo get_string('equipment_check_fill_desk_ok', 'local_tm_course'); ?>
+                    </button>
+                </div>
 
                 <?php foreach ($desk['items'] as $item): ?>
                     <?php

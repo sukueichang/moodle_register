@@ -885,6 +885,7 @@ $string['equipment_check_save_success'] = '已儲存第 {$a} 桌的設備檢查�
 $string['equipment_check_save_all_button'] = '全部儲存';
 $string['equipment_check_save_all_success'] = '已一次儲存 {$a} 個桌次的設備檢查結果。';
 $string['equipment_check_save_all_none'] = '沒有可儲存的桌次資料。';
+$string['equipment_check_fill_desk_ok'] = '本桌全部正常／完成';
 $string['equipment_check_sync_button'] = '套用到其他所有桌次';
 $string['equipment_check_sync_confirm'] = '將把這一桌目前的檢查結果（狀態、備註與完成度）套用到其他所有桌次，並覆蓋其他桌次現有的檢查結果，確定要繼續嗎？';
 $string['equipment_check_sync_success'] = '已將第 {$a->source} 桌的檢查結果套用到其他 {$a->count} 桌。';
