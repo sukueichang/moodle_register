@@ -4,9 +4,10 @@
   Package local_tm_course as a Moodle-installable ZIP.
 
 .DESCRIPTION
-  Creates dist/local_tm_course.zip with root folder local_tm_course/
-  (suitable for Moodle Site administration → Plugins → Install plugin).
-  Does not commit the ZIP. Excludes VCS / IDE / OS junk.
+  Creates <repo>/local_tm_course.zip beside the plugin folder — same place as
+  Windows Explorer "Compress to ZIP" on the local_tm_course directory.
+  ZIP root is local_tm_course/ (Moodle install plugin format).
+  Does not commit the ZIP (*.zip is gitignored). Excludes VCS / IDE / OS junk.
 
 .EXAMPLE
   powershell -File tools/package_local_tm_course.ps1
@@ -14,6 +15,7 @@
 [CmdletBinding()]
 param(
     [string]$RepoRoot = '',
+    # Default: repo root (same as right-click pack → local_tm_course.zip next to the folder)
     [string]$OutDir = ''
 )
 
@@ -22,8 +24,9 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 }
+# Match manual workflow: ZIP sits next to the local_tm_course folder.
 if ([string]::IsNullOrWhiteSpace($OutDir)) {
-    $OutDir = Join-Path $RepoRoot 'dist'
+    $OutDir = $RepoRoot
 }
 
 $pluginDir = Join-Path $RepoRoot 'local_tm_course'
