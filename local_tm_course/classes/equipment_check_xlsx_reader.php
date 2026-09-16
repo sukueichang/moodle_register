@@ -89,6 +89,14 @@ class equipment_check_xlsx_reader {
     }
 
     /**
+     * Read xl/sharedStrings.xml into a 0-based index list.
+     *
+     * Important: SimpleXML does not inherit registerXPathNamespace() onto child
+     * elements. Calling $si->xpath('.//m:t') after finding //m:si therefore fails
+     * with "Undefined namespace prefix" and returns empty strings — which made
+     * every t="s" cell blank and dropped the official template header row.
+     * Use children($ns) (and re-register before any per-node xpath) instead.
+     *
      * @return string[]
      */
     private static function read_shared_strings(\ZipArchive $zip): array {
@@ -100,18 +108,44 @@ class equipment_check_xlsx_reader {
         if ($sx === null) {
             return [];
         }
-        $sx->registerXPathNamespace('m', 'http://schemas.openxmlformats.org/spreadsheetml/2006/main');
+        $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+        $sx->registerXPathNamespace('m', $ns);
         $out = [];
         $sis = $sx->xpath('//m:si') ?: [];
         foreach ($sis as $si) {
-            $texts = $si->xpath('.//m:t') ?: [];
-            $buf = '';
-            foreach ($texts as $t) {
-                $buf .= (string) $t;
-            }
-            $out[] = $buf;
+            $out[] = self::shared_string_text($si, $ns);
         }
         return $out;
+    }
+
+    /**
+     * Extract plain text from one sharedStrings <si> node.
+     * Supports plain <t> and rich-text <r><t>…</t></r> runs.
+     */
+    private static function shared_string_text(\SimpleXMLElement $si, string $ns): string {
+        $buf = '';
+        // Prefer namespace-aware children (no xpath prefix inheritance issue).
+        foreach ($si->children($ns) as $child) {
+            $name = $child->getName();
+            if ($name === 't') {
+                $buf .= (string) $child;
+            } else if ($name === 'r') {
+                foreach ($child->children($ns) as $rchild) {
+                    if ($rchild->getName() === 't') {
+                        $buf .= (string) $rchild;
+                    }
+                }
+            }
+        }
+        if ($buf !== '') {
+            return $buf;
+        }
+        // Fallback: re-register prefix on this node, then xpath (rich text edge cases).
+        $si->registerXPathNamespace('m', $ns);
+        foreach ($si->xpath('.//m:t') ?: [] as $t) {
+            $buf .= (string) $t;
+        }
+        return $buf;
     }
 
     private static function resolve_first_sheet_path(\ZipArchive $zip): string {
