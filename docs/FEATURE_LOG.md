@@ -27,7 +27,8 @@
 - **需求：** 管理頁直接顯示每課檢查項目數量，並可折疊展開唯讀清單。
 - **決策：** 一次 `get_items_by_courses()` batch 載入避免 N+1；展開內容唯讀；修改仍只走「設定檢查項目」Modal；含停用項目計數。
 - **影響範圍：** `equipment_check_manager.php`、`equipment_check_items.php`、lang、styles；version **5.23.0**。
-- **版本／狀態：** **5.23.0；進行中（待測試環境人工驗收）**
+- **版本／狀態：** **5.23.1；進行中（待測試環境人工驗收）**
+- **5.23.1 修正：** 「設定檢查項目」Modal 項目過多時無法捲動——panel 無 max-height；改為 viewport 限制＋中間可捲＋底部按鈕固定（對齊 bento modal 模式）。交付增加 `tools/package_local_tm_course.ps1` 產出 `dist/local_tm_course.zip`。
 
 ---
 

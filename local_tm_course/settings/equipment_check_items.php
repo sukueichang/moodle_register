@@ -160,50 +160,54 @@ echo $OUTPUT->header();
         ← <?php echo get_string('nav_sessions', 'local_tm_course'); ?></a>
 </p>
 
-<div id="tm-equip-modal-backdrop" class="tm-cancel-modal-backdrop" style="display:none;">
-    <div class="tm-cancel-modal-panel" style="max-width:56rem;width:94%;">
-        <div style="background:#c9660c;color:#fff;padding:.6rem .9rem;margin:-1rem -1rem .9rem;border-radius:.4rem .4rem 0 0;">
+<div id="tm-equip-modal-backdrop" class="tm-cancel-modal-backdrop tm-equip-modal-backdrop" style="display:none;">
+    <div class="tm-cancel-modal-panel tm-equip-modal-panel" style="max-width:56rem;width:94%;" role="dialog" aria-modal="true" aria-labelledby="tm-equip-modal-title">
+        <div class="tm-equip-modal-header">
             <strong id="tm-equip-modal-title"></strong>
         </div>
-        <div id="tm-equip-panel-edit">
-            <div id="tm-equip-list"></div>
-            <div class="mt-2 d-flex flex-wrap gap-2">
-                <button type="button" id="tm-equip-add" class="btn btn-sm btn-secondary">+ <?php echo get_string('equipment_check_item_add', 'local_tm_course'); ?></button>
-                <button type="button" id="tm-equip-import-open" class="btn btn-sm btn-outline-primary"><?php echo get_string('equipment_check_import_button', 'local_tm_course'); ?></button>
+        <div id="tm-equip-panel-edit" class="tm-equip-modal-section">
+            <div class="tm-equip-modal-scroll">
+                <div id="tm-equip-list"></div>
+                <div class="mt-2 d-flex flex-wrap gap-2">
+                    <button type="button" id="tm-equip-add" class="btn btn-sm btn-secondary">+ <?php echo get_string('equipment_check_item_add', 'local_tm_course'); ?></button>
+                    <button type="button" id="tm-equip-import-open" class="btn btn-sm btn-outline-primary"><?php echo get_string('equipment_check_import_button', 'local_tm_course'); ?></button>
+                </div>
             </div>
-            <div class="mt-3 d-flex gap-2">
+            <div class="tm-equip-modal-footer d-flex flex-wrap gap-2">
                 <button type="button" id="tm-equip-save" class="btn btn-tm-success"><?php echo get_string('save_changes', 'local_tm_course'); ?></button>
                 <button type="button" id="tm-equip-close" class="btn btn-secondary"><?php echo get_string('cancel', 'local_tm_course'); ?></button>
             </div>
         </div>
-        <div id="tm-equip-panel-import" style="display:none;">
-            <p class="tm-equip-import-hint mb-2"><?php echo get_string('equipment_check_import_hint', 'local_tm_course'); ?></p>
-            <div id="tm-equip-import-upload" class="mb-2">
-                <input type="file" id="tm-equip-import-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="form-control-file">
-                <div class="mt-2 d-flex flex-wrap gap-2">
-                    <button type="button" id="tm-equip-import-preview" class="btn btn-sm btn-tm-primary"><?php echo get_string('equipment_check_import_preview', 'local_tm_course'); ?></button>
-                    <button type="button" id="tm-equip-import-back" class="btn btn-sm btn-secondary"><?php echo get_string('equipment_check_import_back', 'local_tm_course'); ?></button>
+        <div id="tm-equip-panel-import" class="tm-equip-modal-section" style="display:none;">
+            <div class="tm-equip-modal-scroll">
+                <p class="tm-equip-import-hint mb-2"><?php echo get_string('equipment_check_import_hint', 'local_tm_course'); ?></p>
+                <div id="tm-equip-import-upload" class="mb-2">
+                    <input type="file" id="tm-equip-import-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="form-control-file">
+                    <div class="mt-2 d-flex flex-wrap gap-2">
+                        <button type="button" id="tm-equip-import-preview" class="btn btn-sm btn-tm-primary"><?php echo get_string('equipment_check_import_preview', 'local_tm_course'); ?></button>
+                        <button type="button" id="tm-equip-import-back" class="btn btn-sm btn-secondary"><?php echo get_string('equipment_check_import_back', 'local_tm_course'); ?></button>
+                    </div>
                 </div>
+                <div id="tm-equip-import-status" class="mb-2" style="display:none;"></div>
+                <div id="tm-equip-import-summary" class="mb-2" style="display:none;"></div>
+                <div id="tm-equip-import-preview-wrap" style="display:none;">
+                    <table class="tm-table tm-equip-import-table">
+                        <thead>
+                            <tr>
+                                <th><?php echo get_string('equipment_check_import_col_row', 'local_tm_course'); ?></th>
+                                <th><?php echo get_string('equipment_check_item_text_placeholder', 'local_tm_course'); ?></th>
+                                <th><?php echo get_string('equipment_check_import_col_scope', 'local_tm_course'); ?></th>
+                                <th><?php echo get_string('equipment_check_import_col_type', 'local_tm_course'); ?></th>
+                                <th><?php echo get_string('equipment_check_item_enabled', 'local_tm_course'); ?></th>
+                                <th><?php echo get_string('equipment_check_import_col_result', 'local_tm_course'); ?></th>
+                            </tr>
+                        </thead>
+                        <tbody id="tm-equip-import-preview-body"></tbody>
+                    </table>
+                </div>
+                <div id="tm-equip-import-errors" class="mt-2" style="display:none;"></div>
             </div>
-            <div id="tm-equip-import-status" class="mb-2" style="display:none;"></div>
-            <div id="tm-equip-import-summary" class="mb-2" style="display:none;"></div>
-            <div id="tm-equip-import-preview-wrap" style="display:none; max-height:40vh; overflow:auto;">
-                <table class="tm-table tm-equip-import-table">
-                    <thead>
-                        <tr>
-                            <th><?php echo get_string('equipment_check_import_col_row', 'local_tm_course'); ?></th>
-                            <th><?php echo get_string('equipment_check_item_text_placeholder', 'local_tm_course'); ?></th>
-                            <th><?php echo get_string('equipment_check_import_col_scope', 'local_tm_course'); ?></th>
-                            <th><?php echo get_string('equipment_check_import_col_type', 'local_tm_course'); ?></th>
-                            <th><?php echo get_string('equipment_check_item_enabled', 'local_tm_course'); ?></th>
-                            <th><?php echo get_string('equipment_check_import_col_result', 'local_tm_course'); ?></th>
-                        </tr>
-                    </thead>
-                    <tbody id="tm-equip-import-preview-body"></tbody>
-                </table>
-            </div>
-            <div id="tm-equip-import-errors" class="mt-2" style="display:none;"></div>
-            <div class="mt-3 d-flex flex-wrap gap-2">
+            <div class="tm-equip-modal-footer d-flex flex-wrap gap-2">
                 <button type="button" id="tm-equip-import-commit" class="btn btn-tm-success" style="display:none;" disabled><?php echo get_string('equipment_check_import_commit', 'local_tm_course'); ?></button>
                 <button type="button" id="tm-equip-import-back2" class="btn btn-secondary"><?php echo get_string('equipment_check_import_back', 'local_tm_course'); ?></button>
             </div>
@@ -367,13 +371,13 @@ echo html_writer::script("
     }
     function showEditPanel() {
         panelImport.style.display = 'none';
-        panelEdit.style.display = 'block';
+        panelEdit.style.display = 'flex';
         title.textContent = S.title + ' - ' + String(currentCourseName || '');
         resetImportUi();
     }
     function showImportPanel() {
         panelEdit.style.display = 'none';
-        panelImport.style.display = 'block';
+        panelImport.style.display = 'flex';
         title.textContent = S.importtitle + ' - ' + String(currentCourseName || '');
         resetImportUi();
     }
@@ -461,6 +465,14 @@ echo html_writer::script("
         }
         bindDeleteHandlers();
     }
+    function openModal() {
+        document.body.classList.add('tm-equip-modal-open');
+        modal.style.display = 'flex';
+    }
+    function closeModal() {
+        document.body.classList.remove('tm-equip-modal-open');
+        modal.style.display = 'none';
+    }
     function loadItems(courseId, courseName) {
         currentCourseId = Number(courseId || 0);
         currentCourseName = String(courseName || '');
@@ -473,7 +485,7 @@ echo html_writer::script("
         }).then(function(r){ return r.json(); }).then(function(data) {
             fillList((data && data.items) ? data.items : []);
             showEditPanel();
-            modal.style.display = 'flex';
+            openModal();
         });
     }
     function collectRows() {
@@ -519,12 +531,12 @@ echo html_writer::script("
                     body: JSON.stringify({action: 'list', courseid: currentCourseId, sesskey: sesskey})
                 }).then(function(r){ return r.json(); }).then(function(listData) {
                     refreshOverview(currentCourseId, (listData && listData.items) ? listData.items : []);
-                    modal.style.display = 'none';
+                    closeModal();
                 });
             }
         });
     });
-    closeBtn.addEventListener('click', function() { modal.style.display = 'none'; });
+    closeBtn.addEventListener('click', function() { closeModal(); });
     importOpenBtn.addEventListener('click', function() { showImportPanel(); });
     importBackBtn.addEventListener('click', function() { showEditPanel(); });
     importBackBtn2.addEventListener('click', function() { showEditPanel(); });

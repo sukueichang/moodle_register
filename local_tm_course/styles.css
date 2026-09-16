@@ -1873,6 +1873,56 @@ a.tm-attendance-learner-profile-link:focus {
     font-size: 0.9rem;
 }
 
+/* Equipment check configure modal: fit viewport; scroll list; pin footer */
+.tm-equip-modal-backdrop {
+    padding: 1rem;
+    overflow: hidden;
+    align-items: center;
+    justify-content: center;
+}
+.tm-equip-modal-panel {
+    width: min(95vw, 56rem);
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    margin: 0;
+}
+.tm-equip-modal-header {
+    flex-shrink: 0;
+    background: #c9660c;
+    color: #fff;
+    padding: 0.6rem 0.9rem;
+    border-radius: 10px 10px 0 0;
+}
+.tm-equip-modal-section {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+.tm-equip-modal-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 0.9rem 1.2rem;
+    -webkit-overflow-scrolling: touch;
+}
+.tm-equip-modal-footer {
+    flex-shrink: 0;
+    padding: 0.75rem 1.2rem 1rem;
+    border-top: 1px solid var(--tm-border);
+    background: #fff;
+    border-radius: 0 0 10px 10px;
+}
+body.tm-equip-modal-open {
+    overflow: hidden;
+}
+
 .tm-equip-overview-table td {
     vertical-align: top;
 }
