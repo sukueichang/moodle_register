@@ -892,10 +892,16 @@ $string['equipment_check_last_checked'] = '最後檢查：{$a->name}，{$a->time
 $string['error_equipment_check_invalid_desk'] = '此場次的桌次編號無效。';
 
 $string['equipment_check_manage_title'] = '設備檢查清單維護';
-$string['equipment_check_manage_intro'] = '針對每個課程設定「上課準備事項」頁要顯示的設備檢查項目。';
+$string['equipment_check_manage_intro'] = '針對每個課程設定「上課準備事項」頁要顯示的設備檢查項目。點課程名稱可展開查看目前設定（唯讀）；修改請使用「設定檢查項目」。';
 $string['equipment_check_manage_empty_hint'] = '尚無已啟用課程，請先於「課程連動設定」啟用課程。';
 $string['equipment_check_manage_open_button'] = '設定檢查項目';
 $string['equipment_check_manage_course_col'] = '課程';
+$string['equipment_check_manage_count_col'] = '項目數';
+$string['equipment_check_manage_count'] = '{$a} 項';
+$string['equipment_check_manage_none'] = '尚未設定檢查項目';
+$string['equipment_check_manage_expand'] = '展開檢查項目';
+$string['equipment_check_manage_collapse'] = '收合檢查項目';
+$string['equipment_check_item_disabled'] = '停用';
 $string['equipment_check_item_text_placeholder'] = '檢查項目內容';
 $string['equipment_check_item_scope_onsite'] = '僅實體';
 $string['equipment_check_item_scope_online'] = '僅視訊';

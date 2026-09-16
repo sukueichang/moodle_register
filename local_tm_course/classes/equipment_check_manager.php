@@ -50,6 +50,45 @@ class equipment_check_manager {
     }
 
     /**
+     * Batch-load checklist items for many courses (avoids N+1 on the maintenance overview).
+     *
+     * @param int[] $courseids
+     * @return array<int,\stdClass[]> courseid => items ordered by sortorder, id
+     */
+    public static function get_items_by_courses(array $courseids): array {
+        global $DB;
+        $ids = [];
+        foreach ($courseids as $cid) {
+            $cid = (int) $cid;
+            if ($cid > 0) {
+                $ids[$cid] = $cid;
+            }
+        }
+        $out = [];
+        foreach ($ids as $cid) {
+            $out[$cid] = [];
+        }
+        if (empty($ids)) {
+            return $out;
+        }
+        list($insql, $params) = $DB->get_in_or_equal(array_values($ids), SQL_PARAMS_NAMED, 'cid');
+        $rows = $DB->get_records_select(
+            'local_tm_equip_check_item',
+            "courseid $insql",
+            $params,
+            'courseid ASC, sortorder ASC, id ASC'
+        );
+        foreach ($rows as $row) {
+            $cid = (int) $row->courseid;
+            if (!isset($out[$cid])) {
+                $out[$cid] = [];
+            }
+            $out[$cid][] = $row;
+        }
+        return $out;
+    }
+
+    /**
      * Replace the full checklist template for one course (delete + reinsert),
      * matching the pattern used by verification_manager::save_questions_for_course().
      *

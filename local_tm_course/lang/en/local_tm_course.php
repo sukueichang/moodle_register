@@ -892,10 +892,16 @@ $string['equipment_check_last_checked'] = 'Last checked: {$a->name}, {$a->time}'
 $string['error_equipment_check_invalid_desk'] = 'Invalid desk number for this session.';
 
 $string['equipment_check_manage_title'] = 'Equipment check list maintenance';
-$string['equipment_check_manage_intro'] = 'Configure the equipment checklist shown on the "Class Preparation" page for each course.';
+$string['equipment_check_manage_intro'] = 'Configure the equipment checklist shown on the "Class Preparation" page for each course. Expand a course name to preview current items (read-only); use “Configure checklist” to edit.';
 $string['equipment_check_manage_empty_hint'] = 'No enabled courses yet. Enable courses under Course mapping first.';
 $string['equipment_check_manage_open_button'] = 'Configure checklist';
 $string['equipment_check_manage_course_col'] = 'Course';
+$string['equipment_check_manage_count_col'] = 'Items';
+$string['equipment_check_manage_count'] = '{$a} items';
+$string['equipment_check_manage_none'] = 'No checklist items configured yet';
+$string['equipment_check_manage_expand'] = 'Expand checklist';
+$string['equipment_check_manage_collapse'] = 'Collapse checklist';
+$string['equipment_check_item_disabled'] = 'Disabled';
 $string['equipment_check_item_text_placeholder'] = 'Check item text';
 $string['equipment_check_item_scope_onsite'] = 'Onsite only';
 $string['equipment_check_item_scope_online'] = 'Online only';

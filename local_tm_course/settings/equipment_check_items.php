@@ -15,8 +15,10 @@ require_once(__DIR__ . '/../../../config.php');
 require_once($CFG->libdir . '/adminlib.php');
 require_once(__DIR__ . '/../classes/enabled_course_manager.php');
 require_once(__DIR__ . '/../classes/permissions_manager.php');
+require_once(__DIR__ . '/../classes/equipment_check_manager.php');
 
 use local_tm_course\enabled_course_manager;
+use local_tm_course\equipment_check_manager;
 use local_tm_course\permissions_manager;
 
 require_login();
@@ -34,6 +36,57 @@ $PAGE->set_title(get_string('equipment_check_manage_title', 'local_tm_course'));
 $PAGE->requires->css('/local/tm_course/styles.css');
 
 $coursemenu = enabled_course_manager::get_course_menu();
+$itemsbycourse = equipment_check_manager::get_items_by_courses(array_keys($coursemenu));
+
+$scopelabels = [
+    equipment_check_manager::SCOPE_ONSITE => get_string('equipment_check_item_scope_onsite', 'local_tm_course'),
+    equipment_check_manager::SCOPE_ONLINE => get_string('equipment_check_item_scope_online', 'local_tm_course'),
+    equipment_check_manager::SCOPE_BOTH => get_string('equipment_check_item_scope_both', 'local_tm_course'),
+];
+$typelabels = [
+    equipment_check_manager::TYPE_STATUS => get_string('equipment_check_item_type_status', 'local_tm_course'),
+    equipment_check_manager::TYPE_TASK => get_string('equipment_check_item_type_task', 'local_tm_course'),
+];
+$labelenabled = get_string('equipment_check_item_enabled', 'local_tm_course');
+$labeldisabled = get_string('equipment_check_item_disabled', 'local_tm_course');
+$labelnone = get_string('equipment_check_manage_none', 'local_tm_course');
+
+/**
+ * Build read-only overview HTML for one course's items.
+ *
+ * @param \stdClass[] $items
+ */
+$render_overview_detail = static function (array $items) use (
+    $scopelabels,
+    $typelabels,
+    $labelenabled,
+    $labeldisabled,
+    $labelnone
+): string {
+    if (empty($items)) {
+        return '<p class="tm-equip-overview-empty mb-0">' . s($labelnone) . '</p>';
+    }
+    $html = '<ol class="tm-equip-overview-list mb-0">';
+    $n = 0;
+    foreach ($items as $item) {
+        $n++;
+        $name = (string) ($item->itemname ?? '');
+        $scope = (string) ($item->scope ?? equipment_check_manager::SCOPE_BOTH);
+        $checktype = (string) ($item->checktype ?? equipment_check_manager::TYPE_STATUS);
+        $enabled = !empty($item->enabled);
+        $scopetext = $scopelabels[$scope] ?? $scope;
+        $typetext = $typelabels[$checktype] ?? $checktype;
+        $entext = $enabled ? $labelenabled : $labeldisabled;
+        $liClass = $enabled ? '' : ' class="tm-equip-overview-disabled"';
+        $html .= '<li' . $liClass . '>'
+            . '<div class="tm-equip-overview-item-name">' . s($n . '. ' . $name) . '</div>'
+            . '<div class="tm-equip-overview-item-meta">'
+            . s($scopetext) . '｜' . s($typetext) . '｜' . s($entext)
+            . '</div></li>';
+    }
+    $html .= '</ol>';
+    return $html;
+};
 
 echo $OUTPUT->header();
 ?>
@@ -50,21 +103,46 @@ echo $OUTPUT->header();
         <?php if (empty($coursemenu)): ?>
             <div class="tm-alert tm-alert-info"><?php echo get_string('equipment_check_manage_empty_hint', 'local_tm_course'); ?></div>
         <?php else: ?>
-            <table class="tm-table">
+            <table class="tm-table tm-equip-overview-table">
                 <thead>
                     <tr>
                         <th><?php echo get_string('equipment_check_manage_course_col', 'local_tm_course'); ?></th>
+                        <th style="width:6rem"><?php echo get_string('equipment_check_manage_count_col', 'local_tm_course'); ?></th>
                         <th style="width:12rem"><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th>
                     </tr>
                 </thead>
                 <tbody>
-                <?php foreach ($coursemenu as $cid => $cname): ?>
-                    <tr>
-                        <td><?php echo s($cname); ?></td>
+                <?php foreach ($coursemenu as $cid => $cname):
+                    $cid = (int) $cid;
+                    $items = $itemsbycourse[$cid] ?? [];
+                    $count = count($items);
+                    $panelid = 'tm-equip-overview-panel-' . $cid;
+                    ?>
+                    <tr class="tm-equip-overview-row" data-courseid="<?php echo $cid; ?>">
+                        <td>
+                            <button type="button"
+                                    class="tm-equip-overview-toggle js-equip-overview-toggle"
+                                    data-courseid="<?php echo $cid; ?>"
+                                    aria-expanded="false"
+                                    aria-controls="<?php echo $panelid; ?>"
+                                    title="<?php echo s(get_string('equipment_check_manage_expand', 'local_tm_course')); ?>">
+                                <span class="tm-equip-overview-arrow" aria-hidden="true">▶</span>
+                                <span class="tm-equip-overview-coursename"><?php echo s($cname); ?></span>
+                            </button>
+                            <div id="<?php echo $panelid; ?>"
+                                 class="tm-equip-overview-detail js-equip-overview-detail"
+                                 data-courseid="<?php echo $cid; ?>"
+                                 hidden>
+                                <?php echo $render_overview_detail($items); ?>
+                            </div>
+                        </td>
+                        <td class="tm-equip-overview-count-cell">
+                            <span class="js-equip-overview-count"><?php echo s(get_string('equipment_check_manage_count', 'local_tm_course', $count)); ?></span>
+                        </td>
                         <td>
                             <button type="button"
                                     class="btn btn-sm btn-tm-primary js-open-equip-modal"
-                                    data-courseid="<?php echo (int) $cid; ?>"
+                                    data-courseid="<?php echo $cid; ?>"
                                     data-coursename="<?php echo s($cname); ?>">
                                 <?php echo get_string('equipment_check_manage_open_button', 'local_tm_course'); ?>
                             </button>
@@ -141,6 +219,7 @@ $str = [
     'typestatus' => get_string('equipment_check_item_type_status', 'local_tm_course'),
     'typetask' => get_string('equipment_check_item_type_task', 'local_tm_course'),
     'enabled' => get_string('equipment_check_item_enabled', 'local_tm_course'),
+    'disabled' => get_string('equipment_check_item_disabled', 'local_tm_course'),
     'delete' => get_string('equipment_check_item_delete', 'local_tm_course'),
     'placeholder' => get_string('equipment_check_item_text_placeholder', 'local_tm_course'),
     'title' => get_string('equipment_check_manage_title', 'local_tm_course'),
@@ -153,6 +232,10 @@ $str = [
     'needfile' => get_string('equipment_check_import_need_file', 'local_tm_course'),
     'previewing' => get_string('equipment_check_import_previewing', 'local_tm_course'),
     'committing' => get_string('equipment_check_import_committing', 'local_tm_course'),
+    'countTpl' => get_string('equipment_check_manage_count', 'local_tm_course', '{n}'),
+    'none' => get_string('equipment_check_manage_none', 'local_tm_course'),
+    'expand' => get_string('equipment_check_manage_expand', 'local_tm_course'),
+    'collapse' => get_string('equipment_check_manage_collapse', 'local_tm_course'),
 ];
 echo html_writer::script("
 (function() {
@@ -191,6 +274,67 @@ echo html_writer::script("
             .replace(/>/g, '&gt;')
             .replace(/\"/g, '&quot;');
     }
+    function scopeLabel(scope) {
+        if (scope === 'onsite') { return S.onsite; }
+        if (scope === 'online') { return S.online; }
+        return S.both;
+    }
+    function typeLabel(checktype) {
+        return checktype === 'task' ? S.typetask : S.typestatus;
+    }
+    function countLabel(n) {
+        return String(S.countTpl || '{n} 項').replace('{n}', String(n)).replace('{\$a}', String(n));
+    }
+    function overviewDetailHtml(items) {
+        if (!items || !items.length) {
+            return '<p class=\"tm-equip-overview-empty mb-0\">' + esc(S.none) + '</p>';
+        }
+        var html = '<ol class=\"tm-equip-overview-list mb-0\">';
+        for (var i = 0; i < items.length; i++) {
+            var it = items[i] || {};
+            var enabled = Number(it.enabled) === 1;
+            var meta = scopeLabel(it.scope) + '｜' + typeLabel(it.checktype) + '｜' + (enabled ? S.enabled : S.disabled);
+            html += '<li' + (enabled ? '' : ' class=\"tm-equip-overview-disabled\"') + '>'
+                + '<div class=\"tm-equip-overview-item-name\">' + esc((i + 1) + '. ' + (it.itemname || '')) + '</div>'
+                + '<div class=\"tm-equip-overview-item-meta\">' + esc(meta) + '</div></li>';
+        }
+        html += '</ol>';
+        return html;
+    }
+    function refreshOverview(courseId, items) {
+        var row = document.querySelector('.tm-equip-overview-row[data-courseid=\"' + courseId + '\"]');
+        if (!row) { return; }
+        var countEl = row.querySelector('.js-equip-overview-count');
+        var detail = row.querySelector('.js-equip-overview-detail');
+        if (countEl) {
+            countEl.textContent = countLabel((items && items.length) ? items.length : 0);
+        }
+        if (detail) {
+            detail.innerHTML = overviewDetailHtml(items || []);
+        }
+    }
+    function setOverviewExpanded(toggle, expanded) {
+        var courseId = toggle.getAttribute('data-courseid');
+        var detail = document.getElementById('tm-equip-overview-panel-' + courseId);
+        var arrow = toggle.querySelector('.tm-equip-overview-arrow');
+        toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        toggle.setAttribute('title', expanded ? S.collapse : S.expand);
+        if (detail) {
+            if (expanded) { detail.removeAttribute('hidden'); }
+            else { detail.setAttribute('hidden', 'hidden'); }
+        }
+        if (arrow) { arrow.textContent = expanded ? '▼' : '▶'; }
+        toggle.classList.toggle('is-open', !!expanded);
+    }
+    var toggles = document.querySelectorAll('.js-equip-overview-toggle');
+    for (var ti = 0; ti < toggles.length; ti++) {
+        toggles[ti].addEventListener('click', function(e) {
+            var toggle = e.currentTarget;
+            var open = toggle.getAttribute('aria-expanded') === 'true';
+            setOverviewExpanded(toggle, !open);
+        });
+    }
+
     function rowHtml(item) {
         var t = esc(item.itemname || '');
         var scope = String(item.scope || 'both');
@@ -317,7 +461,7 @@ echo html_writer::script("
         }
         bindDeleteHandlers();
     }
-    function loadItems(courseId, courseName, keepOpen) {
+    function loadItems(courseId, courseName) {
         currentCourseId = Number(courseId || 0);
         currentCourseName = String(courseName || '');
         title.textContent = S.title + ' - ' + currentCourseName;
@@ -329,11 +473,7 @@ echo html_writer::script("
         }).then(function(r){ return r.json(); }).then(function(data) {
             fillList((data && data.items) ? data.items : []);
             showEditPanel();
-            if (!keepOpen) {
-                modal.style.display = 'flex';
-            } else {
-                modal.style.display = 'flex';
-            }
+            modal.style.display = 'flex';
         });
     }
     function collectRows() {
@@ -353,6 +493,7 @@ echo html_writer::script("
     var openers = document.querySelectorAll('.js-open-equip-modal');
     for (var i = 0; i < openers.length; i++) {
         openers[i].addEventListener('click', function(e) {
+            e.stopPropagation();
             var btn = e.target.closest('.js-open-equip-modal');
             loadItems(btn.getAttribute('data-courseid'), btn.getAttribute('data-coursename'));
         });
@@ -362,13 +503,25 @@ echo html_writer::script("
         bindDeleteHandlers();
     });
     saveBtn.addEventListener('click', function() {
+        var payloadItems = collectRows();
         fetch(apiUrl, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             credentials: 'same-origin',
-            body: JSON.stringify({action: 'save', courseid: currentCourseId, items: collectRows(), sesskey: sesskey})
+            body: JSON.stringify({action: 'save', courseid: currentCourseId, items: payloadItems, sesskey: sesskey})
         }).then(function(r){ return r.json(); }).then(function(data) {
-            if (data && data.ok) { modal.style.display = 'none'; }
+            if (data && data.ok) {
+                // Re-list so overview matches persisted rows (empty names skipped server-side).
+                fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'same-origin',
+                    body: JSON.stringify({action: 'list', courseid: currentCourseId, sesskey: sesskey})
+                }).then(function(r){ return r.json(); }).then(function(listData) {
+                    refreshOverview(currentCourseId, (listData && listData.items) ? listData.items : []);
+                    modal.style.display = 'none';
+                });
+            }
         });
     });
     closeBtn.addEventListener('click', function() { modal.style.display = 'none'; });
@@ -435,14 +588,15 @@ echo html_writer::script("
                     + '；失敗：' + (data.failed || 0));
             setImportStatus(msg, false);
             importToken = '';
-            // Reload list so newly appended items appear immediately.
             fetch(apiUrl, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 credentials: 'same-origin',
                 body: JSON.stringify({action: 'list', courseid: currentCourseId, sesskey: sesskey})
             }).then(function(r){ return r.json(); }).then(function(listData) {
-                fillList((listData && listData.items) ? listData.items : []);
+                var items = (listData && listData.items) ? listData.items : [];
+                fillList(items);
+                refreshOverview(currentCourseId, items);
                 window.setTimeout(function() { showEditPanel(); }, 600);
             });
         }).catch(function() {

@@ -1873,6 +1873,67 @@ a.tm-attendance-learner-profile-link:focus {
     font-size: 0.9rem;
 }
 
+.tm-equip-overview-table td {
+    vertical-align: top;
+}
+.tm-equip-overview-toggle {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.45rem;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    cursor: pointer;
+    color: inherit;
+    font: inherit;
+    max-width: 100%;
+}
+.tm-equip-overview-toggle:hover .tm-equip-overview-coursename {
+    text-decoration: underline;
+}
+.tm-equip-overview-arrow {
+    display: inline-block;
+    width: 1rem;
+    flex: 0 0 auto;
+    color: var(--tm-orange-dark, #c9660c);
+    line-height: 1.4;
+}
+.tm-equip-overview-coursename {
+    font-weight: 600;
+    line-height: 1.4;
+}
+.tm-equip-overview-detail {
+    margin: 0.55rem 0 0.15rem 1.35rem;
+}
+.tm-equip-overview-list {
+    padding-left: 1.1rem;
+}
+.tm-equip-overview-list li {
+    margin-bottom: 0.45rem;
+}
+.tm-equip-overview-item-name {
+    font-weight: 500;
+}
+.tm-equip-overview-item-meta {
+    color: #666;
+    font-size: 0.88rem;
+    margin-top: 0.1rem;
+}
+.tm-equip-overview-disabled .tm-equip-overview-item-name,
+.tm-equip-overview-disabled .tm-equip-overview-item-meta {
+    color: #999;
+}
+.tm-equip-overview-empty {
+    color: #777;
+    font-size: 0.92rem;
+}
+.tm-equip-overview-count-cell {
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
 .tm-grading-search-row {
     display: flex;
     gap: 0.5rem;
