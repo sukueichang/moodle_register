@@ -74,9 +74,16 @@ function equipment_clean_raw_items(array $postequip): array {
         if ($itemid <= 0 || !is_array($fields)) {
             continue;
         }
+        $resolution = [];
+        if (!empty($fields['resolution']) && is_array($fields['resolution'])) {
+            foreach ($fields['resolution'] as $label) {
+                $resolution[] = clean_param((string) $label, PARAM_TEXT);
+            }
+        }
         $rawitems[$itemid] = [
             'status' => clean_param((string) ($fields['status'] ?? ''), PARAM_ALPHANUMEXT),
             'remark' => clean_param((string) ($fields['remark'] ?? ''), PARAM_TEXT),
+            'resolution' => $resolution,
         ];
     }
     return $rawitems;
@@ -103,6 +110,7 @@ function equipment_build_results(array $rawitems, array $applicableitems): array
         $results[$itemid] = [
             'checkstatus' => $checkstatus,
             'remark' => (string) ($entry['remark'] ?? ''),
+            'resolution_checked' => is_array($entry['resolution'] ?? null) ? $entry['resolution'] : [],
         ];
     }
     return $results;

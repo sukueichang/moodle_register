@@ -1826,6 +1826,78 @@ a.tm-attendance-learner-profile-link:focus {
 .tm-equip-desk-quick .btn {
     font-weight: 400;
 }
+.tm-equip-item-name {
+    display: flex;
+    align-items: flex-start;
+    gap: .35rem;
+}
+.tm-equip-support-btn {
+    flex: 0 0 auto;
+    border: 0;
+    background: transparent;
+    color: #5b6b7c;
+    font-size: .95rem;
+    line-height: 1.2;
+    padding: 0 .15rem;
+    cursor: pointer;
+}
+.tm-equip-support-btn:hover,
+.tm-equip-support-btn:focus {
+    color: var(--tm-orange-dark, #c45c16);
+    outline: none;
+}
+.tm-equip-support-popover {
+    position: absolute;
+    z-index: 1080;
+    max-width: 18rem;
+    padding: .55rem .7rem;
+    background: #fff;
+    border: 1px solid #d7dde5;
+    border-radius: .35rem;
+    box-shadow: 0 6px 18px rgba(20, 30, 40, .12);
+    font-size: .86rem;
+    line-height: 1.4;
+}
+.tm-equip-support-popover-title {
+    font-weight: 600;
+    margin-bottom: .25rem;
+}
+.tm-equip-support-popover-body {
+    white-space: pre-wrap;
+    color: #334;
+}
+.tm-equip-resolution {
+    margin-top: .45rem;
+    padding: .45rem .55rem;
+    background: #f7f8fa;
+    border-radius: .3rem;
+}
+.tm-equip-resolution-title {
+    font-size: .86rem;
+    font-weight: 600;
+    margin-bottom: .3rem;
+}
+.tm-equip-resolution-list {
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+}
+.tm-equip-resolution-item {
+    display: flex;
+    align-items: flex-start;
+    gap: .4rem;
+    margin: 0;
+    font-size: .88rem;
+    font-weight: 400;
+}
+.tm-equip-resolution-item input {
+    margin-top: .2rem;
+}
+.tm-equip-admin-sublabel {
+    font-size: .82rem;
+    color: #555;
+    font-weight: 600;
+}
 .tm-equip-grid {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }

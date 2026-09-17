@@ -2,6 +2,7 @@
     'use strict';
 
     var rowSyncing = false;
+    var openSupportTip = null;
 
     function collectAndSubmit(saveAllBtn) {
         var form = document.getElementById('tm-equip-save-all-form');
@@ -24,7 +25,7 @@
             deskCount++;
 
             deskForm.querySelectorAll('input[name^="equip["]').forEach(function(input) {
-                var m = input.name.match(/^equip\[(\d+)\]\[(status|remark)\]$/);
+                var m = input.name.match(/^equip\[(\d+)\]\[(status|remark|resolution)\](?:\[\])?$/);
                 if (!m) {
                     return;
                 }
@@ -36,7 +37,11 @@
                 var hidden = document.createElement('input');
                 hidden.type = 'hidden';
                 hidden.className = 'tm-equip-dynamic-input';
-                hidden.name = 'equip_all[' + desknumber + '][' + itemid + '][' + field + ']';
+                if (field === 'resolution') {
+                    hidden.name = 'equip_all[' + desknumber + '][' + itemid + '][resolution][]';
+                } else {
+                    hidden.name = 'equip_all[' + desknumber + '][' + itemid + '][' + field + ']';
+                }
                 hidden.value = input.value;
                 form.appendChild(hidden);
             });
@@ -54,10 +59,6 @@
 
     function getCard(el) {
         return el ? el.closest('.tm-equip-desk-card') : null;
-    }
-
-    function getDetails(el) {
-        return el ? el.closest('.tm-equip-desk-details') : null;
     }
 
     /**
@@ -83,7 +84,7 @@
     }
 
     function isItemComplete(itemEl) {
-        var checkbox = itemEl.querySelector('input[type="checkbox"][name^="equip["]');
+        var checkbox = itemEl.querySelector('input[type="checkbox"][name^="equip["][name$="[status]"]');
         if (checkbox) {
             return !!checkbox.checked;
         }
@@ -119,12 +120,32 @@
         progress.textContent = completed + '/' + declared;
     }
 
+    function syncResolutionVisibility(itemEl) {
+        if (!itemEl) {
+            return;
+        }
+        var panel = itemEl.querySelector('[data-equip-resolution]');
+        if (!panel) {
+            return;
+        }
+        var abnormal = itemEl.querySelector('input.js-equip-status-radio[value="abnormal"]');
+        var open = !!(abnormal && abnormal.checked);
+        if (open) {
+            panel.hidden = false;
+            panel.classList.add('is-open');
+        } else {
+            panel.hidden = true;
+            panel.classList.remove('is-open');
+            // Intentionally do NOT clear checklist checkboxes here.
+        }
+    }
+
     function fillDeskOk(form) {
         if (!form) {
             return;
         }
         form.querySelectorAll('.tm-equip-item').forEach(function(item) {
-            var checkbox = item.querySelector('input[type="checkbox"][name^="equip["]');
+            var checkbox = item.querySelector('input[type="checkbox"][name^="equip["][name$="[status]"]');
             if (checkbox) {
                 checkbox.checked = true;
                 return;
@@ -133,7 +154,8 @@
             if (normal) {
                 normal.checked = true;
             }
-            // Intentionally do not clear / change remark fields.
+            // Keep remark + resolution checkbox DOM state; only hide resolution panel.
+            syncResolutionVisibility(item);
         });
         updateDeskProgress(getCard(form));
     }
@@ -170,13 +192,86 @@
         });
     }
 
-    function initLiveProgress() {
+    function initLiveProgressAndResolution() {
         document.querySelectorAll('.tm-equip-form').forEach(function(form) {
-            form.addEventListener('change', function() {
+            form.addEventListener('change', function(e) {
+                var target = e.target;
+                if (target && target.classList && target.classList.contains('js-equip-status-radio')) {
+                    syncResolutionVisibility(target.closest('.tm-equip-item'));
+                }
                 updateDeskProgress(getCard(form));
             });
-            // Initial sync in case markup and inputs diverge.
+            form.querySelectorAll('.tm-equip-item').forEach(function(item) {
+                syncResolutionVisibility(item);
+            });
             updateDeskProgress(getCard(form));
+        });
+    }
+
+    function closeSupportTip() {
+        if (openSupportTip && openSupportTip.parentNode) {
+            openSupportTip.parentNode.removeChild(openSupportTip);
+        }
+        openSupportTip = null;
+    }
+
+    function showSupportTip(btn) {
+        closeSupportTip();
+        var support = btn.getAttribute('data-support') || '';
+        if (!support) {
+            return;
+        }
+        var tip = document.createElement('div');
+        tip.className = 'tm-equip-support-popover';
+        tip.setAttribute('role', 'tooltip');
+        var title = document.createElement('div');
+        title.className = 'tm-equip-support-popover-title';
+        title.textContent = btn.getAttribute('aria-label') || '';
+        var body = document.createElement('div');
+        body.className = 'tm-equip-support-popover-body';
+        body.textContent = support;
+        tip.appendChild(title);
+        tip.appendChild(body);
+        document.body.appendChild(tip);
+        openSupportTip = tip;
+
+        var rect = btn.getBoundingClientRect();
+        var tipRect = tip.getBoundingClientRect();
+        var left = rect.left + (rect.width / 2) - (tipRect.width / 2) + window.pageXOffset;
+        var top = rect.bottom + 6 + window.pageYOffset;
+        if (left < 8) {
+            left = 8;
+        }
+        tip.style.left = left + 'px';
+        tip.style.top = top + 'px';
+    }
+
+    function initSupportTips() {
+        document.querySelectorAll('.js-equip-support-tip').forEach(function(btn) {
+            btn.addEventListener('mouseenter', function() {
+                showSupportTip(btn);
+            });
+            btn.addEventListener('mouseleave', function() {
+                closeSupportTip();
+            });
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (openSupportTip) {
+                    closeSupportTip();
+                } else {
+                    showSupportTip(btn);
+                }
+            });
+        });
+        document.addEventListener('click', function(e) {
+            if (!openSupportTip) {
+                return;
+            }
+            if (e.target && e.target.closest && e.target.closest('.js-equip-support-tip')) {
+                return;
+            }
+            closeSupportTip();
         });
     }
 
@@ -196,7 +291,8 @@
         }
         initRowExpandSync();
         initFillDeskButtons();
-        initLiveProgress();
+        initLiveProgressAndResolution();
+        initSupportTips();
         initSaveAll();
     }
 

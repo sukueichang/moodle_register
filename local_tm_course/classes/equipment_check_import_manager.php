@@ -29,6 +29,8 @@ class equipment_check_import_manager {
     private const COL_CHECKTYPE = 'checktype';
     private const COL_ENABLED = 'enabled';
     private const COL_ORDER = 'order';
+    private const COL_RESOLUTION = 'resolution_methods';
+    private const COL_SUPPORT = 'external_support';
 
     /** Required columns for a valid header row. */
     private const REQUIRED_COLS = [
@@ -68,6 +70,13 @@ class equipment_check_import_manager {
             '顺序' => self::COL_ORDER,
             'order' => self::COL_ORDER,
             'sortorder' => self::COL_ORDER,
+            '排除方法' => self::COL_RESOLUTION,
+            'resolutionmethods' => self::COL_RESOLUTION,
+            'resolution_methods' => self::COL_RESOLUTION,
+            '外單位支援' => self::COL_SUPPORT,
+            '外单位支援' => self::COL_SUPPORT,
+            'externalsupport' => self::COL_SUPPORT,
+            'external_support' => self::COL_SUPPORT,
         ];
         return $map[$h] ?? null;
     }
@@ -253,6 +262,8 @@ class equipment_check_import_manager {
         $colmap = $header['colmap'];
         $hasenabled = isset($colmap[self::COL_ENABLED]);
         $hasorder = isset($colmap[self::COL_ORDER]);
+        $hasresolution = isset($colmap[self::COL_RESOLUTION]);
+        $hassupport = isset($colmap[self::COL_SUPPORT]);
 
         $dbkeys = equipment_check_manager::get_duplicate_key_set($courseid);
         $excelkeys = [];
@@ -270,9 +281,13 @@ class equipment_check_import_manager {
             $rawtype = self::cell($line, $colmap[self::COL_CHECKTYPE]);
             $rawenabled = $hasenabled ? self::cell($line, $colmap[self::COL_ENABLED]) : '';
             $raworder = $hasorder ? self::cell($line, $colmap[self::COL_ORDER]) : '';
+            // Preserve internal newlines for 排除方法 (official template uses LF + "1. …").
+            $rawresolution = $hasresolution ? self::cell_preserve_newlines($line, $colmap[self::COL_RESOLUTION]) : '';
+            $rawsupport = $hassupport ? self::cell_preserve_newlines($line, $colmap[self::COL_SUPPORT]) : '';
 
             // Skip fully blank data lines.
-            if ($rawitem === '' && $rawscope === '' && $rawtype === '' && $rawenabled === '' && $raworder === '') {
+            if ($rawitem === '' && $rawscope === '' && $rawtype === '' && $rawenabled === ''
+                    && $raworder === '' && $rawresolution === '' && $rawsupport === '') {
                 continue;
             }
 
@@ -332,6 +347,32 @@ class equipment_check_import_manager {
 
             $order = $hasorder ? self::map_order($raworder) : null;
 
+            // Optional 排除方法 / 外單位支援 — blank is OK; never silent-truncate.
+            $resolutionmethods = equipment_check_manager::parse_resolution_methods_text($rawresolution);
+            $reserr = equipment_check_manager::validate_resolution_methods($resolutionmethods);
+            if ($reserr === 'too_many') {
+                $errors[] = get_string('equipment_check_import_err_resolution_too_many', 'local_tm_course', (object) [
+                    'row' => $excelrownum,
+                    'max' => equipment_check_manager::MAX_RESOLUTION_STEPS,
+                ]);
+            } else if ($reserr === 'step_long') {
+                $errors[] = get_string('equipment_check_import_err_resolution_step_long', 'local_tm_course', (object) [
+                    'row' => $excelrownum,
+                    'max' => equipment_check_manager::MAX_RESOLUTION_STEP_CHARS,
+                ]);
+            } else if ($reserr === 'step_empty_after_clean') {
+                $errors[] = get_string('equipment_check_import_err_resolution_step_invalid', 'local_tm_course', $excelrownum);
+            }
+
+            $supporterr = equipment_check_manager::validate_external_support($rawsupport);
+            if ($supporterr === 'too_long') {
+                $errors[] = get_string('equipment_check_import_err_support_long', 'local_tm_course', (object) [
+                    'row' => $excelrownum,
+                    'max' => equipment_check_manager::MAX_EXTERNAL_SUPPORT_CHARS,
+                ]);
+            }
+            $externalsupport = equipment_check_manager::normalize_external_support($rawsupport);
+
             $result = self::RESULT_OK;
             if (!empty($errors)) {
                 $result = self::RESULT_ERR;
@@ -354,6 +395,8 @@ class equipment_check_import_manager {
                         'checktype' => $checktype,
                         'enabled' => $enabled,
                         'order' => $order,
+                        'resolution_methods' => $resolutionmethods,
+                        'external_support' => $externalsupport,
                         'excel_row' => $excelrownum,
                     ];
                 }
@@ -365,6 +408,8 @@ class equipment_check_import_manager {
                 'scope_label' => $rawscope,
                 'checktype_label' => $rawtype,
                 'enabled_label' => $enabledlabel,
+                'resolution_count' => count($resolutionmethods),
+                'external_support' => $externalsupport,
                 'result' => $result,
                 'errors' => $errors,
             ];
@@ -450,11 +495,23 @@ class equipment_check_import_manager {
                 continue;
             }
             $seen[$key] = true;
+            $methods = equipment_check_manager::normalize_resolution_input($row['resolution_methods'] ?? []);
+            if (equipment_check_manager::validate_resolution_methods($methods) !== null) {
+                self::clear_session();
+                throw new \moodle_exception('equipment_check_import_error_revalidate', 'local_tm_course');
+            }
+            $support = (string) ($row['external_support'] ?? '');
+            if (equipment_check_manager::validate_external_support($support) !== null) {
+                self::clear_session();
+                throw new \moodle_exception('equipment_check_import_error_revalidate', 'local_tm_course');
+            }
             $toinsert[] = [
                 'itemname' => $name,
                 'scope' => $scope,
                 'checktype' => $checktype,
                 'enabled' => $enabled,
+                'resolution_methods' => $methods,
+                'external_support' => $support,
             ];
         }
 
@@ -501,6 +558,15 @@ class equipment_check_import_manager {
 
     private static function cell(array $line, int $idx): string {
         return trim((string) ($line[$idx] ?? ''));
+    }
+
+    /**
+     * Like cell(), but keep internal newlines (needed for 排除方法 checklist text).
+     */
+    private static function cell_preserve_newlines(array $line, int $idx): string {
+        $value = (string) ($line[$idx] ?? '');
+        // Trim only outer whitespace / newlines; do not collapse internal LF.
+        return preg_replace("/^[\\s\\x{00A0}]+|[\\s\\x{00A0}]+$/u", '', $value) ?? trim($value);
     }
 
     private static function normalize_label(string $value): string {

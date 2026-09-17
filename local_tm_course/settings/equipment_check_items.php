@@ -226,6 +226,10 @@ $str = [
     'disabled' => get_string('equipment_check_item_disabled', 'local_tm_course'),
     'delete' => get_string('equipment_check_item_delete', 'local_tm_course'),
     'placeholder' => get_string('equipment_check_item_text_placeholder', 'local_tm_course'),
+    'resolutionlabel' => get_string('equipment_check_item_resolution_label', 'local_tm_course'),
+    'resolutionhint' => get_string('equipment_check_item_resolution_hint', 'local_tm_course'),
+    'supportlabel' => get_string('equipment_check_item_support_label', 'local_tm_course'),
+    'supporthint' => get_string('equipment_check_item_support_hint', 'local_tm_course'),
     'title' => get_string('equipment_check_manage_title', 'local_tm_course'),
     'importtitle' => get_string('equipment_check_import_button', 'local_tm_course'),
     'resultok' => get_string('equipment_check_import_result_ok', 'local_tm_course'),
@@ -344,6 +348,13 @@ echo html_writer::script("
         var scope = String(item.scope || 'both');
         var checktype = String(item.checktype || 'status');
         var enabled = Number(item.enabled === undefined ? 1 : item.enabled) === 1 ? 'checked' : '';
+        var resolutionText = '';
+        if (item.resolution_methods_text != null) {
+            resolutionText = String(item.resolution_methods_text || '');
+        } else if (item.resolution_methods && item.resolution_methods.length) {
+            resolutionText = item.resolution_methods.join('\\n');
+        }
+        var support = esc(item.external_support || '');
         return '<div class=\"tm-equip-admin-row border rounded p-2 mb-2\">'
             + '<input type=\"text\" class=\"form-control form-control-sm js-eq-text\" placeholder=\"' + esc(S.placeholder) + '\" value=\"' + t + '\">'
             + '<div class=\"mt-2 d-flex flex-wrap align-items-center gap-2\">'
@@ -358,7 +369,12 @@ echo html_writer::script("
             + '</select>'
             + '<label class=\"mb-0\"><input type=\"checkbox\" class=\"js-eq-enabled\" ' + enabled + '> ' + esc(S.enabled) + '</label>'
             + '<button type=\"button\" class=\"btn btn-sm btn-outline-secondary js-eq-del\">' + esc(S['delete']) + '</button>'
-            + '</div></div>';
+            + '</div>'
+            + '<label class=\"tm-equip-admin-sublabel mt-2 mb-1 d-block\">' + esc(S.resolutionlabel) + '</label>'
+            + '<textarea class=\"form-control form-control-sm js-eq-resolution\" rows=\"3\" placeholder=\"' + esc(S.resolutionhint) + '\">' + esc(resolutionText) + '</textarea>'
+            + '<label class=\"tm-equip-admin-sublabel mt-2 mb-1 d-block\">' + esc(S.supportlabel) + '</label>'
+            + '<textarea class=\"form-control form-control-sm js-eq-support\" rows=\"2\" placeholder=\"' + esc(S.supporthint) + '\">' + support + '</textarea>'
+            + '</div>';
     }
     function bindDeleteHandlers() {
         var btns = list.querySelectorAll('.js-eq-del');
@@ -497,7 +513,9 @@ echo html_writer::script("
                 scope: (rows[i].querySelector('.js-eq-scope') || {}).value || 'both',
                 checktype: (rows[i].querySelector('.js-eq-type') || {}).value || 'status',
                 enabled: (rows[i].querySelector('.js-eq-enabled') || {}).checked ? 1 : 0,
-                sortorder: (i + 1) * 10
+                sortorder: (i + 1) * 10,
+                resolution_methods_text: (rows[i].querySelector('.js-eq-resolution') || {}).value || '',
+                external_support: (rows[i].querySelector('.js-eq-support') || {}).value || ''
             });
         }
         return out;
@@ -511,7 +529,10 @@ echo html_writer::script("
         });
     }
     addBtn.addEventListener('click', function() {
-        list.insertAdjacentHTML('beforeend', rowHtml({itemname:'', scope:'both', checktype:'status', enabled:1}));
+        list.insertAdjacentHTML('beforeend', rowHtml({
+            itemname:'', scope:'both', checktype:'status', enabled:1,
+            resolution_methods_text:'', external_support:''
+        }));
         bindDeleteHandlers();
     });
     saveBtn.addEventListener('click', function() {

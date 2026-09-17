@@ -160,6 +160,141 @@ class equipment_check_import_test extends \advanced_testcase {
         $this->assertSame([], $errors);
     }
 
+    public function test_parse_resolution_methods_from_official_cell(): void {
+        $raw = "1. 拔除電源線數30秒，插回重新啟動\n2. 通報AS\n3. 更換桌次或手臂";
+        $steps = equipment_check_manager::parse_resolution_methods_text($raw);
+        $this->assertSame([
+            '拔除電源線數30秒，插回重新啟動',
+            '通報AS',
+            '更換桌次或手臂',
+        ], $steps);
+
+        $raw2 = "1. 時間充足的話向MIS更換\n2. 緊急的話則先以個人電腦替代";
+        $this->assertCount(2, equipment_check_manager::parse_resolution_methods_text($raw2));
+        $this->assertSame([], equipment_check_manager::parse_resolution_methods_text(''));
+        $this->assertNull(equipment_check_manager::validate_resolution_methods($steps));
+    }
+
+    public function test_resolution_checked_cleared_when_not_abnormal(): void {
+        $this->assertSame(
+            ['通報AS'],
+            equipment_check_manager::filter_resolution_checked(
+                ['通報AS', '偽造'],
+                ['拔除電源線數30秒，插回重新啟動', '通報AS', '更換桌次或手臂']
+            )
+        );
+        $this->assertSame('', equipment_check_manager::encode_resolution_checked([]));
+    }
+
+    public function test_official_20260916_fixture_header_and_resolution_split(): void {
+        if (!class_exists(\ZipArchive::class)) {
+            $this->markTestSkipped('ZipArchive not available');
+        }
+        global $CFG;
+        $path = $CFG->dirroot . '/local/tm_course/tests/fixtures/Moodle_equip_check_template_20260916.xlsx';
+        if (!is_readable($path)) {
+            $this->markTestSkipped('20260916 template fixture missing');
+        }
+        $matrix = equipment_check_xlsx_reader::read_first_sheet($path);
+        $header = equipment_check_import_manager::find_header_row($matrix);
+        $this->assertSame(4, $header['excel_row']);
+        $this->assertArrayHasKey('itemname', $header['colmap']);
+        $this->assertArrayHasKey('resolution_methods', $header['colmap']);
+        $this->assertArrayHasKey('external_support', $header['colmap']);
+
+        $rescol = $header['colmap']['resolution_methods'];
+        $supcol = $header['colmap']['external_support'];
+        $itemcol = $header['colmap']['itemname'];
+        $typecol = $header['colmap']['checktype'];
+
+        $first = $matrix[$header['index'] + 1]['cells'];
+        $this->assertSame('手臂開機正常，無異常訊息', $first[$itemcol]);
+        $methods = equipment_check_manager::parse_resolution_methods_text((string) $first[$rescol]);
+        $this->assertSame([
+            '拔除電源線數30秒，插回重新啟動',
+            '通報AS',
+            '更換桌次或手臂',
+        ], $methods);
+        $this->assertSame('After Service - Jordan, Eddie', trim((string) $first[$supcol]));
+
+        // Task rows should import with empty resolution/support without error.
+        $taskrow = null;
+        for ($i = $header['index'] + 1; $i < count($matrix); $i++) {
+            $type = equipment_check_import_manager::map_checktype((string) ($matrix[$i]['cells'][$typecol] ?? ''));
+            if ($type === 'task') {
+                $taskrow = $matrix[$i]['cells'];
+                break;
+            }
+        }
+        $this->assertNotNull($taskrow);
+        $this->assertSame([], equipment_check_manager::parse_resolution_methods_text((string) ($taskrow[$rescol] ?? '')));
+        $this->assertSame('', trim((string) ($taskrow[$supcol] ?? '')));
+    }
+
+    public function test_save_items_preserves_resolution_and_support(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $course = $this->getDataGenerator()->create_course();
+        $courseid = (int) $course->id;
+
+        equipment_check_manager::save_items_for_course($courseid, [[
+            'itemname' => '手臂開機正常，無異常訊息',
+            'scope' => 'both',
+            'checktype' => 'status',
+            'enabled' => 1,
+            'sortorder' => 10,
+            'resolution_methods' => [
+                '拔除電源線數30秒，插回重新啟動',
+                '通報AS',
+                '更換桌次或手臂',
+            ],
+            'external_support' => 'After Service - Jordan, Eddie',
+        ]]);
+
+        $row = $DB->get_record('local_tm_equip_check_item', [
+            'courseid' => $courseid,
+            'itemname' => '手臂開機正常，無異常訊息',
+        ], '*', MUST_EXIST);
+        $this->assertSame(
+            ['拔除電源線數30秒，插回重新啟動', '通報AS', '更換桌次或手臂'],
+            equipment_check_manager::decode_resolution_methods($row->resolution_methods)
+        );
+        $this->assertSame('After Service - Jordan, Eddie', (string) $row->external_support);
+
+        // Re-save unchanged via wipe+reinsert path (modal behaviour).
+        equipment_check_manager::save_items_for_course($courseid, [[
+            'itemname' => '手臂開機正常，無異常訊息',
+            'scope' => 'both',
+            'checktype' => 'status',
+            'enabled' => 1,
+            'sortorder' => 10,
+            'resolution_methods_text' => "拔除電源線數30秒，插回重新啟動\n通報AS\n更換桌次或手臂",
+            'external_support' => 'After Service - Jordan, Eddie',
+        ]]);
+        // normalize_resolution_input on save_items uses resolution_methods key — pass array again like API.
+        equipment_check_manager::save_items_for_course($courseid, [[
+            'itemname' => '手臂開機正常，無異常訊息',
+            'scope' => 'both',
+            'checktype' => 'status',
+            'enabled' => 1,
+            'sortorder' => 10,
+            'resolution_methods' => equipment_check_manager::parse_resolution_methods_text(
+                "拔除電源線數30秒，插回重新啟動\n通報AS\n更換桌次或手臂"
+            ),
+            'external_support' => 'After Service - Jordan, Eddie',
+        ]]);
+
+        $row2 = $DB->get_record('local_tm_equip_check_item', [
+            'courseid' => $courseid,
+            'itemname' => '手臂開機正常，無異常訊息',
+        ], '*', MUST_EXIST);
+        $this->assertSame(
+            equipment_check_manager::decode_resolution_methods($row->resolution_methods),
+            equipment_check_manager::decode_resolution_methods($row2->resolution_methods)
+        );
+        $this->assertSame((string) $row->external_support, (string) $row2->external_support);
+    }
+
     /**
      * Build a tiny OOXML spreadsheet for reader tests.
      *

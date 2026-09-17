@@ -22,6 +22,17 @@
 
 ---
 
+## 2026-09-17 — 設備檢查：排除方法 Checklist + 外單位支援
+
+- **需求：** Excel 新增「排除方法」「外單位支援」；status 異常時展開排除 Checklist；當次勾選寫入 log；ⓘ 顯示支援；Modal 可維護兩欄；不得因 wipe+reinsert 清空。
+- **決策：**
+  1. item：`resolution_methods`（JSON 字串陣列）+ `external_support`（TEXT）。
+  2. log：`resolution_checked`（JSON 文字快照）；僅 ABNORMAL 保存，NORMAL/UNSET 清空。
+  3. 排除方法依公版 LF + `1.` 編號拆行；超長明確 validation error，不 silent truncate。
+  4. 前端切回正常暫不清 DOM checkbox；全部儲存再依最終狀態落庫。
+- **影響範圍：** install/upgrade、manager、import、class_prep、partial/JS、settings modal/API、lang、styles、fixture `Moodle_equip_check_template_20260916.xlsx`；version **5.24.0**。
+- **版本／狀態：** **5.24.0；進行中（待測試環境人工驗收）**
+
 ## 2026-09-16 — 講師端設備檢查操作 UX（同排展開／本桌批次）
 
 - **需求：** 同一排桌次共用展開／收合（依實際 CSS grid row，非硬編碼欄數）；每桌「本桌全部正常／完成」僅改 status/task、保留 remark、不立即寫 DB；進度即時更新；禁止全部桌次一次填寫。
