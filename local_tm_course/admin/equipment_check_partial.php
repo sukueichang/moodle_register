@@ -88,19 +88,13 @@ if (empty($equip_items)):
                         $checkedset[(string) $lab] = true;
                     }
                     $externalsupport = trim((string) ($item['external_support'] ?? ''));
-                    $showresolution = ($checktype === equipment_check_manager::TYPE_STATUS && !empty($resolutionmethods));
-                    $resolutionopen = ($checkstatus === equipment_check_manager::STATUS_ABNORMAL);
+                    $hasresolution = ($checktype === equipment_check_manager::TYPE_STATUS && !empty($resolutionmethods));
+                    $hassupport = ($checktype === equipment_check_manager::TYPE_STATUS && $externalsupport !== '');
+                    $abnormalopen = ($checkstatus === equipment_check_manager::STATUS_ABNORMAL);
                     ?>
                     <div class="tm-equip-item" data-checktype="<?php echo s($checktype); ?>">
                         <div class="tm-equip-item-name">
                             <?php echo s($item['itemname']); ?>
-                            <?php if ($externalsupport !== ''): ?>
-                                <button type="button"
-                                        class="tm-equip-support-btn js-equip-support-tip"
-                                        aria-label="<?php echo s(get_string('equipment_check_support_title', 'local_tm_course')); ?>"
-                                        data-support="<?php echo s($externalsupport); ?>"
-                                        title="<?php echo s(get_string('equipment_check_support_title', 'local_tm_course') . "\n" . $externalsupport); ?>">ⓘ</button>
-                            <?php endif; ?>
                         </div>
                         <div class="tm-equip-item-controls">
                             <?php if ($checktype === equipment_check_manager::TYPE_TASK): ?>
@@ -128,33 +122,53 @@ if (empty($equip_items)):
                                            <?php echo ($checkstatus === equipment_check_manager::STATUS_ABNORMAL) ? 'checked' : ''; ?>>
                                     <?php echo get_string('equipment_check_status_abnormal', 'local_tm_course'); ?>
                                 </label>
-                                <input type="text"
-                                       class="form-control form-control-sm tm-equip-remark"
-                                       name="<?php echo s($fieldbase); ?>[remark]"
-                                       maxlength="255"
-                                       placeholder="<?php echo s(get_string('equipment_check_remark_placeholder', 'local_tm_course')); ?>"
-                                       value="<?php echo s($remark); ?>">
                             <?php endif; ?>
                         </div>
-                        <?php if ($showresolution): ?>
-                        <div class="tm-equip-resolution<?php echo $resolutionopen ? ' is-open' : ''; ?>"
-                             data-equip-resolution
-                             <?php echo $resolutionopen ? '' : 'hidden'; ?>>
-                            <div class="tm-equip-resolution-title">
-                                <?php echo get_string('equipment_check_resolution_heading', 'local_tm_course'); ?>
+                        <?php if ($checktype === equipment_check_manager::TYPE_STATUS): ?>
+                        <div class="tm-equip-abnormal-panel<?php echo $abnormalopen ? ' is-open' : ''; ?>"
+                             data-equip-abnormal-panel
+                             <?php echo $abnormalopen ? '' : 'hidden'; ?>>
+                            <?php if ($hasresolution): ?>
+                            <div class="tm-equip-resolution">
+                                <div class="tm-equip-resolution-title">
+                                    <?php echo get_string('equipment_check_resolution_heading', 'local_tm_course'); ?>
+                                    <?php if ($hassupport): ?>
+                                        <button type="button"
+                                                class="tm-equip-support-btn js-equip-support-tip"
+                                                aria-label="<?php echo s(get_string('equipment_check_support_title', 'local_tm_course')); ?>"
+                                                data-support="<?php echo s($externalsupport); ?>"
+                                                title="<?php echo s(get_string('equipment_check_support_title', 'local_tm_course') . "\n" . $externalsupport); ?>">ⓘ</button>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="tm-equip-resolution-list">
+                                    <?php foreach ($resolutionmethods as $steplabel): ?>
+                                        <?php $steplabel = (string) $steplabel; ?>
+                                        <label class="tm-equip-resolution-item">
+                                            <input type="checkbox"
+                                                   name="<?php echo s($fieldbase); ?>[resolution][]"
+                                                   value="<?php echo s($steplabel); ?>"
+                                                   <?php echo isset($checkedset[$steplabel]) ? 'checked' : ''; ?>>
+                                            <span><?php echo s($steplabel); ?></span>
+                                        </label>
+                                    <?php endforeach; ?>
+                                </div>
                             </div>
-                            <div class="tm-equip-resolution-list">
-                                <?php foreach ($resolutionmethods as $steplabel): ?>
-                                    <?php $steplabel = (string) $steplabel; ?>
-                                    <label class="tm-equip-resolution-item">
-                                        <input type="checkbox"
-                                               name="<?php echo s($fieldbase); ?>[resolution][]"
-                                               value="<?php echo s($steplabel); ?>"
-                                               <?php echo isset($checkedset[$steplabel]) ? 'checked' : ''; ?>>
-                                        <span><?php echo s($steplabel); ?></span>
-                                    </label>
-                                <?php endforeach; ?>
+                            <?php elseif ($hassupport): ?>
+                            <div class="tm-equip-support-only">
+                                <button type="button"
+                                        class="tm-equip-support-btn js-equip-support-tip"
+                                        aria-label="<?php echo s(get_string('equipment_check_support_title', 'local_tm_course')); ?>"
+                                        data-support="<?php echo s($externalsupport); ?>"
+                                        title="<?php echo s(get_string('equipment_check_support_title', 'local_tm_course') . "\n" . $externalsupport); ?>">ⓘ</button>
+                                <span class="tm-equip-support-only-label"><?php echo get_string('equipment_check_support_title', 'local_tm_course'); ?></span>
                             </div>
+                            <?php endif; ?>
+                            <input type="text"
+                                   class="form-control form-control-sm tm-equip-remark mt-2"
+                                   name="<?php echo s($fieldbase); ?>[remark]"
+                                   maxlength="255"
+                                   placeholder="<?php echo s(get_string('equipment_check_remark_placeholder', 'local_tm_course')); ?>"
+                                   value="<?php echo s($remark); ?>">
                         </div>
                         <?php endif; ?>
                         <?php if (!empty($item['timemodified'])): ?>

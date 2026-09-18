@@ -1880,6 +1880,21 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026091700, 'local', 'tm_course');
     }
 
+    // 2026091701 — Onsite Auto lunch padding: only when day segment crosses midday (no DB).
+    if ($oldversion < 2026091701) {
+        upgrade_plugin_savepoint(true, 2026091701, 'local', 'tm_course');
+    }
+
+    // 2026091702 — Lunch window Taipei 12:00–13:00; learner lunch note only when wall covers lunch (no DB).
+    if ($oldversion < 2026091702) {
+        upgrade_plugin_savepoint(true, 2026091702, 'local', 'tm_course');
+    }
+
+    // 2026091800 — Equipment check UX: abnormal-only remark/checklist/ⓘ; admin textarea value bind (no DB).
+    if ($oldversion < 2026091800) {
+        upgrade_plugin_savepoint(true, 2026091800, 'local', 'tm_course');
+    }
+
     return true;
 }
 

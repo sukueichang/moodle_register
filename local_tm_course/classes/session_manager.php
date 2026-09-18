@@ -1411,16 +1411,72 @@ class session_manager {
     }
 
     /**
+     * Asia/Taipei timezone used for onsite lunch-window rules.
+     */
+    public static function onsite_lunch_timezone(): \DateTimeZone {
+        return new \DateTimeZone('Asia/Taipei');
+    }
+
+    /**
+     * Taipei lunch window [12:00, 13:00) timestamps for the calendar day of $unixtime.
+     *
+     * @return array{0:int,1:int} [lunchstart, lunchend)
+     */
+    public static function onsite_lunch_window_for(int $unixtime): array {
+        $tz = self::onsite_lunch_timezone();
+        $day = (new \DateTime('@' . $unixtime))->setTimezone($tz);
+        $ymd = $day->format('Y-m-d');
+        $lunchstart = (new \DateTime($ymd . ' 12:00:00', $tz))->getTimestamp();
+        $lunchend = (new \DateTime($ymd . ' 13:00:00', $tz))->getTimestamp();
+        return [$lunchstart, $lunchend];
+    }
+
+    /**
+     * Whether [start, end) overlaps Taipei lunch [12:00, 13:00) on any calendar day in range.
+     */
+    public static function interval_overlaps_onsite_lunch(int $start, int $end): bool {
+        if ($end <= $start) {
+            return false;
+        }
+        $tz = self::onsite_lunch_timezone();
+        $cursor = (new \DateTime('@' . $start))->setTimezone($tz);
+        $enddt = (new \DateTime('@' . $end))->setTimezone($tz);
+        $guard = 0;
+        while ($cursor < $enddt && $guard < 400) {
+            $guard++;
+            $ymd = $cursor->format('Y-m-d');
+            [$lunchstart, $lunchend] = self::onsite_lunch_window_for($cursor->getTimestamp());
+            if ($start < $lunchend && $end > $lunchstart) {
+                return true;
+            }
+            $cursor = new \DateTime($ymd . ' 00:00:00', $tz);
+            $cursor->modify('+1 day');
+        }
+        return false;
+    }
+
+    /**
      * Lunch padding (hours) for an onsite day segment: 1h when the teaching interval
-     * crosses the midday lunch window, otherwise 0 (short / afternoon-only blocks).
+     * overlaps Taipei 12:00–13:00, otherwise 0 (short / afternoon-only blocks).
      */
     public static function onsite_segment_lunch_hours(int $segstart, float $teachinghours): float {
         if ($teachinghours <= 0.0) {
             return 0.0;
         }
-        $lunchmark = (int) strtotime(date('Y-m-d', $segstart) . ' 12:30:00');
         $teachingend = (int) round($segstart + ($teachinghours * HOURSECS));
-        return ($segstart <= $lunchmark && $teachingend > $lunchmark) ? 1.0 : 0.0;
+        return self::interval_overlaps_onsite_lunch($segstart, $teachingend) ? 1.0 : 0.0;
+    }
+
+    /**
+     * Learner card: show “includes lunch” only when the stored wall interval covers Taipei lunch.
+     */
+    public static function session_includes_lunch_note(\stdClass $session): bool {
+        if (self::is_online_session($session)) {
+            return false;
+        }
+        $start = (int) ($session->starttime ?? 0);
+        $end = (int) ($session->endtime ?? 0);
+        return self::interval_overlaps_onsite_lunch($start, $end);
     }
 
     /**
@@ -1428,7 +1484,7 @@ class session_manager {
      *
      * The first day may chain after existing same-room occupancy on the seed day (respecting
      * remaining daily capacity); subsequent days start at 09:30. Weekends are skipped. Lunch
-     * (1h) is added to any day whose teaching interval crosses midday.
+     * (1h) is added to any day whose teaching interval overlaps Taipei 12:00–13:00.
      *
      * @param array<int,array{start:int,end:int}> $roomintervals Existing occupancy for first-day chaining/capacity.
      * @return array{segments:array<int,array{start:int,end:int,teachinghours:float}>,nextcursor:int}
@@ -1590,7 +1646,6 @@ class session_manager {
         $totalhours = enabled_course_manager::get_default_duration_hours($courseid, $type);
         $start = (int)$startts;
         $dailylimit = self::get_physical_daily_limit();
-        $lunchhours = 1.0;
 
         if ($type === self::DELIVERY_ONSITE) {
             $attempts = 0;
@@ -1612,6 +1667,8 @@ class session_manager {
                     $nextday = strtotime('+1 day', strtotime(date('Y-m-d 00:00:00', $cursor)));
                     $cursor = self::next_weekday_timestamp((int) $nextday, true);
                 }
+                // Same rule as plan_onsite_course_segments: lunch only when teaching overlaps Taipei 12:00–13:00.
+                $lunchhours = self::onsite_segment_lunch_hours($cursor, $remaining);
                 $end = (int) round($cursor + (($remaining + $lunchhours) * HOURSECS));
 
                 if (!self::interval_spans_weekend($start, $end)) {

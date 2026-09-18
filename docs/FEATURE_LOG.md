@@ -22,6 +22,30 @@
 
 ---
 
+## 2026-09-18 — 設備檢查：異常才展開備註／Checklist／ⓘ；後台 textarea 不消失
+
+- **需求：** 正常不顯示備註；異常才 Checklist + ⓘ + 備註；後台編輯匯入文字不可一輸入就清空。
+- **決策：**
+  1. status 項把 remark／resolution checklist／ⓘ 收進 `data-equip-abnormal-panel`，僅 abnormal 顯示；切回正常不清 DOM。
+  2. ⓘ 移到「異常排除」標題旁（無 checklist 時仍可單獨顯示）；不做 checkbox。
+  3. 後台 textarea：改 DOM `.value` 綁定；placeholder 改短提示，避免與 Excel 範例混淆。
+- **影響範圍：** `equipment_check_partial.php`、`equipment_check.js`、`equipment_check_items.php`、styles、lang、tests；version **5.24.3**。
+- **版本／狀態：** **5.24.3；進行中（待測試環境人工驗收）**
+
+## 2026-09-17 — 午休 12:00–13:00 + 文案方案 A
+
+- **需求：** 試算若與台灣 12:00–13:00 重疊則 +1h，否則不加；場次資訊僅實際含午餐時顯示備註（A）。
+- **決策：** 共用 `interval_overlaps_onsite_lunch()`（Asia/Taipei）；`session_includes_lunch_note()` 依牆鐘區間。
+- **影響範圍：** `session_manager.php`、`index.php`、tests、lang；version **5.24.2**。
+- **版本／狀態：** **5.24.2；進行中（待測試環境人工驗收）**
+
+## 2026-09-17 — 下午場 Auto 誤加午休（bugfix）
+
+- **需求：** 13:30 起、課時 2.5h 不應結束於 17:00。
+- **決策：** `calculate_session_times()` 與 segment planner 共用 `onsite_segment_lunch_hours()`（跨 12:30 才 +1h）。
+- **影響範圍：** `session_manager.php`、`duration_calc`／編輯場次 Auto、reservation `build_reservation_onsite_block`；tests；version **5.24.1**。
+- **版本／狀態：** **5.24.1；進行中（待測試環境人工驗收）**
+
 ## 2026-09-17 — 設備檢查：排除方法 Checklist + 外單位支援
 
 - **需求：** Excel 新增「排除方法」「外單位支援」；status 異常時展開排除 Checklist；當次勾選寫入 log；ⓘ 顯示支援；Modal 可維護兩欄；不得因 wipe+reinsert 清空。

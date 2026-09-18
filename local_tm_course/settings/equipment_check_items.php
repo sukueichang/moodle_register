@@ -282,6 +282,12 @@ echo html_writer::script("
             .replace(/>/g, '&gt;')
             .replace(/\"/g, '&quot;');
     }
+    /** Escape for HTML attribute values (placeholders must not contain raw newlines). */
+    function escAttr(s) {
+        return esc(s)
+            .replace(new RegExp(String.fromCharCode(13), 'g'), '')
+            .replace(new RegExp(String.fromCharCode(10), 'g'), '&#10;');
+    }
     function scopeLabel(scope) {
         if (scope === 'onsite') { return S.onsite; }
         if (scope === 'online') { return S.online; }
@@ -349,14 +355,14 @@ echo html_writer::script("
         var checktype = String(item.checktype || 'status');
         var enabled = Number(item.enabled === undefined ? 1 : item.enabled) === 1 ? 'checked' : '';
         var resolutionText = '';
-        if (item.resolution_methods_text != null) {
-            resolutionText = String(item.resolution_methods_text || '');
+        if (item.resolution_methods_text != null && String(item.resolution_methods_text) !== '') {
+            resolutionText = String(item.resolution_methods_text);
         } else if (item.resolution_methods && item.resolution_methods.length) {
-            resolutionText = item.resolution_methods.join('\\n');
+            resolutionText = item.resolution_methods.join(String.fromCharCode(10));
         }
-        var support = esc(item.external_support || '');
+        var supportText = String(item.external_support || '');
         return '<div class=\"tm-equip-admin-row border rounded p-2 mb-2\">'
-            + '<input type=\"text\" class=\"form-control form-control-sm js-eq-text\" placeholder=\"' + esc(S.placeholder) + '\" value=\"' + t + '\">'
+            + '<input type=\"text\" class=\"form-control form-control-sm js-eq-text\" placeholder=\"' + escAttr(S.placeholder) + '\" value=\"' + t + '\">'
             + '<div class=\"mt-2 d-flex flex-wrap align-items-center gap-2\">'
             + '<select class=\"form-control form-control-sm js-eq-scope\" style=\"max-width:10rem\">'
             + '<option value=\"onsite\" ' + (scope === 'onsite' ? 'selected' : '') + '>' + esc(S.onsite) + '</option>'
@@ -371,10 +377,23 @@ echo html_writer::script("
             + '<button type=\"button\" class=\"btn btn-sm btn-outline-secondary js-eq-del\">' + esc(S['delete']) + '</button>'
             + '</div>'
             + '<label class=\"tm-equip-admin-sublabel mt-2 mb-1 d-block\">' + esc(S.resolutionlabel) + '</label>'
-            + '<textarea class=\"form-control form-control-sm js-eq-resolution\" rows=\"3\" placeholder=\"' + esc(S.resolutionhint) + '\">' + esc(resolutionText) + '</textarea>'
+            + '<textarea class=\"form-control form-control-sm js-eq-resolution\" rows=\"3\" placeholder=\"' + escAttr(S.resolutionhint) + '\"></textarea>'
             + '<label class=\"tm-equip-admin-sublabel mt-2 mb-1 d-block\">' + esc(S.supportlabel) + '</label>'
-            + '<textarea class=\"form-control form-control-sm js-eq-support\" rows=\"2\" placeholder=\"' + esc(S.supporthint) + '\">' + support + '</textarea>'
+            + '<textarea class=\"form-control form-control-sm js-eq-support\" rows=\"2\" placeholder=\"' + escAttr(S.supporthint) + '\"></textarea>'
             + '</div>';
+    }
+    function applyRowTextareaValues(row, item) {
+        if (!row || !item) { return; }
+        var resolutionText = '';
+        if (item.resolution_methods_text != null && String(item.resolution_methods_text) !== '') {
+            resolutionText = String(item.resolution_methods_text);
+        } else if (item.resolution_methods && item.resolution_methods.length) {
+            resolutionText = item.resolution_methods.join(String.fromCharCode(10));
+        }
+        var resEl = row.querySelector('.js-eq-resolution');
+        var supEl = row.querySelector('.js-eq-support');
+        if (resEl) { resEl.value = resolutionText; }
+        if (supEl) { supEl.value = String(item.external_support || ''); }
     }
     function bindDeleteHandlers() {
         var btns = list.querySelectorAll('.js-eq-del');
@@ -473,10 +492,12 @@ echo html_writer::script("
     function fillList(items) {
         list.innerHTML = '';
         if (!items.length) {
-            list.innerHTML = rowHtml({itemname:'', scope:'both', checktype:'status', enabled:1});
+            list.insertAdjacentHTML('beforeend', rowHtml({itemname:'', scope:'both', checktype:'status', enabled:1,
+                resolution_methods_text:'', external_support:''}));
         } else {
             for (var i = 0; i < items.length; i++) {
                 list.insertAdjacentHTML('beforeend', rowHtml(items[i]));
+                applyRowTextareaValues(list.lastElementChild, items[i]);
             }
         }
         bindDeleteHandlers();

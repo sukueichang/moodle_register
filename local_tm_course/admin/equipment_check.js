@@ -120,11 +120,11 @@
         progress.textContent = completed + '/' + declared;
     }
 
-    function syncResolutionVisibility(itemEl) {
+    function syncAbnormalPanelVisibility(itemEl) {
         if (!itemEl) {
             return;
         }
-        var panel = itemEl.querySelector('[data-equip-resolution]');
+        var panel = itemEl.querySelector('[data-equip-abnormal-panel]');
         if (!panel) {
             return;
         }
@@ -136,7 +136,7 @@
         } else {
             panel.hidden = true;
             panel.classList.remove('is-open');
-            // Intentionally do NOT clear checklist checkboxes here.
+            // Keep remark + resolution checkbox DOM values; only hide the panel.
         }
     }
 
@@ -154,8 +154,8 @@
             if (normal) {
                 normal.checked = true;
             }
-            // Keep remark + resolution checkbox DOM state; only hide resolution panel.
-            syncResolutionVisibility(item);
+            // Keep remark + resolution checkbox DOM state; only hide abnormal panel.
+            syncAbnormalPanelVisibility(item);
         });
         updateDeskProgress(getCard(form));
     }
@@ -197,12 +197,12 @@
             form.addEventListener('change', function(e) {
                 var target = e.target;
                 if (target && target.classList && target.classList.contains('js-equip-status-radio')) {
-                    syncResolutionVisibility(target.closest('.tm-equip-item'));
+                    syncAbnormalPanelVisibility(target.closest('.tm-equip-item'));
                 }
                 updateDeskProgress(getCard(form));
             });
             form.querySelectorAll('.tm-equip-item').forEach(function(item) {
-                syncResolutionVisibility(item);
+                syncAbnormalPanelVisibility(item);
             });
             updateDeskProgress(getCard(form));
         });

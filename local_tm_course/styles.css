@@ -1872,10 +1872,29 @@ a.tm-attendance-learner-profile-link:focus {
     background: #f7f8fa;
     border-radius: .3rem;
 }
+.tm-equip-abnormal-panel {
+    margin-top: .45rem;
+}
+.tm-equip-abnormal-panel[hidden] {
+    display: none !important;
+}
 .tm-equip-resolution-title {
     font-size: .86rem;
     font-weight: 600;
     margin-bottom: .3rem;
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+}
+.tm-equip-support-only {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    margin-top: .25rem;
+    font-size: .86rem;
+}
+.tm-equip-support-only-label {
+    color: #555;
 }
 .tm-equip-resolution-list {
     display: flex;

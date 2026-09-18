@@ -231,6 +231,61 @@ class equipment_check_import_test extends \advanced_testcase {
         $this->assertSame('', trim((string) ($taskrow[$supcol] ?? '')));
     }
 
+    public function test_save_items_accepts_resolution_methods_text_edit(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $course = $this->getDataGenerator()->create_course();
+        $courseid = (int) $course->id;
+
+        equipment_check_manager::save_items_for_course($courseid, [[
+            'itemname' => '手臂開機正常，無異常訊息',
+            'scope' => 'both',
+            'checktype' => 'status',
+            'enabled' => 1,
+            'sortorder' => 10,
+            'resolution_methods' => [
+                '拔除電源線數30秒，插回重新啟動',
+                '通報AS',
+            ],
+            'external_support' => 'After Service - Jordan, Eddie',
+        ]]);
+
+        // Simulate admin modal save after editing one character in the textarea.
+        equipment_check_manager::save_items_for_course($courseid, [[
+            'itemname' => '手臂開機正常，無異常訊息',
+            'scope' => 'both',
+            'checktype' => 'status',
+            'enabled' => 1,
+            'sortorder' => 10,
+            'resolution_methods_text' => "拔除電源線數30秒，插回重新啟動\n通報AS團隊",
+            'external_support' => 'After Service - Jordan, Eddie, Kevin',
+        ]]);
+
+        $row = $DB->get_record('local_tm_equip_check_item', [
+            'courseid' => $courseid,
+            'itemname' => '手臂開機正常，無異常訊息',
+        ], '*', MUST_EXIST);
+        $this->assertSame(
+            ['拔除電源線數30秒，插回重新啟動', '通報AS團隊'],
+            equipment_check_manager::decode_resolution_methods($row->resolution_methods)
+        );
+        $this->assertSame('After Service - Jordan, Eddie, Kevin', (string) $row->external_support);
+        $this->assertSame('both', (string) $row->scope);
+        $this->assertSame('status', (string) $row->checktype);
+        $this->assertSame(1, (int) $row->enabled);
+    }
+
+    public function test_admin_placeholder_hints_do_not_look_like_imported_steps(): void {
+        // Guard against regressing to sample placeholders that match Excel content
+        // (users mistook placeholder for value; first keystroke looked like a wipe).
+        $res = get_string('equipment_check_item_resolution_hint', 'local_tm_course');
+        $sup = get_string('equipment_check_item_support_hint', 'local_tm_course');
+        $this->assertStringNotContainsString('拔除電源線', $res);
+        $this->assertStringNotContainsString('通報AS', $res);
+        $this->assertStringNotContainsString('Jordan', $sup);
+        $this->assertStringNotContainsString("\n", $res);
+    }
+
     public function test_save_items_preserves_resolution_and_support(): void {
         global $DB;
         $this->resetAfterTest(true);
