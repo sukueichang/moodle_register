@@ -3,17 +3,98 @@
 
     var rowSyncing = false;
     var openSupportTip = null;
+    var toastTimer = null;
 
-    function collectAndSubmit(saveAllBtn) {
-        var form = document.getElementById('tm-equip-save-all-form');
-        if (!form) {
-            return;
+    function getConfig() {
+        return window.tmEquipCheckConfig || {};
+    }
+
+    function showToast(message, isError) {
+        var existing = document.getElementById('tm-equip-toast');
+        if (existing && existing.parentNode) {
+            existing.parentNode.removeChild(existing);
         }
+        if (toastTimer) {
+            clearTimeout(toastTimer);
+            toastTimer = null;
+        }
+        var tip = document.createElement('div');
+        tip.id = 'tm-equip-toast';
+        tip.className = 'tm-equip-toast' + (isError ? ' is-error' : ' is-success');
+        tip.setAttribute('role', 'status');
+        tip.textContent = message || '';
+        document.body.appendChild(tip);
+        void tip.offsetHeight;
+        tip.classList.add('is-visible');
+        toastTimer = setTimeout(function() {
+            tip.classList.remove('is-visible');
+            setTimeout(function() {
+                if (tip.parentNode) {
+                    tip.parentNode.removeChild(tip);
+                }
+            }, 250);
+        }, 2800);
+    }
 
-        // Clear any inputs injected by a previous click before rebuilding.
-        form.querySelectorAll('.tm-equip-dynamic-input').forEach(function(el) {
-            el.remove();
+    function postEquipment(body, onDone) {
+        var cfg = getConfig();
+        var url = cfg.postUrl || window.location.href;
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: body.toString(),
+            credentials: 'same-origin'
+        })
+            .then(function(resp) {
+                return resp.json().then(function(data) {
+                    return { httpOk: resp.ok, data: data };
+                }).catch(function() {
+                    return { httpOk: false, data: null };
+                });
+            })
+            .then(function(result) {
+                if (onDone) {
+                    onDone(result);
+                }
+            })
+            .catch(function() {
+                if (onDone) {
+                    onDone({ httpOk: false, data: null });
+                }
+            });
+    }
+
+    function collectDeskFormBody(deskForm, action) {
+        var cfg = getConfig();
+        var body = new URLSearchParams();
+        body.set('sesskey', cfg.sesskey || '');
+        body.set('sessionid', String(cfg.sessionid || ''));
+        body.set('action', action || 'equipment_save');
+        body.set('ajax', '1');
+        var deskInput = deskForm.querySelector('input[name="desknumber"]');
+        if (deskInput) {
+            body.set('desknumber', deskInput.value);
+        }
+        deskForm.querySelectorAll('input[name^="equip["]').forEach(function(input) {
+            if ((input.type === 'radio' || input.type === 'checkbox') && !input.checked) {
+                return;
+            }
+            // URLSearchParams append keeps array fields like resolution[].
+            body.append(input.name, input.value);
         });
+        return body;
+    }
+
+    function collectAllDesksBody() {
+        var cfg = getConfig();
+        var body = new URLSearchParams();
+        body.set('sesskey', cfg.sesskey || '');
+        body.set('sessionid', String(cfg.sessionid || ''));
+        body.set('action', 'equipment_save_all');
+        body.set('ajax', '1');
 
         var deskCount = 0;
         document.querySelectorAll('.tm-equip-form').forEach(function(deskForm) {
@@ -23,7 +104,6 @@
             }
             var desknumber = desknumberInput.value;
             deskCount++;
-
             deskForm.querySelectorAll('input[name^="equip["]').forEach(function(input) {
                 var m = input.name.match(/^equip\[(\d+)\]\[(status|remark|resolution)\](?:\[\])?$/);
                 if (!m) {
@@ -34,27 +114,50 @@
                 }
                 var itemid = m[1];
                 var field = m[2];
-                var hidden = document.createElement('input');
-                hidden.type = 'hidden';
-                hidden.className = 'tm-equip-dynamic-input';
+                var name;
                 if (field === 'resolution') {
-                    hidden.name = 'equip_all[' + desknumber + '][' + itemid + '][resolution][]';
+                    name = 'equip_all[' + desknumber + '][' + itemid + '][resolution][]';
                 } else {
-                    hidden.name = 'equip_all[' + desknumber + '][' + itemid + '][' + field + ']';
+                    name = 'equip_all[' + desknumber + '][' + itemid + '][' + field + ']';
                 }
-                hidden.value = input.value;
-                form.appendChild(hidden);
+                body.append(name, input.value);
             });
         });
+        return { body: body, deskCount: deskCount };
+    }
 
-        if (deskCount < 1) {
+    function handleSaveResult(result, unlock) {
+        var cfg = getConfig();
+        var strings = cfg.strings || {};
+        if (unlock) {
+            unlock();
+        }
+        if (result && result.data && result.data.ok) {
+            showToast(result.data.message || strings.saved || '已儲存', false);
             return;
         }
+        var msg = strings.saveFailed || '儲存失敗，請稍後再試';
+        if (result && result.data && result.data.message) {
+            msg = result.data.message;
+        }
+        showToast(msg, true);
+    }
 
+    function saveAllAjax(saveAllBtn) {
+        var packed = collectAllDesksBody();
+        if (packed.deskCount < 1) {
+            return;
+        }
         if (saveAllBtn) {
             saveAllBtn.disabled = true;
         }
-        form.submit();
+        postEquipment(packed.body, function(result) {
+            handleSaveResult(result, function() {
+                if (saveAllBtn) {
+                    saveAllBtn.disabled = false;
+                }
+            });
+        });
     }
 
     function getCard(el) {
@@ -280,8 +383,44 @@
         if (!btn) {
             return;
         }
-        btn.addEventListener('click', function() {
-            collectAndSubmit(btn);
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            saveAllAjax(btn);
+        });
+    }
+
+    function initDeskFormAjax() {
+        document.querySelectorAll('.tm-equip-form').forEach(function(form) {
+            // Track last clicked submit action (save vs sync) for browsers without e.submitter.
+            var pendingAction = 'equipment_save';
+            form.querySelectorAll('button[type="submit"][name="action"]').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    pendingAction = btn.value || 'equipment_save';
+                });
+            });
+            form.addEventListener('submit', function(e) {
+                var action = pendingAction;
+                if (e.submitter && e.submitter.name === 'action') {
+                    action = e.submitter.value || action;
+                }
+                // Keep classic POST+redirect for "sync to all desks" so other desks re-render.
+                if (action === 'equipment_sync') {
+                    return;
+                }
+                e.preventDefault();
+                var submitBtn = form.querySelector('button[type="submit"][value="equipment_save"]');
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                }
+                var body = collectDeskFormBody(form, 'equipment_save');
+                postEquipment(body, function(result) {
+                    handleSaveResult(result, function() {
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                        }
+                    });
+                });
+            });
         });
     }
 
@@ -294,6 +433,7 @@
         initLiveProgressAndResolution();
         initSupportTips();
         initSaveAll();
+        initDeskFormAjax();
     }
 
     if (document.readyState === 'loading') {

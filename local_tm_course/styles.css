@@ -1896,6 +1896,34 @@ a.tm-attendance-learner-profile-link:focus {
 .tm-equip-support-only-label {
     color: #555;
 }
+.tm-equip-toast {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    z-index: 1100;
+    max-width: min(22rem, calc(100vw - 2rem));
+    padding: .65rem 1rem;
+    border-radius: .35rem;
+    font-size: .92rem;
+    font-weight: 600;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity .2s ease, transform .2s ease;
+    pointer-events: none;
+}
+.tm-equip-toast.is-visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+.tm-equip-toast.is-success {
+    background: #1f7a4d;
+    color: #fff;
+}
+.tm-equip-toast.is-error {
+    background: #a33b3b;
+    color: #fff;
+}
 .tm-equip-resolution-list {
     display: flex;
     flex-direction: column;

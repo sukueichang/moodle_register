@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-09-18 — 設備檢查：儲存改 AJAX、不整頁 reload
+
+- **需求：** 儲存後保持展開桌次／scroll／表單狀態；短 toast「已儲存」；失敗不清表單。
+- **決策：** `equipment_save` / `equipment_save_all` 支援 `ajax=1` JSON；前端 fetch；「套用到其他桌」仍 POST+redirect。
+- **影響範圍：** `class_prep.php`、`equipment_check.js`、styles、lang；version **5.24.4**。
+- **版本／狀態：** **5.24.4；進行中（待測試環境人工驗收）**
+
 ## 2026-09-18 — 設備檢查：異常才展開備註／Checklist／ⓘ；後台 textarea 不消失
 
 - **需求：** 正常不顯示備註；異常才 Checklist + ⓘ + 備註；後台編輯匯入文字不可一輸入就清空。
