@@ -34,17 +34,19 @@ if (!permissions_manager::user_can_attendance()) {
     throw new required_capability_exception($ctx, 'local/tm_course:attendance', 'nopermissions', '');
 }
 
+// sessionid is required page context; must be on $PAGE->url so Moodle language
+// switch (and other redirects that reuse $PAGE->url) preserve it.
+$sessionid = required_param('sessionid', PARAM_INT);
+$action    = optional_param('action', '', PARAM_ALPHANUMEXT);
+$enrolid   = optional_param('enrolid', 0, PARAM_INT);
+
 $PAGE->set_context($ctx);
 $PAGE->set_pagelayout('admin');
-$PAGE->set_url(new moodle_url('/local/tm_course/admin/class_prep.php'));
+$PAGE->set_url(new moodle_url('/local/tm_course/admin/class_prep.php', ['sessionid' => $sessionid]));
 $PAGE->set_title(get_string('nav_class_prep', 'local_tm_course'));
 $PAGE->requires->css('/local/tm_course/styles.css');
 $PAGE->requires->js('/local/tm_course/admin/attendance_diet.js', true);
 $PAGE->requires->js('/local/tm_course/admin/equipment_check.js', true);
-
-$sessionid = required_param('sessionid', PARAM_INT);
-$action    = optional_param('action', '', PARAM_ALPHANUMEXT);
-$enrolid   = optional_param('enrolid', 0, PARAM_INT);
 
 $session = session_manager::get_session($sessionid);
 $issetup = !empty($session->groupid);

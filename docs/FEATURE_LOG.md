@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-09-18 — class_prep 語系切換丢失 sessionid
+
+- **需求：** Language menu 切換後不應 missingparam sessionid。
+- **決策：** `$PAGE->set_url()` 帶入 `sessionid`（Moodle 語系導向用 `$PAGE->url`）。
+- **影響範圍：** `admin/class_prep.php`；version **5.24.5**。
+- **版本／狀態：** **5.24.5；進行中（待測試環境人工驗收）**
+
 ## 2026-09-18 — 設備檢查：儲存改 AJAX、不整頁 reload
 
 - **需求：** 儲存後保持展開桌次／scroll／表單狀態；短 toast「已儲存」；失敗不清表單。
