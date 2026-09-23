@@ -112,13 +112,17 @@ echo html_writer::div(
 );
 
 echo html_writer::start_div('tm-card tm-card-body mb-3');
-$actname = $activitygone
-    ? get_string('grading_activity_missing', 'local_tm_course')
-    : ($activity['name'] ?? '');
+if ($activitygone) {
+    $actcell = s(get_string('grading_activity_missing', 'local_tm_course'));
+} else {
+    $actname = $activity['name'] ?? '';
+    $acturl = new moodle_url('/mod/' . $req->modname . '/view.php', ['id' => (int)$req->cmid]);
+    $actcell = html_writer::link($acturl, s($actname));
+}
 echo html_writer::div(html_writer::tag('strong', get_string('grading_label_course', 'local_tm_course') . ': ')
     . s(format_string($DB->get_field('course', 'fullname', ['id' => (int)$req->courseid]) ?: '')));
 echo html_writer::div(html_writer::tag('strong', get_string('grading_label_activity', 'local_tm_course') . ': ')
-    . s($actname) . ' (' . s((string)$req->modname) . ')');
+    . $actcell . ' (' . s((string)$req->modname) . ')');
 echo html_writer::div(html_writer::tag('strong', get_string('status') . ': ')
     . s(grading_request_manager::status_label((int)$req->status))
     . ' (' . $counts['done'] . '/' . $counts['total'] . ')');
@@ -185,22 +189,21 @@ foreach ($items as $item) {
     if ((int)$item->itemstatus === grading_request_manager::ITEM_MISSING || $activitygone) {
         $statuslabel = get_string('grading_item_missing', 'local_tm_course');
     } else if ($activity && $activity['exists']) {
-        $g = grading_request_manager::gradebook_grade(
-            (int)$req->courseid,
-            (string)$req->modname,
-            (int)$activity['instanceid'],
-            (int)$item->userid
-        );
+        $g = grading_request_manager::submission_grade((int)$req->cmid, (int)$item->userid);
         if (!empty($g['has'])) {
             $gradecell = s($g['str']);
             if (!empty($g['time'])) {
                 $gradecell .= html_writer::div(userdate((int)$g['time'], get_string('strftimedatetimeshort')), 'text-muted');
             }
         }
-        if ($canstart && $open && (int)$item->itemstatus !== grading_request_manager::ITEM_MISSING) {
+        // Per-learner Moodle link: show whether pending or already graded, even after the ticket closes.
+        if ($canstart && (int)$item->itemstatus !== grading_request_manager::ITEM_MISSING) {
             $url = grading_request_manager::grade_url($req, $item);
             if ($url) {
-                $actioncell = html_writer::link($url, get_string('grading_start', 'local_tm_course'), [
+                $linklabel = !empty($g['has'])
+                    ? get_string('grading_open_work', 'local_tm_course')
+                    : get_string('grading_start', 'local_tm_course');
+                $actioncell = html_writer::link($url, $linklabel, [
                     'class' => 'btn btn-sm tm-dashboard-btn tm-dashboard-btn-active',
                     'target' => '_blank',
                     'rel' => 'noopener',

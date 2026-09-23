@@ -1384,6 +1384,7 @@ $string['grading_open'] = 'Open';
 $string['grading_request_title'] = 'Grading request #{$a}';
 $string['grading_back_queue'] = 'Back to list';
 $string['grading_start'] = 'Start grading';
+$string['grading_open_work'] = 'Open work';
 $string['grading_assign_heading'] = 'Assign a grader';
 $string['grading_assign_submit'] = 'Assign';
 $string['grading_assigned_ok'] = 'Grader assigned.';

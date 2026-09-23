@@ -1384,6 +1384,7 @@ $string['grading_open'] = '開啟';
 $string['grading_request_title'] = '批改申請 #{$a}';
 $string['grading_back_queue'] = '返回列表';
 $string['grading_start'] = '開始批改';
+$string['grading_open_work'] = '開啟作業';
 $string['grading_assign_heading'] = '分派批改同事';
 $string['grading_assign_submit'] = '分派';
 $string['grading_assigned_ok'] = '已分派。';
