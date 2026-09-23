@@ -459,6 +459,10 @@
                COMMENT="status (正常/異常+備註) | task (完成/未完成)"/>
         <FIELD NAME="itemname"     TYPE="char" LENGTH="255" NOTNULL="false"
                COMMENT="Display text for this checklist item"/>
+        <FIELD NAME="resolution_methods" TYPE="text" NOTNULL="false"
+               COMMENT="JSON string array of abnormal-resolution checklist labels (template)"/>
+        <FIELD NAME="external_support" TYPE="text" NOTNULL="false"
+               COMMENT="Optional external support hint shown via info icon"/>
         <FIELD NAME="enabled"      TYPE="int"  LENGTH="1"  NOTNULL="true" DEFAULT="1"/>
         <FIELD NAME="sortorder"    TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="timecreated"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
@@ -489,6 +493,8 @@
                COMMENT="0=unset/incomplete, 1=normal/complete, 2=abnormal (status type only)"/>
         <FIELD NAME="remark"       TYPE="text" NOTNULL="false"
                COMMENT="Free-text note, mainly used for abnormal status items"/>
+        <FIELD NAME="resolution_checked" TYPE="text" NOTNULL="false"
+               COMMENT="JSON string array snapshot of resolution methods checked while abnormal"/>
         <FIELD NAME="checkedby"    TYPE="int"  LENGTH="10" NOTNULL="false"
                COMMENT="mdl_user.id who last saved this row"/>
         <FIELD NAME="timecreated"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>

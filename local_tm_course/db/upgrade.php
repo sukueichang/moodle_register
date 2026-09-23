@@ -1859,6 +1859,52 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026091106, 'local', 'tm_course');
     }
 
+    // 2026091700 — Equipment check: resolution methods + external support template/log fields.
+    if ($oldversion < 2026091700) {
+        $itemtable = new xmldb_table('local_tm_equip_check_item');
+        $resfield = new xmldb_field('resolution_methods', XMLDB_TYPE_TEXT, null, null, null, null, null, 'itemname');
+        if ($dbman->table_exists($itemtable) && !$dbman->field_exists($itemtable, $resfield)) {
+            $dbman->add_field($itemtable, $resfield);
+        }
+        $supfield = new xmldb_field('external_support', XMLDB_TYPE_TEXT, null, null, null, null, null, 'resolution_methods');
+        if ($dbman->table_exists($itemtable) && !$dbman->field_exists($itemtable, $supfield)) {
+            $dbman->add_field($itemtable, $supfield);
+        }
+
+        $logtable = new xmldb_table('local_tm_equip_check_log');
+        $checkedfield = new xmldb_field('resolution_checked', XMLDB_TYPE_TEXT, null, null, null, null, null, 'remark');
+        if ($dbman->table_exists($logtable) && !$dbman->field_exists($logtable, $checkedfield)) {
+            $dbman->add_field($logtable, $checkedfield);
+        }
+
+        upgrade_plugin_savepoint(true, 2026091700, 'local', 'tm_course');
+    }
+
+    // 2026091701 — Onsite Auto lunch padding: only when day segment crosses midday (no DB).
+    if ($oldversion < 2026091701) {
+        upgrade_plugin_savepoint(true, 2026091701, 'local', 'tm_course');
+    }
+
+    // 2026091702 — Lunch window Taipei 12:00–13:00; learner lunch note only when wall covers lunch (no DB).
+    if ($oldversion < 2026091702) {
+        upgrade_plugin_savepoint(true, 2026091702, 'local', 'tm_course');
+    }
+
+    // 2026091800 — Equipment check UX: abnormal-only remark/checklist/ⓘ; admin textarea value bind (no DB).
+    if ($oldversion < 2026091800) {
+        upgrade_plugin_savepoint(true, 2026091800, 'local', 'tm_course');
+    }
+
+    // 2026091801 — Equipment check AJAX save (no full page reload) (no DB).
+    if ($oldversion < 2026091801) {
+        upgrade_plugin_savepoint(true, 2026091801, 'local', 'tm_course');
+    }
+
+    // 2026091802 — class_prep $PAGE->url includes sessionid for language switch (no DB).
+    if ($oldversion < 2026091802) {
+        upgrade_plugin_savepoint(true, 2026091802, 'local', 'tm_course');
+    }
+
     return true;
 }
 

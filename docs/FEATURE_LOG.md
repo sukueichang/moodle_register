@@ -22,6 +22,92 @@
 
 ---
 
+## 2026-09-18 — class_prep 語系切換丢失 sessionid
+
+- **需求：** Language menu 切換後不應 missingparam sessionid。
+- **決策：** `$PAGE->set_url()` 帶入 `sessionid`（Moodle 語系導向用 `$PAGE->url`）。
+- **影響範圍：** `admin/class_prep.php`；version **5.24.5**。
+- **版本／狀態：** **5.24.5；進行中（待測試環境人工驗收）**
+
+## 2026-09-18 — 設備檢查：儲存改 AJAX、不整頁 reload
+
+- **需求：** 儲存後保持展開桌次／scroll／表單狀態；短 toast「已儲存」；失敗不清表單。
+- **決策：** `equipment_save` / `equipment_save_all` 支援 `ajax=1` JSON；前端 fetch；「套用到其他桌」仍 POST+redirect。
+- **影響範圍：** `class_prep.php`、`equipment_check.js`、styles、lang；version **5.24.4**。
+- **版本／狀態：** **5.24.4；進行中（待測試環境人工驗收）**
+
+## 2026-09-18 — 設備檢查：異常才展開備註／Checklist／ⓘ；後台 textarea 不消失
+
+- **需求：** 正常不顯示備註；異常才 Checklist + ⓘ + 備註；後台編輯匯入文字不可一輸入就清空。
+- **決策：**
+  1. status 項把 remark／resolution checklist／ⓘ 收進 `data-equip-abnormal-panel`，僅 abnormal 顯示；切回正常不清 DOM。
+  2. ⓘ 移到「異常排除」標題旁（無 checklist 時仍可單獨顯示）；不做 checkbox。
+  3. 後台 textarea：改 DOM `.value` 綁定；placeholder 改短提示，避免與 Excel 範例混淆。
+- **影響範圍：** `equipment_check_partial.php`、`equipment_check.js`、`equipment_check_items.php`、styles、lang、tests；version **5.24.3**。
+- **版本／狀態：** **5.24.3；進行中（待測試環境人工驗收）**
+
+## 2026-09-17 — 午休 12:00–13:00 + 文案方案 A
+
+- **需求：** 試算若與台灣 12:00–13:00 重疊則 +1h，否則不加；場次資訊僅實際含午餐時顯示備註（A）。
+- **決策：** 共用 `interval_overlaps_onsite_lunch()`（Asia/Taipei）；`session_includes_lunch_note()` 依牆鐘區間。
+- **影響範圍：** `session_manager.php`、`index.php`、tests、lang；version **5.24.2**。
+- **版本／狀態：** **5.24.2；進行中（待測試環境人工驗收）**
+
+## 2026-09-17 — 下午場 Auto 誤加午休（bugfix）
+
+- **需求：** 13:30 起、課時 2.5h 不應結束於 17:00。
+- **決策：** `calculate_session_times()` 與 segment planner 共用 `onsite_segment_lunch_hours()`（跨 12:30 才 +1h）。
+- **影響範圍：** `session_manager.php`、`duration_calc`／編輯場次 Auto、reservation `build_reservation_onsite_block`；tests；version **5.24.1**。
+- **版本／狀態：** **5.24.1；進行中（待測試環境人工驗收）**
+
+## 2026-09-17 — 設備檢查：排除方法 Checklist + 外單位支援
+
+- **需求：** Excel 新增「排除方法」「外單位支援」；status 異常時展開排除 Checklist；當次勾選寫入 log；ⓘ 顯示支援；Modal 可維護兩欄；不得因 wipe+reinsert 清空。
+- **決策：**
+  1. item：`resolution_methods`（JSON 字串陣列）+ `external_support`（TEXT）。
+  2. log：`resolution_checked`（JSON 文字快照）；僅 ABNORMAL 保存，NORMAL/UNSET 清空。
+  3. 排除方法依公版 LF + `1.` 編號拆行；超長明確 validation error，不 silent truncate。
+  4. 前端切回正常暫不清 DOM checkbox；全部儲存再依最終狀態落庫。
+- **影響範圍：** install/upgrade、manager、import、class_prep、partial/JS、settings modal/API、lang、styles、fixture `Moodle_equip_check_template_20260916.xlsx`；version **5.24.0**。
+- **版本／狀態：** **5.24.0；進行中（待測試環境人工驗收）**
+
+## 2026-09-16 — 講師端設備檢查操作 UX（同排展開／本桌批次）
+
+- **需求：** 同一排桌次共用展開／收合（依實際 CSS grid row，非硬編碼欄數）；每桌「本桌全部正常／完成」僅改 status/task、保留 remark、不立即寫 DB；進度即時更新；禁止全部桌次一次填寫。
+- **決策：**
+  1. 以桌次卡片 `offsetTop` 判斷同一視覺列，`details` toggle 時同步同列 `open`。
+  2. 「本桌全部正常／完成」為前端表單快填：`status`→正常、`task`→完成；不碰 remark；仍靠既有「全部儲存」送出。
+  3. 進度依目前表單狀態重算（非 unset 即計入）。
+- **影響範圍：** `equipment_check_partial.php`、`equipment_check.js`、lang、styles；version **5.23.2**。
+- **版本／狀態：** **5.23.2；進行中（待測試環境人工驗收）**
+
+## 2026-09-16 — 設備檢查清單維護：課程總覽展開
+
+- **需求：** 管理頁直接顯示每課檢查項目數量，並可折疊展開唯讀清單。
+- **決策：** 一次 `get_items_by_courses()` batch 載入避免 N+1；展開內容唯讀；修改仍只走「設定檢查項目」Modal；含停用項目計數。
+- **影響範圍：** `equipment_check_manager.php`、`equipment_check_items.php`、lang、styles；version **5.23.0**。
+- **版本／狀態：** **5.23.1；進行中（待測試環境人工驗收）**
+- **5.23.1 修正：** 「設定檢查項目」Modal 項目過多時無法捲動——panel 無 max-height；改為 viewport 限制＋中間可捲＋底部按鈕固定（對齊 bento modal 模式）。交付增加 `tools/package_local_tm_course.ps1` 產出 `dist/local_tm_course.zip`。
+
+---
+
+## 2026-09-15 — 設備檢查 Excel 批次匯入（單課 append-only）
+
+- **需求：** 在「設備檢查清單維護 → 設定檢查項目」Modal 內，用公版 .xlsx 批次追加檢查項目；禁止選完檔案直接寫 DB。
+- **決策：**
+  1. 匯入目標固定為目前 Modal 的 `courseid`；Excel「課程」欄忽略（不做 fullname mapping）。
+  2. 「分類」「備註」本階段忽略，不改 schema。
+  3. 只寫入 `itemname`／`scope`／`checktype`／`enabled`；嚴格 mapping，非法值算錯誤且禁止 commit。
+  4. **Append-only**：新增 `create_item`／`append_items`；**不**呼叫會整課 delete+reinsert 的 `save_items_for_course`。
+  5. Duplicate key = `courseid + itemname + scope + checktype`；Excel／DB 重複標 ⚠ 並跳過，不覆蓋。
+  6. XLSX 以 ZipArchive + SimpleXML 最小解析（無新 Composer 依賴）；session token 預覽後再 commit。
+- **影響範圍：** `equipment_check_manager.php`、`equipment_check_import_manager.php`、`equipment_check_xlsx_reader.php`、`equipment_check_items.php`、import API、lang、styles、tests；version **5.22.0** → **5.22.2**（相容公版標題列／順序欄／啟用選填；修 sharedStrings namespace）。
+- **版本／狀態：** **5.22.2；進行中（待測試環境人工驗收）**
+- **5.22.1 修正：** 公版 `bt_check.xlsx` 第 1–3 列為標題／說明／空白、第 4 列表頭、無「啟用」欄；parser 改為自動尋找表頭，「啟用」改選填（預設 1），支援「順序」排列。
+- **5.22.2 修正：** `read_shared_strings()` SimpleXML 子節點 xpath 未繼承 namespace，導致 sharedStrings 全空、表頭被丟棄；改以 `children($ns)` 讀取 `<t>`／`<r><t>`。
+
+---
+
 ## 2026-09-15 — Attendance 二元成績（有 Present＝100%）
 
 - **需求：** 外掛點名同步 Attendance log 後，Gradebook 不要用原生累計平均（缺→參=50%）；改為「該活動只要有一筆 Present → 100%，否則 0%」。每次異動須重掃全部 log。
@@ -31,7 +117,17 @@
   3. 用 `grade_update('mod/attendance', …)` 更新**既有** Attendance grade item；不呼叫 `attendance_update_users_grade`；不做事件回補／override／No grade／第二成績項／cron；不改 core。
   4. 前提：TM 出缺席只由此外掛操作。
 - **影響範圍：** `attendance_manager.php`、`tests/attendance_binary_grade_test.php`、version 5.21.0。
-- **版本／狀態：** **5.21.0；進行中（待測試環境人工驗收）**
+- **可移植摘要：** [`ATTENDANCE_BINARY_GRADE.md`](ATTENDANCE_BINARY_GRADE.md)（給其他外掛套用同一規則）。
+- **版本／狀態：** **5.21.0；已 merge `main`（PR #6），測試站已驗收。**
+
+---
+
+## 2026-09-23 — 批改申請：測驗「已評分」改看最新 attempt
+
+- **問題：** 學員有較新、尚未人工評分的 quiz attempt 時，外掛仍讀成績簿舊分／繳交時間，誤顯示已評分（例如 90/90 + 繳交時間）。
+- **決策：** quiz 以最新 finished attempt 的 `sumgrades` 為準（空＝待評；有值＝已評）；不沿用 gradebook 舊分。`requires_manual_grading()` 僅作輔助（明確 true 才壓成待評）；載入 attempt 失敗時不可整排待評。assign 仍用 gradebook。排程同步含已完成單據。
+- **影響：** `grading_request_manager`、`request.php` 顯示、搜尋預覽、取消檢查、完成通知；SPEC §58.5。
+- **版本：** 5.24.8。
 
 ---
 
@@ -44,7 +140,7 @@
   3. 沒交不能列入；搜尋姓名／email 才出已繳交名單（預設空），已勾的進購物車可累加。選填備註。
   4. 分派與「開始批改」獨立：分派＝信＋Dashboard／導覽數字；開始批改＝看得到該單的 admin 或被分派人跳 Moodle 原生評分。不搶單、不默默分派給自己。未分派單只在 admin 佇列。詳情狀態列顯示目前負責人與分派時間；改派後保留先前與目前紀錄。
   5. 分派對象＝該 Moodle 課已有批改權限者。Admin（`manage` 或 site admin）可分派／改派／駁回／自己改；**被分派同事不可再分派給別人**（即使帶有 `manage`，網站管理員除外）。同事不能關單。
-  6. 完成＝每一列 gradebook 已有成績（測驗不可停在待人工評分）或「查無」終態；中間態 `3/5`。頁面重整即同步，另加排程。壞掉的人／活動只顯示查無，禁止開出 Moodle error。
+  6. 完成＝每一列**目前繳交**已評分（測驗：最新 attempt 不可停在待人工評分；勿只看成績簿舊分）或「查無」終態；中間態 `3/5`。頁面重整即同步，另加排程（含已完成單重掃）。壞掉的人／活動只顯示查無，禁止開出 Moodle error。
   7. 同一活動＋學員不能同時在兩張未完成單；完成／駁回／取消後可重評（新單）。業務僅在未分派且尚無成績時可取消。Admin 可把已駁回／已取消的單復原（同一學員已在另一張未完成單則擋下）。
   8. 外掛成績只給業務／admin／同事看（格式化分數＋時間，無評語）。**學員在外掛零入口**，回 Moodle 作業／測驗看結果。
   9. 入口：業務「作業/測驗批改申請」＋「申請追蹤」（自己的單）；admin／被分派「待批改 (N)」。N：有分派給自己的待評分列時用列數（含同時具 manage 的人）；否則 admin 才用未分派單張數。被分派的課程管理員即使是一般使用者 audience 也要看到按鈕／導覽數字。不靠全站鈴鐺、不做新 block。搜尋／勾選學員時即預覽該份作業／測驗是否已評分與分數。
@@ -179,7 +275,7 @@
 | 專屬開班申請／審核 | 預約、學員、審核中心、日曆排課 | SPEC §專屬開班 |
 | 先修／批次註冊 | 課程預設先修、批次查核與註冊 | SPEC／prerequisite |
 | 出席／點名 | attendance manager、admin | SPEC／attendance |
-| 課前準備／設備檢查 | class prep、equipment check items | 本檔 2026-07 |
+| 課前準備／設備檢查 | class prep、equipment check items、Excel 批次匯入（5.22.0） | 本檔 2026-07／2026-09-15 |
 | 業務批改申請 | 作業／測驗派工單（assign／quiz） | SPEC §58 |
 | 排課規則（面授） | 教室／時段約束 | `local_tm_course/docs/SCHEDULING_REQUIREMENTS.md` |
 

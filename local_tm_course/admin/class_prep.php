@@ -34,17 +34,19 @@ if (!permissions_manager::user_can_attendance()) {
     throw new required_capability_exception($ctx, 'local/tm_course:attendance', 'nopermissions', '');
 }
 
+// sessionid is required page context; must be on $PAGE->url so Moodle language
+// switch (and other redirects that reuse $PAGE->url) preserve it.
+$sessionid = required_param('sessionid', PARAM_INT);
+$action    = optional_param('action', '', PARAM_ALPHANUMEXT);
+$enrolid   = optional_param('enrolid', 0, PARAM_INT);
+
 $PAGE->set_context($ctx);
 $PAGE->set_pagelayout('admin');
-$PAGE->set_url(new moodle_url('/local/tm_course/admin/class_prep.php'));
+$PAGE->set_url(new moodle_url('/local/tm_course/admin/class_prep.php', ['sessionid' => $sessionid]));
 $PAGE->set_title(get_string('nav_class_prep', 'local_tm_course'));
 $PAGE->requires->css('/local/tm_course/styles.css');
 $PAGE->requires->js('/local/tm_course/admin/attendance_diet.js', true);
 $PAGE->requires->js('/local/tm_course/admin/equipment_check.js', true);
-
-$sessionid = required_param('sessionid', PARAM_INT);
-$action    = optional_param('action', '', PARAM_ALPHANUMEXT);
-$enrolid   = optional_param('enrolid', 0, PARAM_INT);
 
 $session = session_manager::get_session($sessionid);
 $issetup = !empty($session->groupid);
@@ -74,9 +76,16 @@ function equipment_clean_raw_items(array $postequip): array {
         if ($itemid <= 0 || !is_array($fields)) {
             continue;
         }
+        $resolution = [];
+        if (!empty($fields['resolution']) && is_array($fields['resolution'])) {
+            foreach ($fields['resolution'] as $label) {
+                $resolution[] = clean_param((string) $label, PARAM_TEXT);
+            }
+        }
         $rawitems[$itemid] = [
             'status' => clean_param((string) ($fields['status'] ?? ''), PARAM_ALPHANUMEXT),
             'remark' => clean_param((string) ($fields['remark'] ?? ''), PARAM_TEXT),
+            'resolution' => $resolution,
         ];
     }
     return $rawitems;
@@ -103,9 +112,28 @@ function equipment_build_results(array $rawitems, array $applicableitems): array
         $results[$itemid] = [
             'checkstatus' => $checkstatus,
             'remark' => (string) ($entry['remark'] ?? ''),
+            'resolution_checked' => is_array($entry['resolution'] ?? null) ? $entry['resolution'] : [],
         ];
     }
     return $results;
+}
+
+/**
+ * Whether the current request wants JSON (equipment-check AJAX save).
+ */
+function equipment_ajax_requested(): bool {
+    return optional_param('ajax', 0, PARAM_INT) === 1;
+}
+
+/**
+ * Emit JSON and stop (for equipment-check AJAX).
+ *
+ * @param array $payload
+ */
+function equipment_json_exit(array $payload): void {
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload, JSON_UNESCAPED_UNICODE);
+    die;
 }
 
 // ---- Handle actions ----
@@ -252,9 +280,17 @@ if ($action && confirm_sesskey()) {
     }
 
     if ($action === 'equipment_save' || $action === 'equipment_sync') {
+        $isajax = equipment_ajax_requested();
         $desknumber = required_param('desknumber', PARAM_INT);
         $maxdesk = equipment_check_manager::get_desk_count($session);
         if ($desknumber < 1 || $desknumber > $maxdesk) {
+            if ($isajax) {
+                equipment_json_exit([
+                    'ok' => false,
+                    'error' => 'invalid_desk',
+                    'message' => get_string('error_equipment_check_invalid_desk', 'local_tm_course'),
+                ]);
+            }
             redirect($back_url, get_string('error_equipment_check_invalid_desk', 'local_tm_course'),
                 null, \core\output\notification::NOTIFY_ERROR);
         }
@@ -270,10 +306,20 @@ if ($action && confirm_sesskey()) {
 
         if ($action === 'equipment_sync') {
             $synced = equipment_check_manager::sync_desk_to_all($sessionid, $desknumber, (int) $USER->id);
+            // Sync still uses full redirect so other desks re-render from DB.
             redirect($back_url, get_string('equipment_check_sync_success', 'local_tm_course', (object) [
                 'source' => $desknumber,
                 'count' => $synced,
             ]), null, \core\output\notification::NOTIFY_SUCCESS);
+        }
+
+        if ($isajax) {
+            equipment_json_exit([
+                'ok' => true,
+                'action' => 'equipment_save',
+                'desknumber' => $desknumber,
+                'message' => get_string('equipment_check_saved_toast', 'local_tm_course'),
+            ]);
         }
 
         redirect($back_url, get_string('equipment_check_save_success', 'local_tm_course', $desknumber),
@@ -281,9 +327,11 @@ if ($action && confirm_sesskey()) {
     }
 
     if ($action === 'equipment_save_all') {
+        $isajax = equipment_ajax_requested();
         $maxdesk = equipment_check_manager::get_desk_count($session);
         $applicableitems = equipment_check_manager::get_applicable_items($session);
         $saveddesks = 0;
+        $savedlist = [];
 
         // Note: $_POST['equip_all'] is a 3-level nested array (equip_all[desknumber][itemid][field]);
         // optional_param_array() cannot handle multidimensional arrays, so walk it manually
@@ -298,12 +346,30 @@ if ($action && confirm_sesskey()) {
                 $results = equipment_build_results($rawitems, $applicableitems);
                 equipment_check_manager::save_desk_checks($sessionid, $desknumber, $results, (int) $USER->id);
                 $saveddesks++;
+                $savedlist[] = $desknumber;
             }
         }
 
         if ($saveddesks < 1) {
+            if ($isajax) {
+                equipment_json_exit([
+                    'ok' => false,
+                    'error' => 'none',
+                    'message' => get_string('equipment_check_save_all_none', 'local_tm_course'),
+                ]);
+            }
             redirect($back_url, get_string('equipment_check_save_all_none', 'local_tm_course'),
                 null, \core\output\notification::NOTIFY_WARNING);
+        }
+
+        if ($isajax) {
+            equipment_json_exit([
+                'ok' => true,
+                'action' => 'equipment_save_all',
+                'saveddesks' => $saveddesks,
+                'desks' => $savedlist,
+                'message' => get_string('equipment_check_saved_toast', 'local_tm_course'),
+            ]);
         }
 
         redirect($back_url, get_string('equipment_check_save_all_success', 'local_tm_course', $saveddesks),
@@ -702,6 +768,16 @@ window.tmAttendanceDietConfig = <?php echo json_encode([
         'clickEdit' => get_string('attendance_diet_click_edit', 'local_tm_course'),
         'noChoice' => get_string('attendance_diet_no_choice_label', 'local_tm_course'),
         'saveError' => get_string('error', 'moodle'),
+    ],
+], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+
+window.tmEquipCheckConfig = <?php echo json_encode([
+    'sessionid' => $sessionid,
+    'sesskey' => sesskey(),
+    'postUrl' => $back_url->out(false),
+    'strings' => [
+        'saved' => get_string('equipment_check_saved_toast', 'local_tm_course'),
+        'saveFailed' => get_string('equipment_check_save_failed_toast', 'local_tm_course'),
     ],
 ], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
 </script>

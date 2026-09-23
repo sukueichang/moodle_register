@@ -300,6 +300,164 @@ class grading_request_manager {
     }
 
     /**
+     * Grade status for the learner's current submission (assign latest / quiz latest finished attempt).
+     * Quiz: uses the attempt itself — awaiting manual grading is NOT "graded", even if gradebook
+     * still holds an older attempt's score.
+     *
+     * @return array{has:bool,str:string,time:int}
+     */
+    public static function submission_grade(int $cmid, int $userid): array {
+        $empty = ['has' => false, 'str' => '', 'time' => 0];
+        $activity = self::get_activity($cmid);
+        if (!$activity || !$activity['exists'] || $userid <= 0) {
+            return $empty;
+        }
+        if ($activity['modname'] === 'assign') {
+            return self::gradebook_grade(
+                (int)$activity['courseid'],
+                'assign',
+                (int)$activity['instanceid'],
+                $userid
+            );
+        }
+        return self::quiz_latest_attempt_grade($cmid, $userid);
+    }
+
+    /**
+     * @param int[] $userids
+     * @return array<int, array{has:bool,str:string,time:int}>
+     */
+    public static function submission_grades_for_users(int $cmid, array $userids): array {
+        $empty = ['has' => false, 'str' => '', 'time' => 0];
+        $userids = array_values(array_unique(array_filter(array_map('intval', $userids), static function(int $id): bool {
+            return $id > 0;
+        })));
+        $map = [];
+        foreach ($userids as $uid) {
+            $map[$uid] = $empty;
+        }
+        $activity = self::get_activity($cmid);
+        if (!$activity || !$activity['exists'] || empty($userids)) {
+            return $map;
+        }
+        if ($activity['modname'] === 'assign') {
+            return self::gradebook_grades_for_users(
+                (int)$activity['courseid'],
+                'assign',
+                (int)$activity['instanceid'],
+                $userids
+            );
+        }
+        foreach ($userids as $uid) {
+            $map[$uid] = self::quiz_latest_attempt_grade($cmid, $uid);
+        }
+        return $map;
+    }
+
+    /**
+     * @return array{has:bool,str:string,time:int}
+     */
+    private static function quiz_latest_attempt_grade(int $cmid, int $userid): array {
+        global $CFG, $DB;
+        $empty = ['has' => false, 'str' => '', 'time' => 0];
+        $sub = self::latest_submission($cmid, $userid);
+        if (!$sub || $sub['type'] !== 'quiz') {
+            return $empty;
+        }
+        $attemptid = (int)$sub['id'];
+        $row = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, sumgrades, timefinish, timemodified', IGNORE_MISSING);
+        if (!$row) {
+            return $empty;
+        }
+
+        // Primary signal: finished attempt with null sumgrades = awaiting mark (e.g. manual grading).
+        // Do NOT fall back to course gradebook (may still hold an older attempt's score).
+        $sumgrades = $row->sumgrades;
+        if ($sumgrades === null || $sumgrades === '') {
+            // Optional confirm via Moodle API when available; null sumgrades already means pending.
+            $needsmanual = self::quiz_attempt_needs_manual_grading($attemptid);
+            if ($needsmanual === false) {
+                // API says fully marked but DB sumgrades empty — try object marks.
+                $attemptobj = self::load_quiz_attempt($attemptid);
+                if ($attemptobj && method_exists($attemptobj, 'get_sum_marks')) {
+                    $sumgrades = $attemptobj->get_sum_marks();
+                }
+            }
+        }
+        if ($sumgrades === null || $sumgrades === '') {
+            return $empty;
+        }
+
+        // If API explicitly says still needs manual grading, trust that over a stale sumgrades.
+        $needsmanual = self::quiz_attempt_needs_manual_grading($attemptid);
+        if ($needsmanual === true) {
+            return $empty;
+        }
+
+        $quiz = $DB->get_record('quiz', ['id' => (int)$row->quiz], '*', IGNORE_MISSING);
+        if (!$quiz) {
+            return $empty;
+        }
+
+        require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+        $grade = quiz_rescale_grade((float)$sumgrades, $quiz, false);
+        if ($grade === null || $grade === '') {
+            return $empty;
+        }
+        $gradeshown = quiz_format_grade($quiz, $grade);
+        $maxshown = quiz_format_grade($quiz, $quiz->grade);
+        $str = $gradeshown . ' / ' . $maxshown;
+
+        // Prefer attempt timemodified (updates when manual grading finishes) over timefinish (submit time).
+        $time = (int)$row->timemodified;
+        if ($time <= 0) {
+            $time = (int)$row->timefinish;
+        }
+
+        return ['has' => true, 'str' => $str, 'time' => $time];
+    }
+
+    /**
+     * @return bool|null true = awaiting manual, false = fully marked, null = could not determine
+     */
+    private static function quiz_attempt_needs_manual_grading(int $attemptid): ?bool {
+        $attemptobj = self::load_quiz_attempt($attemptid);
+        if (!$attemptobj) {
+            return null;
+        }
+        if (method_exists($attemptobj, 'requires_manual_grading')) {
+            return (bool)$attemptobj->requires_manual_grading();
+        }
+        return null;
+    }
+
+    /**
+     * @return \mod_quiz\quiz_attempt|\quiz_attempt|null
+     */
+    private static function load_quiz_attempt(int $attemptid) {
+        global $CFG;
+        if ($attemptid <= 0) {
+            return null;
+        }
+        try {
+            if (class_exists('\mod_quiz\quiz_attempt')) {
+                return \mod_quiz\quiz_attempt::create($attemptid);
+            }
+            require_once($CFG->dirroot . '/mod/quiz/locallib.php');
+            if (class_exists('\quiz_attempt')) {
+                return \quiz_attempt::create($attemptid);
+            }
+            require_once($CFG->dirroot . '/mod/quiz/attemptlib.php');
+            if (class_exists('\quiz_attempt')) {
+                return \quiz_attempt::create($attemptid);
+            }
+        } catch (\Throwable $e) {
+            debugging('TM grading load quiz attempt failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+        return null;
+    }
+
+    /**
      * @return array{has:bool,str:string,time:int}
      */
     public static function gradebook_grade(int $courseid, string $modname, int $instanceid, int $userid): array {
@@ -461,12 +619,7 @@ class grading_request_manager {
         foreach ($users as $u) {
             $userids[] = (int)$u->id;
         }
-        $grademap = self::gradebook_grades_for_users(
-            (int)$activity['courseid'],
-            (string)$activity['modname'],
-            (int)$activity['instanceid'],
-            $userids
-        );
+        $grademap = self::submission_grades_for_users($cmid, $userids);
         $out = [];
         foreach ($users as $u) {
             $uid = (int)$u->id;
@@ -704,7 +857,7 @@ class grading_request_manager {
             $user = $DB->get_record('user', ['id' => (int)$item->userid, 'deleted' => 0], 'id', IGNORE_MISSING);
             $sub = $user ? self::latest_submission((int)$req->cmid, (int)$item->userid) : null;
             $grade = $user
-                ? self::gradebook_grade((int)$req->courseid, (string)$req->modname, (int)$activity['instanceid'], (int)$item->userid)
+                ? self::submission_grade((int)$req->cmid, (int)$item->userid)
                 : ['has' => false];
             $newstatus = self::ITEM_PENDING;
             if (!$user || !$sub) {
@@ -763,7 +916,9 @@ class grading_request_manager {
 
     public static function sync_open_requests(): int {
         global $DB;
-        list($insql, $params) = $DB->get_in_or_equal(self::OPEN_STATUSES, SQL_PARAMS_NAMED);
+        // Re-check completed tickets too: a newer unfinished attempt must reopen pending state.
+        $statuses = array_merge(self::OPEN_STATUSES, [self::STATUS_COMPLETED]);
+        list($insql, $params) = $DB->get_in_or_equal($statuses, SQL_PARAMS_NAMED);
         $ids = $DB->get_fieldset_select('local_tm_course_grreq', 'id', "status $insql", $params);
         $n = 0;
         foreach ($ids as $id) {
@@ -901,7 +1056,7 @@ class grading_request_manager {
                     break;
                 }
                 if ($activity && $activity['exists']) {
-                    $g = self::gradebook_grade((int)$req->courseid, (string)$req->modname, (int)$activity['instanceid'], (int)$item->userid);
+                    $g = self::submission_grade((int)$req->cmid, (int)$item->userid);
                     if (!empty($g['has'])) {
                         $hasgrade = true;
                         break;

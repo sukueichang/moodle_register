@@ -43,6 +43,7 @@ if ($action === 'list') {
     $rows = equipment_check_manager::get_items_by_course($courseid);
     $items = [];
     foreach ($rows as $r) {
+        $methods = equipment_check_manager::decode_resolution_methods($r->resolution_methods ?? '');
         $items[] = [
             'id' => (int) $r->id,
             'itemname' => (string) $r->itemname,
@@ -50,9 +51,12 @@ if ($action === 'list') {
             'checktype' => (string) $r->checktype,
             'enabled' => (int) $r->enabled,
             'sortorder' => (int) $r->sortorder,
+            'resolution_methods' => $methods,
+            'resolution_methods_text' => implode("\n", $methods),
+            'external_support' => (string) ($r->external_support ?? ''),
         ];
     }
-    echo json_encode(['ok' => true, 'items' => $items]);
+    echo json_encode(['ok' => true, 'items' => $items], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
@@ -61,7 +65,32 @@ if ($action === 'save') {
     if (!is_array($items)) {
         $items = [];
     }
-    equipment_check_manager::save_items_for_course($courseid, $items);
+    $normalized = [];
+    foreach ($items as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $methods = equipment_check_manager::normalize_resolution_input($item['resolution_methods'] ?? ($item['resolution_methods_text'] ?? ''));
+        if (equipment_check_manager::validate_resolution_methods($methods) !== null) {
+            echo json_encode(['ok' => false, 'error' => 'invalid_resolution_methods']);
+            exit;
+        }
+        $support = (string) ($item['external_support'] ?? '');
+        if (equipment_check_manager::validate_external_support($support) !== null) {
+            echo json_encode(['ok' => false, 'error' => 'invalid_external_support']);
+            exit;
+        }
+        $normalized[] = [
+            'itemname' => (string) ($item['itemname'] ?? ''),
+            'scope' => (string) ($item['scope'] ?? 'both'),
+            'checktype' => (string) ($item['checktype'] ?? 'status'),
+            'enabled' => !empty($item['enabled']) ? 1 : 0,
+            'sortorder' => (int) ($item['sortorder'] ?? 0),
+            'resolution_methods' => $methods,
+            'external_support' => $support,
+        ];
+    }
+    equipment_check_manager::save_items_for_course($courseid, $normalized);
     echo json_encode(['ok' => true]);
     exit;
 }

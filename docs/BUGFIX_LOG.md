@@ -23,6 +23,69 @@
 - [ ] 同課程互斥：已結束場次（endtime 已過）的 approved 不應擋重報；駁回／取消本來就不擋
 - [ ] Windows 打包 zip：用 `tar.exe`，內部路徑必須是 `/` 而非 `\`（完整步驟見 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) §4）
 - [ ] 升級頁 `cURL`／遠端 plugin API 錯誤 ≠ DB 升級失敗，可繼續本地升級
+- [ ] 設備檢查 status：未選／正常不顯示備註、Checklist、ⓘ；僅異常展開。後台排除方法／外單位支援 textarea 必須用 `.value` 綁定，placeholder 不可長得像匯入內容
+
+---
+
+## 2026-09-18 — 設備檢查：正常仍顯示備註；後台 textarea 一輸入就清空
+
+### 問題現象
+1. status「正常」仍顯示「備註（選填）」占版面。
+2. 排除方法應為異常時的 checkbox checklist（程式已有，但與備註一併常駐／ⓘ 位置不符預期）。
+3. 外單位支援被放在項目名旁常駐 ⓘ，非異常專屬。
+4. 後台「設定檢查項目」textarea 已有匯入文字，一開始輸入整段消失。
+
+### 根因判斷
+1. `equipment_check_partial.php` 把 remark 放在 radio 旁，無條件渲染。
+2. Checklist 已存在，但異常區未與 remark／ⓘ 統一收合。
+3. ⓘ 綁在 `.tm-equip-item-name`，只要有 `external_support` 就顯示。
+4. Placeholder（`equipment_check_item_resolution_hint`）內容幾乎等於官方 Excel 範例；再以 `innerHTML` 塞 textarea body。空值／綁定不穩時使用者把 placeholder 當 value，首字輸入像「整段被清掉」。另：multiline placeholder 不適合當 attribute。
+
+### 解決方式
+- 異常面板 `data-equip-abnormal-panel`：checklist + ⓘ + remark；JS 切換顯示、保留 DOM。
+- 後台：`applyRowTextareaValues()` 設 `.value`；placeholder 改短提示；`escAttr` 處理換行。
+- version **5.24.3**。
+
+### 預防準則
+- status 輔助 UI 只在 abnormal 展開；admin 多行欄位禁止用「像真資料」的 placeholder，value 用 DOM property。
+
+---
+
+## 2026-09-17 — 午休改 12:00–13:00；文案僅實際含午餐時顯示（A）
+
+### 問題現象
+- 午休判斷用單一 12:30 點，與產品規則「跨過 12:00–13:00」不完全一致。
+- 前台實體場次一律顯示「備註：包含用餐時間 1 小時」，下午場也不該出現。
+
+### 根因判斷
+- `onsite_segment_lunch_hours()` 用 12:30 單點；`index.php` 對所有 onsite 塞 lunch_note。
+
+### 解決方式
+- 改為教學區間與 Asia/Taipei `[12:00, 13:00)` 重疊才 +1h（admin Auto 與專班 segment 共用）。
+- `session_includes_lunch_note()`：僅當 `[starttime, endtime)` 涵蓋午餐時顯示備註。
+- version **5.24.2**。
+
+### 預防準則
+- 午休只走 `onsite_segment_lunch_hours()` / `interval_overlaps_onsite_lunch()`；禁止寫死 +1h 或一律顯示 lunch note。
+
+---
+
+## 2026-09-17 — 下午場 Auto 仍多加 1 小時午休
+
+### 問題現象
+- 編輯場次 Auto：開始 13:30、課時 2.5h，結束被算成 17:00（計算後課時仍顯示 2.50）。
+- 時段未跨中午，預期結束應為 16:00。
+
+### 根因判斷
+- `plan_onsite_course_segments()` 已用 `onsite_segment_lunch_hours()`（跨 12:30 才 +1h）。
+- `calculate_session_times()`（`duration_calc.php`／後台編輯 Auto）仍硬編碼 `$lunchhours = 1.0`，下午場一律加午餐。
+
+### 解決方式
+- `calculate_session_times()` 最後一日段改呼叫 `onsite_segment_lunch_hours($cursor, $remaining)`。
+- 補 PHPUnit：`tests/onsite_lunch_padding_test.php`；version **5.24.1**。
+
+### 預防準則
+- 實體午休 padding 只走 `onsite_segment_lunch_hours()`；禁止在 Auto 路徑再寫死 +1h。
 
 ---
 
