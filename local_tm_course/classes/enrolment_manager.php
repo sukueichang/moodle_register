@@ -1470,14 +1470,38 @@ class enrolment_manager {
             }
         }
 
+        // Seat-hold rows keep a placeholder on e.userid. After 補件, the learner
+        // lives on linked_userid / linked_email. Search and display use that person.
+        $linked = '(e.placeholder_seq > 0 AND lu.id IS NOT NULL)';
+        $efffirstname = "CASE WHEN $linked THEN lu.firstname ELSE u.firstname END";
+        $efflastname = "CASE WHEN $linked THEN lu.lastname ELSE u.lastname END";
+        $effemail = "CASE
+                        WHEN $linked THEN lu.email
+                        WHEN e.placeholder_seq > 0
+                             AND e.linked_email IS NOT NULL
+                             AND e.linked_email <> :emptymail
+                            THEN e.linked_email
+                        ELSE u.email
+                     END";
+        $effinstitution = "CASE
+                              WHEN $linked
+                                   AND lu.institution IS NOT NULL
+                                   AND lu.institution <> :emptyinst
+                                  THEN lu.institution
+                              ELSE u.institution
+                           END";
+
         $conditions = [];
-        $params = [];
+        $params = [
+            'emptymail' => '',
+            'emptyinst' => '',
+        ];
         $idx = 0;
         foreach ([
-            'u.firstname' => $firstname,
-            'u.lastname' => $lastname,
-            'u.institution' => $institution,
-            'u.email' => $email,
+            $efffirstname => $firstname,
+            $efflastname => $lastname,
+            $effinstitution => $institution,
+            $effemail => $email,
         ] as $col => $val) {
             if ($val === '') {
                 continue;
@@ -1485,20 +1509,26 @@ class enrolment_manager {
             $idx++;
             $param = 'lk' . $idx;
             $params[$param] = '%' . $DB->sql_like_escape($val) . '%';
-            $conditions[] = $DB->sql_like($col, ':' . $param, false);
+            $conditions[] = $DB->sql_like("($col)", ':' . $param, false);
         }
 
         if (!$admin_view && $current_userid) {
-            $conditions[] = 'e.userid = :uid';
+            $conditions[] = '(e.userid = :uid OR (e.placeholder_seq > 0 AND e.linked_userid = :linkeduid))';
             $params['uid'] = $current_userid;
+            $params['linkeduid'] = $current_userid;
         }
 
-        $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
+        $sql = "SELECT e.*,
+                       $efffirstname AS firstname,
+                       $efflastname AS lastname,
+                       $effemail AS email,
+                       $effinstitution AS user_institution,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
                        s.delivery_mode AS session_delivery_mode
                   FROM {local_tm_course_enrolments} e
                   JOIN {user} u ON u.id = e.userid
+             LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                  WHERE " . implode(' AND ', $conditions) . "

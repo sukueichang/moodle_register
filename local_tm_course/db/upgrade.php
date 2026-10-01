@@ -1905,6 +1905,13 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026091802, 'local', 'tm_course');
     }
 
+    // 2026100100 — Seat-hold present marks: course completion belongs to the linked learner.
+    if ($oldversion < 2026100100) {
+        require_once(__DIR__ . '/../classes/attendance_manager.php');
+        \local_tm_course\attendance_manager::backfill_present_completion_for_linked_learners();
+        upgrade_plugin_savepoint(true, 2026100100, 'local', 'tm_course');
+    }
+
     return true;
 }
 
