@@ -104,15 +104,19 @@ if (empty($rows)) {
         $fresh = grading_request_manager::get_request((int)$row->id) ?: $row;
         $counts = grading_request_manager::progress_counts($fresh);
         $activity = grading_request_manager::get_activity((int)$fresh->cmid);
-        $actname = $activity['name'] ?? get_string('grading_activity_missing', 'local_tm_course');
-        if ((int)$fresh->activitygone === 1 || !$activity || !$activity['exists']) {
-            $actname = get_string('grading_activity_missing', 'local_tm_course');
+        $activitygone = ((int)$fresh->activitygone === 1) || !$activity || !$activity['exists'];
+        if ($activitygone) {
+            $actcell = s(get_string('grading_activity_missing', 'local_tm_course'));
+        } else {
+            $actname = $activity['name'] ?? '';
+            $acturl = new moodle_url('/mod/' . $fresh->modname . '/view.php', ['id' => (int)$fresh->cmid]);
+            $actcell = html_writer::link($acturl, s($actname));
         }
         $detail = new moodle_url('/local/tm_course/grading/request.php', ['id' => (int)$fresh->id]);
         $table->data[] = [
             '#' . (int)$fresh->id,
             format_string((string)($row->coursename ?? '')),
-            s($actname),
+            $actcell,
             $counts['done'] . '/' . $counts['total'],
             grading_request_manager::status_label((int)$fresh->status),
             userdate((int)$fresh->timemodified, get_string('strftimedatetimeshort')),

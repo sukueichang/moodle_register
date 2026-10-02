@@ -3,6 +3,12 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.25.0] - 2026-10-02 - 授課語言同步合進 main
+
+### Notes
+- 已驗收的 TCMS `teachingLanguage` 合進當時的 `main`（5.24.9 / `2026100100`）。
+- 版號 `2026100151`：高於 5.24.9，也高於先前發布 ZIP 的 `2026100150`，並低於未發布問卷的 `2026100200`。沒有新的資料庫升級步驟。
+
 ## [5.21.1] - 2026-10-02 - TCMS 場次授課語言
 
 ### Added

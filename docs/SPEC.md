@@ -1,7 +1,7 @@
 # SPEC — TM Course Management Plugin (`local_tm_course`)
 
 > **文件角色：** 產品／技術規格書（Single Source of Truth）  
-> **目前發行版：** 5.21.1（`local_tm_course/version.php` → `$plugin->release`，版號 `2026100150`）  
+> **目前發行版：** 5.25.0（`local_tm_course/version.php` → `$plugin->release`，版號 `2026100151`）  
 > **維護約定：** 規格變更先改本檔，再實作；版本歷史見根目錄 [`CHANGELOG.md`](../CHANGELOG.md)。  
 > **相關文件：** [`FEATURE_LOG.md`](FEATURE_LOG.md)（需求與決策）／[`BUGFIX_LOG.md`](BUGFIX_LOG.md)（缺陷與回歸檢查）／[`DEV_WORKFLOW.md`](DEV_WORKFLOW.md)（開發 SOP）
 
@@ -2187,10 +2187,10 @@ delivery_mode = onsite：
 **成績來源**
 
 - 作業：Moodle 視為最終的已交繳交（通常最新已交、非草稿）。
-- 測驗：最新一份**已完成** attempt；不可停在「待人工評分」。
-- 外掛只讀 gradebook。顯示格式化成績 + 評分時間。
+- 測驗：最新一份**已完成** attempt。以該列 `quiz_attempts.sumgrades` 為主：空＝待評分（不可沿用成績簿舊 attempt 分）；有值＝已評分並顯示換算成績。時間用 attempt `timemodified`。若 API `requires_manual_grading()` 明確為 true 則仍視為未評分；API 載入失敗時**不**整排改成待評分。
+- 作業（assign）成績仍讀 gradebook。
 
-**同步：** 打開／重新整理該張單即重讀；另加排程（約每 10–15 分）。
+**同步：** 打開／重新整理該張單即重讀；另加排程（約每 10–15 分）。排程會一併重掃「已完成」單據，以免新繳交尚未評分時狀態卡死。
 
 **查無：** 送出後帳號／繳交／活動消失 → 標「查無此人的作業／測驗」或「活動已不存在」，**不提供**會開出 error 的連結。查無列為終態，不擋整張完成。
 

@@ -645,15 +645,18 @@ class prerequisite_manager {
             return false;
         }
 
+        // Seat-hold rows keep the placeholder on userid. After 補件, the learner is linked_userid.
         $sql = "SELECT e.id
                   FROM {local_tm_course_enrolments} e
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
-                 WHERE e.userid = :uid
+                 WHERE (e.userid = :uid
+                        OR (e.placeholder_seq > 0 AND e.linked_userid = :linkeduid))
                    AND e.status = :st
                    AND s.courseid = :cid
                    AND s.starttime < :tstart";
         $params = [
             'uid' => $userid,
+            'linkeduid' => $userid,
             'st' => session_manager::ENROL_APPROVED,
             'cid' => $prereqcourseid,
             'tstart' => $targetstarttime,

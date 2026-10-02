@@ -671,14 +671,47 @@ class attendance_manager {
             self::sync_to_mod_attendance($enrol, $attended);
         }
 
-        // Trigger course completion when student is marked present
+        // Trigger course completion when student is marked present.
+        // Seat-hold rows keep the placeholder on userid; the real learner is linked_userid.
         if ($attended === self::ATTEND_PRESENT) {
             $session = $DB->get_record('local_tm_course_sessions',
                                        ['id' => $enrol->sessionid], '*', MUST_EXIST);
             if (!empty($session->courseid)) {
-                self::sync_completion((int)$enrol->userid, (int)$session->courseid);
+                self::sync_completion(self::attendance_log_userid($enrol), (int)$session->courseid);
             }
         }
+    }
+
+    /**
+     * Write course completion onto linked learners for seat-hold rows already marked present.
+     *
+     * Older marks stored completion on the placeholder userid. Call once on upgrade so
+     * those learners satisfy course-complete prerequisites.
+     *
+     * @return int Number of enrolment rows processed
+     */
+    public static function backfill_present_completion_for_linked_learners(): int {
+        global $DB;
+
+        $sql = "SELECT e.id, e.linked_userid, s.courseid
+                  FROM {local_tm_course_enrolments} e
+                  JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+                 WHERE e.placeholder_seq > 0
+                   AND e.linked_userid > 0
+                   AND e.status = :approved
+                   AND e.attended = :present
+                   AND s.courseid > 0";
+        $rows = $DB->get_records_sql($sql, [
+            'approved' => session_manager::ENROL_APPROVED,
+            'present' => self::ATTEND_PRESENT,
+        ]);
+
+        $count = 0;
+        foreach ($rows as $row) {
+            self::sync_completion((int)$row->linked_userid, (int)$row->courseid);
+            $count++;
+        }
+        return $count;
     }
 
     /**
