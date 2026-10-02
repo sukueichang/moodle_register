@@ -343,6 +343,7 @@ class tcms_sync_manager {
             'moodleClassroomId' => $classroomid > 0 ? $classroomid : null,
             'moodleClassroomName' => $classroomname,
             'deliveryMode' => (string) ($session->delivery_mode ?? session_manager::DELIVERY_ONSITE),
+            'teachingLanguage' => (string) $session->teaching_language,
             'status' => $status,
             'kpiArea' => 'A-1',
             'countForKpi' => true,

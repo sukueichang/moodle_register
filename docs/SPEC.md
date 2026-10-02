@@ -61,7 +61,7 @@
 | Token | Moodle `tcms_sync_token` ≡ VM `TCMS_MOODLE_SYNC_TOKEN`（Bearer）；不可寫死於程式 |
 | POST | `{base}/api/integrations/moodle/sessions`（新增／修改／自動關閉） |
 | DELETE | `{base}/api/integrations/moodle/sessions/{moodleSessionId}` |
-| Payload 必留 | `source=moodle`、`moodleSessionId`、`moodleCourseId`、日期時間、課程類型、地點、教室、狀態、`kpiArea=A-1`、`countForKpi=true`、`customerNames`、`customerCount`、`studentCount`、`studentsReached` |
+| Payload 必留 | `source=moodle`、`moodleSessionId`、`moodleCourseId`、`teachingLanguage`（場次 `teaching_language` 原值 `zh_tw` 或 `en`，不轉顯示文字）、日期時間、課程類型、地點、教室、狀態、`kpiArea=A-1`、`countForKpi=true`、`customerNames`、`customerCount`、`studentCount`、`studentsReached` |
 | 篩選 | 標準場次＋課程連動啟用＋同步起始日；停用同步時 purge 遠端鏡像 |
 | 排程 | `sync_tcms_sessions` 每小時 `:15` 醒來；`tcms_sync_reconcile_interval` 決定是否執行 |
 | Schema | `GET /api/sessions/schema` 失敗 → 快取／內建 fallback；**不**阻擋場次同步 |

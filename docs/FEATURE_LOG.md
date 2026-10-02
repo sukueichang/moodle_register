@@ -22,6 +22,16 @@
 
 ---
 
+## 2026-10-02 — TCMS 同步新增授課語言
+
+- **需求：** Moodle 場次已有 `teaching_language`（`zh_tw` / `en`），同步到 TCMS 的 payload 沒有帶。要在既有 `POST /api/integrations/moodle/sessions` 加上 `teachingLanguage`，原值傳送，不另做語言欄位、資料表或設定畫面。
+- **決策：**
+  1. 只改 `tcms_sync_manager::build_payload()`，把場次 `teaching_language` 放進 `$core` 的 `teachingLanguage`，因此會納入 `_hash`；送出前仍拿掉 `_hash`。
+  2. 既有重送沿用：場次建立／修改後的 `push_session()`、場次列表單筆 `tcms_resync`、立即對帳與排程 `reconcile_all()`。失敗仍標 `error`，對帳會再送。不另做批次同步。
+  3. 身份仍是 `moodleSessionId`，不因新欄位新增場次。
+- **影響範圍：** `tcms_sync_manager.php`、`tcms_endpoint.php`（必送欄位清單）、`tests/tcms_sync_test.php`、SPEC §0.4a、CHANGELOG。不改 TCMS。
+- **版本／狀態：** **進行中（待人工驗收後再 commit／push）。** 功能分支自 `main`（5.21.0 / `2026091500`）分出，與問卷分支隔離。`5.22.0` / `2026100200` 已由未合併的 `feature/course-survey-admin` 使用，因此本次**沒有**升成 5.22.1，`version.php` 維持基準版，待確認升版號後再改。
+
 ## 2026-09-15 — Attendance 二元成績（有 Present＝100%）
 
 - **需求：** 外掛點名同步 Attendance log 後，Gradebook 不要用原生累計平均（缺→參=50%）；改為「該活動只要有一筆 Present → 100%，否則 0%」。每次異動須重掃全部 log。
