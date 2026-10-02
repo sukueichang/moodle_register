@@ -51,6 +51,7 @@
 | TCMS 同步 | `classes/tcms_sync_manager.php`、`classes/tcms_endpoint.php`（VM：`https://tcms.tm-robot.com`） |
 | 證書 | 整合 `mod_customcert` |
 | 批改申請 | `grading/*`、`classes/grading_request_manager.php`（見 §58） |
+| 課程問卷 | 規格見 §59。階段 1：`admin/surveys.php`、`classes/survey_manager.php`。階段 2–4 尚未實作 |
 
 ### 0.4a TCMS 同步（Moodle → VM，5.19.0）
 
@@ -2239,3 +2240,175 @@ delivery_mode = onsite：
 - `classes/notification_helper.php`、`settings/notifications.php`
 - `db/install.xml`、`db/upgrade.php`、`db/tasks.php`、`db/messages.php`
 - 語系 `en`、`zh_tw`
+
+## 59. 課程問卷管理系統 V1
+
+本節是課程問卷 V1 的唯一需求依據。上一輪「九題寫死、以已出席為填寫條件、送出後可修改」的草案作廢，不得恢復。
+
+TM AI Cobot 推廣課程的九題只是 §59.10 的驗收案例。題幹、選項、必填與區塊都由 Admin 設定，不得寫進程式預設。
+
+Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只存原始答案，不做商機分數或自動排序。
+
+階段 1（問卷管理、題型、課程指定、啟用停用、版本、資料表）已實作。階段 2–4（學員填答、QR 投影、統計與 Excel）尚未開始。`ensure_session_survey_pin()` 與開放後改開始時間的稽核函式已可呼叫並有測試，但尚未接到場次編輯頁或排程。
+
+### 59.1 範圍
+
+四個角色：
+
+| 角色 | 能做的事 |
+|------|----------|
+| Admin（`local/tm_course:manage`） | 建立／編輯／啟用／停用問卷、指定課程、看版本與個別答案、統計、匯出 |
+| 可進入上課準備事項的人 | 看該場 QR Code 與填答人數。V1 不另做講師權限 |
+| 學員 | 對自己的報名填一次，或查看已交答案 |
+| 系統 | 依課程指定問卷，場次開放時釘選版本，並拒絕重複提交 |
+
+同一門課同一時間只有一份有效問卷。該課所有尚未釘選的場次都用這一份。視訊與實體規則相同。
+
+題幹依 Admin 輸入的文字顯示（第一版不拆多語系題庫）。介面按鈕仍走外掛語系。複選可有「其他」與自填文字；單選、量表、自由文字沒有「其他」。
+
+### 59.2 已確認規則
+
+1. **開始時間。** 尚未正式開放時，用場次目前的 `starttime`。正式開放時釘選當時的開放時間與問卷版本。開放後再改場次時間，不得關閉問卷、不得改版本，並留下修改紀錄。
+2. **停用或改指定。** 已釘選的場次繼續用原版本。尚未釘選的場次改跟課程最新指定。既有答案不動。
+3. **投影。** 沿用上課準備事項進入權限。個別答案與匯出只有 `local/tm_course:manage`。
+4. **提交後取消報名。** 答案保留。學員仍可看自己的答案，不能再交。投影的「已填寫」與「符合資格」用同一批目前仍符合資格的報名。
+
+### 59.3 問卷內容
+
+每題有：題目名稱、說明（可空）、題型、選項（需要時）、是否必填、顯示順序、所屬區塊（可空）。
+
+題型僅四種：
+
+| 題型 | 存什麼 | 統計 |
+|------|--------|------|
+| 單選 | 一個選項 | 各選項人數與比例 |
+| 複選 | 多個選項；勾「其他」時另存文字 | 各選項被選人數與比例；比例合計可超過 100%，報表必須標明 |
+| 1～5 量表 | 整數 1～5；題目上有兩端文字（例如非常不同意／非常同意） | 有效填答數、平均、各分人數與比例 |
+| 自由文字 | 文字 | 列出原文，可篩選、可匯出 |
+
+必填在伺服器端檢查。第一版沒有跳題或依答案分支。
+
+尚無正式填答、且沒有場次釘選此版本時，Admin 可直接改這一版。一旦有釘選或有提交，此版凍結；再儲存就產生下一版，既有答案仍指向舊題與舊選項。
+
+### 59.4 版本與場次釘選
+
+`ensure_session_survey_pin(sessionid)` 是建立釘選的唯一入口。已有釘選則直接返回。
+
+建立條件（全部成立）：
+
+- `time() >= local_tm_course_sessions.starttime`
+- 該課在 `svcrs` 有一份啟用中的問卷
+- 該問卷有可發佈的目前版本
+
+釘選寫入：`versionid`、`opens_at`（釘選當下的 `starttime`）、`timecreated`。
+
+呼叫點（階段 2／3 才掛上頁面與排程）：學員問卷頁、上課準備事項、投影頁、人數 JSON、`my_records.php`，以及存檔場次開始時間之前。另以排程補釘「開始時間已到、卻還沒有人開頁」的場次。
+
+開放後若管理員修改 `starttime`：
+
+- 先保證釘選已存在（若當時已達舊的開始時間）。由 `survey_manager::lock_pin_before_starttime_edit()` 負責；階段 1 尚未接到 `edit_session.php`。
+- 場次列的 `starttime` 仍可更新（課表本身照舊）。
+- `svpin.opens_at` 與 `svpin.versionid` 不變。
+- 寫一筆 `svaud`：`sessionid`、舊開始時間、新開始時間、操作者、時間。
+- 問卷維持開放，不因新時間落在未來而關閉。
+
+尚未釘選時改 `starttime`：不寫釘選、不寫這筆稽核，開放判斷改看新時間。
+
+停用問卷、或把課程改指到另一份：不更新已存在的 `svpin`，不改 `svresp`。沒有釘選的場次下次確保釘選時，用課程目前指定的版本。
+
+### 59.5 開放與填答資格
+
+開放：`time() >= opens_at`（已釘選）或 `time() >= starttime`（尚未釘選）。沒有截止。課程結束後仍可填。不得提前提交。不需講師手動開放。
+
+時區：`starttime` 是 Unix 秒，編輯頁以伺服器時區組成（`edit_session.php` 的 `strtotime`）。比較用 `time()`。畫面日期用伺服器時區，與場次編輯一致。
+
+符合資格（投影分母與可否出現填寫表單共用）：
+
+- 報名 `status = 1`（`ENROL_APPROVED`）
+- 真實學員已綁定：`userid` 不是卡位帳號（email 含 `@local.tm.placeholder`）；若是卡位帳號，則 `linked_userid > 0`
+- 登入者就是該真實學員（填寫時還要檢查）
+- 場次已開放
+
+未綁定的卡位名額不可提交，也不進入分母。
+
+| 報名狀態 | 值 | 沒有提交紀錄 | 已有提交紀錄 |
+|----------|----|--------------|--------------|
+| 待審 | 0 | 不可填 | 不應發生 |
+| 已核准 | 1 | 開放後可填一次 | 只能看 |
+| 已駁回 | 2 | 不可填 | 學員可看自己的答案，不可再交 |
+| 已取消 | 3 | 不可填 | 同上 |
+| 候補 | 4 | 不可填 | 不應發生；若有，同樣只能看 |
+
+已填寫人數 = 符合資格的報名裡，已有 `svresp` 的筆數。分母不含已取消、未核准、未綁定，即使那些列還留著歷史答案。
+
+### 59.6 學員流程
+
+階段 2。入口在 `my_records.php`。頁面 `/local/tm_course/survey.php?sessionid=N`。QR 與電腦入口同一網址，不帶學員 id。
+
+| 狀態 | 顯示 |
+|------|------|
+| 非已核准且沒有提交 | 不顯示問卷操作 |
+| 已核准但尚未開放 | 尚未開放 |
+| 已核准、已開放、未提交 | 填寫問卷 |
+| 已有提交（含後來被取消） | 已完成／查看答案 |
+
+### 59.7 投影
+
+階段 3。`admin/class_prep.php` 加區塊；投影頁 `admin/survey_board.php`。權限為 `permissions_manager::user_can_attendance()`。畫面只有課程名稱、場次日期、問卷名稱、QR 與人數。約 8 秒背景更新，只回傳計數。
+
+### 59.8 提交
+
+階段 2。一筆報名一筆 `svresp`，`enrolid` 唯一。交易失敗不留半份。送出後只能看。
+
+### 59.9 管理端報表
+
+階段 4。只有 `local/tm_course:manage` 可以看個別答案、統計與 Excel。跨場次只合併 `stablekey`、題型與選項簽名都相同的題。
+
+### 59.10 驗收案例（不得寫死）
+
+階段 4 由管理員手動建立，不是安裝 seed。九題內容見先前確認的 Level 1／Level 2／產品意向／其他回饋。本階段程式不得內建這些題幹。
+
+### 59.11 資料表
+
+表名 ≤ 28。避免 `CHAR NOT NULL DEFAULT ''`。答案表不複製姓名、公司、場次或課程內容。階段 1 一次建立下列各表。
+
+| 表 | 主要欄位 | 限制 |
+|----|----------|------|
+| `local_tm_course_svdef` | 名稱、啟用、建立／修改時間、建立者 | |
+| `local_tm_course_svver` | `surveyid`、版本號、是否凍結、建立時間、建立者 | `(surveyid, versionno)` 唯一 |
+| `local_tm_course_svsec` | `versionid`、名稱、排序 | |
+| `local_tm_course_svitem` | `versionid`、`sectionid` 可空、`stablekey`、題型、題幹、說明、必填、排序、量表兩端文字、複選是否允許其他 | 凍結後不改列 |
+| `local_tm_course_svopt` | `itemid`、`stablekey`、標籤、排序、`is_other` | |
+| `local_tm_course_svcrs` | `courseid`、`surveyid` | `courseid` 唯一 |
+| `local_tm_course_svpin` | `sessionid`、`versionid`、`opens_at`、建立時間 | `sessionid` 唯一 |
+| `local_tm_course_svresp` | `enrolid`、`versionid`、`sessionid`、提交者 user id、`timecreated` | **`enrolid` 唯一** |
+| `local_tm_course_svans` | `responseid`、`itemid`、量表或單選值、自由文字、其他文字 | `(responseid, itemid)` 唯一 |
+| `local_tm_course_svpick` | `answerid`、`optionid` | `(answerid, optionid)` 唯一 |
+| `local_tm_course_svaud` | `sessionid`、舊／新 `starttime`、操作者、時間 | 只記開放後的場次時間修改 |
+
+新版本複製題目時沿用 `stablekey`。凍結是推導狀態：該 `versionid` 已被 `svpin` 或 `svresp` 引用。`svver.frozen` 在產生下一版時標成 1，舊列不再更新。
+
+### 59.12 檔案
+
+階段 1 已新增：`classes/survey_manager.php`、`admin/surveys.php`、`tests/survey_manager_test.php`、語系、`db/install.xml`、`db/upgrade.php`、`version.php`。導覽只給 `manage`。
+
+尚未新增：`survey.php`、`admin/survey_results.php`、`admin/survey_board.php`、`admin/survey_progress.php`。尚未修改 `my_records.php`、`class_prep.php`、場次存檔、`db/tasks.php`。
+
+### 59.13 開發階段與驗收
+
+**階段 1 — 問卷與版本（本分支）**
+
+- Admin 可新增、編輯、啟用、停用，並把一份問卷指定給一門課。
+- 四種題型、區塊、排序、必填、複選「其他」可存後再讀出。
+- 一門課不能同時有兩筆課程指定。
+- 沒有填答也沒有釘選時可直接改；一旦凍結，再存就產生新版本，舊題列不被改寫。
+
+**階段 2 — 學員填答** 尚未開始。見上一輪驗收：`my_records` 三種狀態、未開放不能送、不以出席為條件、`enrolid` 唯一、送出後只能看。
+
+**階段 3 — QR 與投影** 尚未開始。
+
+**階段 4 — 統計與匯出** 尚未開始。不得做商機分數。
+
+### 59.14 實作前檢查
+
+沒有尚未決定、會擋住後續階段的業務規則。刻意不做：講師專屬權限、WebSocket、商機評分、題目多語系題庫、單選「其他」、學員改答案、以出席作為開放條件、把九題寫進安裝程式。
