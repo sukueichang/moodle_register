@@ -30,7 +30,7 @@
   2. 既有重送沿用：場次建立／修改後的 `push_session()`、場次列表單筆 `tcms_resync`、立即對帳與排程 `reconcile_all()`。失敗仍標 `error`，對帳會再送。不另做批次同步。
   3. 身份仍是 `moodleSessionId`，不因新欄位新增場次。
 - **影響範圍：** `tcms_sync_manager.php`、`tcms_endpoint.php`（必送欄位清單）、`tests/tcms_sync_test.php`、SPEC §0.4a、CHANGELOG。不改 TCMS。
-- **版本／狀態：** **進行中（待人工驗收後再 commit／push）。** 功能分支自 `main`（5.21.0 / `2026091500`）分出，與問卷分支隔離。`5.22.0` / `2026100200` 已由未合併的 `feature/course-survey-admin` 使用，因此本次**沒有**升成 5.22.1，`version.php` 維持基準版，待確認升版號後再改。
+- **版本／狀態：** **5.21.1（`2026100150`）正式發布 ZIP。** 不合併問卷。版號高於 `main` 的 `2026091500`，並低於問卷分支的 savepoint `2026100200`，日後問卷升級仍會建立自己的資料表。本次不改 `upgrade.php`／`install.xml`，不改既有場次與報名資料。
 
 ## 2026-09-15 — Attendance 二元成績（有 Present＝100%）
 

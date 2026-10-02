@@ -3,14 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
-## [Unreleased] - TCMS 場次授課語言
+## [5.21.1] - 2026-10-02 - TCMS 場次授課語言
 
 ### Added
 - Moodle → TCMS 場次 payload 新增 `teachingLanguage`，直接使用場次 `teaching_language`（`zh_tw` 或 `en`），並納入同步 hash。
 - API 路徑與原有欄位名稱不變。既有場次沿用建立／修改後推送、單筆重送，以及對帳排程。
 
 ### Notes
-- 尚未升 `version.php`。`main` 為 5.21.0（`2026091500`）；5.22.0（`2026100200`）已由未合併的問卷分支占用。升版號待確認。
+- 版號 `2026100150`。高於 `main` 5.21.0（`2026091500`），低於未發布問卷分支的升級點 `2026100200`（5.22.0）。本次沒有資料表或 upgrade 步驟，不包含問卷。
 
 ## [5.21.0] - 2026-09-15 - Attendance 二元成績同步
 
