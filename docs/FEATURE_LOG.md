@@ -22,6 +22,16 @@
 
 ---
 
+## 2026-10-02 — TCMS 同步新增授課語言
+
+- **需求：** Moodle 場次已有 `teaching_language`（`zh_tw` / `en`），同步到 TCMS 的 payload 沒有帶。要在既有 `POST /api/integrations/moodle/sessions` 加上 `teachingLanguage`，原值傳送，不另做語言欄位、資料表或設定畫面。
+- **決策：**
+  1. 只改 `tcms_sync_manager::build_payload()`，把場次 `teaching_language` 放進 `$core` 的 `teachingLanguage`，因此會納入 `_hash`；送出前仍拿掉 `_hash`。
+  2. 既有重送沿用：場次建立／修改後的 `push_session()`、場次列表單筆 `tcms_resync`、立即對帳與排程 `reconcile_all()`。失敗仍標 `error`，對帳會再送。不另做批次同步。
+  3. 身份仍是 `moodleSessionId`，不因新欄位新增場次。
+- **影響範圍：** `tcms_sync_manager.php`、`tcms_endpoint.php`（必送欄位清單）、`tests/tcms_sync_test.php`、SPEC §0.4a、CHANGELOG。不改 TCMS。
+- **版本／狀態：** **已驗收，合進 `main` 為 5.25.0（`2026100151`）。** `main` 當時已是 5.24.9（`2026100100`）。這個整數高於 5.24.9，也高於先前 ZIP 的 `2026100150`，並低於問卷分支的 savepoint `2026100200`。不包含問卷，也不改既有場次與報名資料。
+
 ## 2026-09-18 — class_prep 語系切換丢失 sessionid
 
 - **需求：** Language menu 切換後不應 missingparam sessionid。
