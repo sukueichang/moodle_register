@@ -100,6 +100,14 @@ class survey_manager_test extends \advanced_testcase {
         $this->assertSame([], $items[3]['options']);
         $this->assertSame(0, (int) survey_manager::get_survey($surveyid)->enabled);
         $this->assertFalse(survey_manager::is_version_frozen($versionid));
+
+        survey_manager::set_enabled($surveyid, true);
+        $reloaded = survey_manager::get_version_structure($versionid);
+        $savedagain = survey_manager::save_structure($surveyid, $reloaded, 2);
+        $this->assertSame($versionid, $savedagain);
+        $again = survey_manager::get_version_structure($savedagain);
+        $this->assertCount(2, $again[0]['items'][1]['options']);
+        $this->assertSame(1, $again[0]['items'][1]['options'][1]['isother']);
     }
 
     public function test_unfrozen_save_updates_the_same_version(): void {

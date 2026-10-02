@@ -113,10 +113,16 @@ $error = '';
 $posted = null;
 if ($surveyid > 0 && optional_param('action', '', PARAM_ALPHANUMEXT) === 'save' && confirm_sesskey()) {
     try {
+        $currentbefore = survey_manager::current_version($surveyid);
+        if ($versionid > 0 && (!$currentbefore || $versionid !== (int) $currentbefore->id)) {
+            throw new moodle_exception('survey_error_notfound', 'local_tm_course');
+        }
+        $sections = survey_admin_read_post();
+        survey_manager::normalise_sections($sections);
         survey_manager::update_name($surveyid, required_param('name', PARAM_TEXT));
         survey_manager::set_enabled($surveyid, (bool) optional_param('enabled', 0, PARAM_BOOL));
         survey_manager::set_course_assignments($surveyid, optional_param_array('courseids', [], PARAM_INT));
-        $savedversion = survey_manager::save_structure($surveyid, survey_admin_read_post(), (int) $USER->id);
+        $savedversion = survey_manager::save_structure($surveyid, $sections, (int) $USER->id);
         redirect(new moodle_url('/local/tm_course/admin/surveys.php', [
             'id' => $surveyid,
             'versionid' => $savedversion,
@@ -174,6 +180,16 @@ $survey = survey_manager::get_survey($surveyid);
 $versions = survey_manager::list_versions($surveyid);
 $current = survey_manager::current_version($surveyid);
 $viewversion = $versionid > 0 ? $versionid : ($current ? (int) $current->id : 0);
+$ownsversion = false;
+foreach ($versions as $version) {
+    if ((int) $version->id === $viewversion) {
+        $ownsversion = true;
+        break;
+    }
+}
+if (!$ownsversion) {
+    $viewversion = $current ? (int) $current->id : 0;
+}
 $iseditable = $current && $viewversion === (int) $current->id;
 $structure = $posted !== null ? $posted : ($viewversion > 0 ? survey_manager::get_version_structure($viewversion) : []);
 if (!$structure) {
@@ -326,6 +342,9 @@ foreach (array_values($structure) as $sidx => $section) {
             $op = $prefix . "[option][$oidx]";
             echo html_writer::start_div('d-flex mb-1');
             echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => $op . '[stablekey]', 'value' => (string) ($option['stablekey'] ?? '')]);
+            if (!empty($option['isother'])) {
+                echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => $op . '[isother]', 'value' => '1']);
+            }
             echo html_writer::empty_tag('input', [
                 'type' => 'text', 'name' => $op . '[label]', 'class' => 'form-control',
                 'value' => (string) ($option['label'] ?? ''),

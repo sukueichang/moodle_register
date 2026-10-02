@@ -234,7 +234,7 @@ class survey_manager {
                     'stablekey' => (string) $option->stablekey,
                     'label' => (string) $option->label,
                     'sortorder' => (int) $option->sortorder,
-                    'is_other' => (int) $option->is_other,
+                    'isother' => (int) $option->isother,
                 ];
             }
             $row = [
