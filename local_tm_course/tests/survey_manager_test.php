@@ -54,6 +54,7 @@ class survey_manager_test extends \advanced_testcase {
                     'title' => 'Pick one',
                     'help' => 'Choose',
                     'required' => 1,
+                    'allowother' => 1,
                     'options' => [
                         ['label' => 'Yes'],
                         ['label' => 'No'],
@@ -89,8 +90,10 @@ class survey_manager_test extends \advanced_testcase {
         $items = $structure[0]['items'];
         $this->assertCount(4, $items);
         $this->assertSame(survey_manager::TYPE_SINGLE, $items[0]['qtype']);
-        $this->assertCount(2, $items[0]['options']);
+        $this->assertSame(1, $items[0]['allowother']);
+        $this->assertCount(3, $items[0]['options']);
         $this->assertSame('Yes', $items[0]['options'][0]['label']);
+        $this->assertSame(1, $items[0]['options'][2]['isother']);
         $this->assertSame(survey_manager::TYPE_MULTI, $items[1]['qtype']);
         $this->assertSame(1, $items[1]['allowother']);
         $this->assertSame(1, $items[1]['options'][1]['isother']);

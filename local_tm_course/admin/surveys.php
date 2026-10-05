@@ -53,6 +53,55 @@ function survey_admin_blank_section(): array {
 }
 
 /**
+ * Parse "one option per line" textarea (+ optional stablekey lines) into option rows.
+ * "其他" is not typed here; it comes from allowother.
+ *
+ * @return array<int,array{stablekey:string,label:string,isother:int}>
+ */
+function survey_admin_parse_options_text(string $text, string $keys = ''): array {
+    $labels = preg_split("/\r\n|\r|\n/", $text) ?: [];
+    $keylines = preg_split("/\r\n|\r|\n/", $keys) ?: [];
+    $options = [];
+    $ki = 0;
+    foreach ($labels as $line) {
+        $label = trim(clean_param((string) $line, PARAM_TEXT));
+        if ($label === '') {
+            continue;
+        }
+        $stablekey = '';
+        if (isset($keylines[$ki])) {
+            $stablekey = clean_param(trim((string) $keylines[$ki]), PARAM_ALPHANUMEXT);
+        }
+        $options[] = [
+            'stablekey' => $stablekey,
+            'label' => $label,
+            'isother' => 0,
+        ];
+        $ki++;
+    }
+    return $options;
+}
+
+/**
+ * Build textarea value and matching stablekey lines from stored options (skip isother).
+ *
+ * @param array<int,array<string,mixed>> $options
+ * @return array{0:string,1:string}
+ */
+function survey_admin_options_textarea_payload(array $options): array {
+    $labels = [];
+    $keys = [];
+    foreach ($options as $option) {
+        if (!is_array($option) || !empty($option['isother'])) {
+            continue;
+        }
+        $labels[] = (string) ($option['label'] ?? '');
+        $keys[] = (string) ($option['stablekey'] ?? '');
+    }
+    return [implode("\n", $labels), implode("\n", $keys)];
+}
+
+/**
  * @return array<int,array<string,mixed>>
  */
 function survey_admin_read_post(): array {
@@ -70,16 +119,23 @@ function survey_admin_read_post(): array {
             if (!is_array($item)) {
                 continue;
             }
-            $options = [];
-            foreach (($item['option'] ?? []) as $option) {
-                if (!is_array($option)) {
-                    continue;
+            if (array_key_exists('options_text', $item)) {
+                $options = survey_admin_parse_options_text(
+                    (string) ($item['options_text'] ?? ''),
+                    (string) ($item['options_keys'] ?? '')
+                );
+            } else {
+                $options = [];
+                foreach (($item['option'] ?? []) as $option) {
+                    if (!is_array($option)) {
+                        continue;
+                    }
+                    $options[] = [
+                        'stablekey' => clean_param((string) ($option['stablekey'] ?? ''), PARAM_ALPHANUMEXT),
+                        'label' => clean_param((string) ($option['label'] ?? ''), PARAM_TEXT),
+                        'isother' => !empty($option['isother']) ? 1 : 0,
+                    ];
                 }
-                $options[] = [
-                    'stablekey' => clean_param((string) ($option['stablekey'] ?? ''), PARAM_ALPHANUMEXT),
-                    'label' => clean_param((string) ($option['label'] ?? ''), PARAM_TEXT),
-                    'isother' => !empty($option['isother']) ? 1 : 0,
-                ];
             }
             $items[] = [
                 'stablekey' => clean_param((string) ($item['stablekey'] ?? ''), PARAM_ALPHANUMEXT),
@@ -311,9 +367,9 @@ foreach (array_values($structure) as $sidx => $section) {
         echo html_writer::tag('label',
             html_writer::empty_tag('input', ['type' => 'checkbox', 'name' => $prefix . '[required]', 'value' => '1'] + $req + $disabled)
             . ' ' . get_string('survey_required', 'local_tm_course'),
-            ['class' => 'd-block mb-2']
+            ['class' => 'd-block mb-2 survey-field-required']
         );
-        echo html_writer::start_div('survey-scale');
+        echo html_writer::start_div('survey-field-scale');
         echo html_writer::tag('label', get_string('survey_scale_min', 'local_tm_course'));
         echo html_writer::empty_tag('input', [
             'type' => 'text', 'name' => $prefix . '[scalemin]', 'class' => 'form-control mb-2',
@@ -326,31 +382,23 @@ foreach (array_values($structure) as $sidx => $section) {
         ] + $disabled);
         echo html_writer::end_div();
         $other = !empty($item['allowother']) ? ['checked' => 'checked'] : [];
-        echo html_writer::start_div('survey-other');
+        echo html_writer::start_div('survey-field-other');
         echo html_writer::tag('label',
             html_writer::empty_tag('input', ['type' => 'checkbox', 'name' => $prefix . '[allowother]', 'value' => '1'] + $other + $disabled)
             . ' ' . get_string('survey_allow_other', 'local_tm_course')
         );
         echo html_writer::end_div();
-        echo html_writer::start_div('survey-options');
+        list($optionstext, $optionskeys) = survey_admin_options_textarea_payload($item['options'] ?? []);
+        echo html_writer::start_div('survey-field-options');
         echo html_writer::tag('label', get_string('survey_options', 'local_tm_course'));
-        $options = $item['options'] ?? [];
-        if (!$options) {
-            $options = [['stablekey' => '', 'label' => '', 'isother' => 0]];
-        }
-        foreach (array_values($options) as $oidx => $option) {
-            $op = $prefix . "[option][$oidx]";
-            echo html_writer::start_div('d-flex mb-1');
-            echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => $op . '[stablekey]', 'value' => (string) ($option['stablekey'] ?? '')]);
-            if (!empty($option['isother'])) {
-                echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => $op . '[isother]', 'value' => '1']);
-            }
-            echo html_writer::empty_tag('input', [
-                'type' => 'text', 'name' => $op . '[label]', 'class' => 'form-control',
-                'value' => (string) ($option['label'] ?? ''),
-            ] + $disabled);
-            echo html_writer::end_div();
-        }
+        echo html_writer::empty_tag('input', [
+            'type' => 'hidden', 'name' => $prefix . '[options_keys]', 'value' => $optionskeys,
+            'class' => 'survey-options-keys',
+        ]);
+        echo html_writer::tag('textarea', s($optionstext), [
+            'name' => $prefix . '[options_text]', 'class' => 'form-control mb-2 survey-options-text',
+            'rows' => 4, 'placeholder' => get_string('survey_options', 'local_tm_course'),
+        ] + $disabled);
         echo html_writer::end_div();
         echo html_writer::end_div();
     }
@@ -372,42 +420,74 @@ if ($iseditable) {
 }
 echo html_writer::end_tag('form');
 
-if ($iseditable) {
-    $PAGE->requires->js_init_code(<<<'JS'
-document.getElementById('survey-add-question').addEventListener('click', function() {
-    var sections = document.querySelectorAll('#survey-sections .survey-section');
-    var section = sections[sections.length - 1];
-    if (!section) { return; }
-    var items = section.querySelectorAll('.survey-item');
-    var clone = items[items.length - 1].cloneNode(true);
-    var sidx = sections.length - 1;
-    var iidx = items.length;
-    clone.querySelectorAll('input, select, textarea').forEach(function(el) {
-        if (el.name) {
-            el.name = el.name.replace(/item\]\[\d+\]/, 'item][' + iidx + ']');
-        }
-        if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; }
-        else if (el.tagName !== 'SELECT') { el.value = ''; }
-    });
-    items[items.length - 1].after(clone);
-});
-document.getElementById('survey-add-section').addEventListener('click', function() {
-    var sections = document.querySelectorAll('#survey-sections .survey-section');
-    var clone = sections[sections.length - 1].cloneNode(true);
-    var sidx = sections.length;
-    clone.querySelectorAll('input, select, textarea').forEach(function(el) {
-        if (!el.name) { return; }
-        el.name = el.name.replace(/section\[\d+\]/, 'section[' + sidx + ']');
-        el.name = el.name.replace(/item\]\[\d+\]/, 'item][0]');
-        if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; }
-        else if (el.tagName !== 'SELECT') { el.value = ''; }
-    });
-    var extras = clone.querySelectorAll('.survey-item');
-    for (var i = extras.length - 1; i > 0; i--) { extras[i].remove(); }
-    sections[sections.length - 1].after(clone);
-});
+$PAGE->requires->js_init_code(<<<'JS'
+(function() {
+    function applyQtypeVisibility(item) {
+        if (!item) { return; }
+        var sel = item.querySelector('select.survey-qtype');
+        var qtype = sel ? sel.value : '';
+        var showScale = (qtype === 'scale');
+        var showChoice = (qtype === 'single' || qtype === 'multi');
+        item.querySelectorAll('.survey-field-scale').forEach(function(el) {
+            el.style.display = showScale ? '' : 'none';
+        });
+        item.querySelectorAll('.survey-field-options, .survey-field-other').forEach(function(el) {
+            el.style.display = showChoice ? '' : 'none';
+        });
+    }
+    function refreshAll() {
+        document.querySelectorAll('#survey-sections .survey-item').forEach(applyQtypeVisibility);
+    }
+    var root = document.getElementById('survey-sections');
+    if (root) {
+        root.addEventListener('change', function(e) {
+            if (e.target && e.target.classList && e.target.classList.contains('survey-qtype')) {
+                applyQtypeVisibility(e.target.closest('.survey-item'));
+            }
+        });
+        refreshAll();
+    }
+    var addQ = document.getElementById('survey-add-question');
+    if (addQ) {
+        addQ.addEventListener('click', function() {
+            var sections = document.querySelectorAll('#survey-sections .survey-section');
+            var section = sections[sections.length - 1];
+            if (!section) { return; }
+            var items = section.querySelectorAll('.survey-item');
+            var clone = items[items.length - 1].cloneNode(true);
+            var iidx = items.length;
+            clone.querySelectorAll('input, select, textarea').forEach(function(el) {
+                if (el.name) {
+                    el.name = el.name.replace(/item\]\[\d+\]/, 'item][' + iidx + ']');
+                }
+                if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; }
+                else if (el.tagName !== 'SELECT') { el.value = ''; }
+            });
+            items[items.length - 1].after(clone);
+            applyQtypeVisibility(clone);
+        });
+    }
+    var addS = document.getElementById('survey-add-section');
+    if (addS) {
+        addS.addEventListener('click', function() {
+            var sections = document.querySelectorAll('#survey-sections .survey-section');
+            var clone = sections[sections.length - 1].cloneNode(true);
+            var sidx = sections.length;
+            clone.querySelectorAll('input, select, textarea').forEach(function(el) {
+                if (!el.name) { return; }
+                el.name = el.name.replace(/section\[\d+\]/, 'section[' + sidx + ']');
+                el.name = el.name.replace(/item\]\[\d+\]/, 'item][0]');
+                if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; }
+                else if (el.tagName !== 'SELECT') { el.value = ''; }
+            });
+            var extras = clone.querySelectorAll('.survey-item');
+            for (var i = extras.length - 1; i > 0; i--) { extras[i].remove(); }
+            sections[sections.length - 1].after(clone);
+            clone.querySelectorAll('.survey-item').forEach(applyQtypeVisibility);
+        });
+    }
+})();
 JS
-    );
-}
+);
 
 echo $OUTPUT->footer();

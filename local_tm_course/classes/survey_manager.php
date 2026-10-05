@@ -400,7 +400,10 @@ class survey_manager {
                 if (!in_array($qtype, self::question_types(), true)) {
                     throw new \moodle_exception('survey_error_bad_type', 'local_tm_course');
                 }
-                $allowother = ($qtype === self::TYPE_MULTI && !empty($item['allowother'])) ? 1 : 0;
+                $allowother = (
+                    ($qtype === self::TYPE_SINGLE || $qtype === self::TYPE_MULTI)
+                    && !empty($item['allowother'])
+                ) ? 1 : 0;
                 $options = [];
                 if ($qtype === self::TYPE_SINGLE || $qtype === self::TYPE_MULTI) {
                     $oorder = 0;

@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-10-05 — 問卷階段 1 驗收 UI 修正（選項多行／依題型顯示）
+
+- **需求：** Phase 1 人工驗收：選項「一行一個」實為單行 input；所有題型同時顯示量表／其他／選項欄位。
+- **決策：** 選項改 textarea（後端按行解析；「其他」仍只靠 allowother，不寫進選項列）。管理 UI 依題型即時顯示／隱藏欄位（隱藏不 disabled，避免誤清值）。單選與複選皆可允許「其他」（同步更新 SPEC §59）。
+- **影響範圍：** `admin/surveys.php`、`survey_manager`、tests、SPEC／FEATURE_LOG。無 DB／version 變更。
+- **版本／狀態：** **5.26.0 上修正，待 Owner 複測。** 未開階段 2、不合併 `main`。
+
 ## 2026-10-05 — 問卷分支整合 main 5.25.0
 
 - **需求：** `feature/course-survey-admin` 落後 `main` 21 commits；測試部署前必須帶入設備檢查／午休／TCMS 授課語言等既有功能，並保留問卷階段 1。
