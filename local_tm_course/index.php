@@ -301,7 +301,7 @@ foreach ($sessions as $s) {
     }
 
     $lunch_note = '';
-    if ((string)($s->delivery_mode ?? '') === session_manager::DELIVERY_ONSITE) {
+    if (session_manager::session_includes_lunch_note($s)) {
         $lunch_note = get_string('session_duration_note_includes_lunch', 'local_tm_course');
     }
 

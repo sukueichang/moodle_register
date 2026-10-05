@@ -52,6 +52,7 @@ class tcms_endpoint {
         return [
             'moodleSessionId',
             'moodleCourseId',
+            'teachingLanguage',
             'startDate',
             'endDate',
             'startTime',

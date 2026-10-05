@@ -36,8 +36,12 @@
 # 建置產物 / 舊版打包 zip（改用 GitHub Releases 或重新建置）
 /_zip_staging/
 /version/
+/dist/
 *.zip
 /zij0Z28q
+
+# 打包腳本輸出（雙保險；*.zip 已排除）
+/dist/**
 
 # 其他雜項
 Thumbs.db

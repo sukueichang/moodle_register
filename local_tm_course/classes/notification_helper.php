@@ -707,21 +707,12 @@ class notification_helper {
         if (!in_array(self::TARGET_LEARNER, $settings['targets'], true)) {
             return;
         }
-        $activity = grading_request_manager::get_activity((int)$ctx['req']->cmid);
         foreach (grading_request_manager::get_items($requestid) as $item) {
             $uid = (int)$item->userid;
             if ($uid <= 0) {
                 continue;
             }
-            $grade = ['has' => false, 'str' => ''];
-            if ($activity && $activity['exists']) {
-                $grade = grading_request_manager::gradebook_grade(
-                    (int)$ctx['req']->courseid,
-                    (string)$ctx['req']->modname,
-                    (int)$activity['instanceid'],
-                    $uid
-                );
-            }
+            $grade = grading_request_manager::submission_grade((int)$ctx['req']->cmid, $uid);
             $ltokens = $ctx['tokens'];
             $ltokens['learner'] = grading_request_manager::display_item_name($item);
             $ltokens['grade'] = !empty($grade['has']) ? (string)$grade['str'] : get_string('grading_item_missing', 'local_tm_course');
