@@ -1915,6 +1915,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
     // 2026100151 was main 5.25.0 TCMS teachingLanguage (no DB savepoint). Sites already on that
     // release skip straight to the next block below.
 
+    // 2026100152 — batch_account_created branded HTML email (no DB).
+    if ($oldversion < 2026100152) {
+        upgrade_plugin_savepoint(true, 2026100152, 'local', 'tm_course');
+    }
+
     // 2026100200 — Course survey tables (SPEC §59). No seeded questions.
     if ($oldversion < 2026100200) {
         local_tm_course_upgrade_create_survey_tables($dbman);
@@ -1924,6 +1929,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
     // 2026100600 — Survey stage 2 learner fill-in (code only; tables already exist).
     if ($oldversion < 2026100600) {
         upgrade_plugin_savepoint(true, 2026100600, 'local', 'tm_course');
+    }
+
+    // 2026100601 — Integrate survey + batch account HTML email (no DB).
+    if ($oldversion < 2026100601) {
+        upgrade_plugin_savepoint(true, 2026100601, 'local', 'tm_course');
     }
 
     return true;

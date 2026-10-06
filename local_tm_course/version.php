@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.27.0
+ * Version: 5.27.1
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026100600;   // Course survey stage 2 learner fill-in (no new tables)
-$plugin->release   = '5.27.0';
+$plugin->version   = 2026100601;   // Integrate survey 5.27.0 + batch account HTML email 5.25.1
+$plugin->release   = '5.27.1';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

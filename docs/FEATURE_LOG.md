@@ -22,12 +22,29 @@
 
 ---
 
+## 2026-10-06 — 整合問卷 + 批次建帳 HTML Email
+
+- **需求：** `feature/course-survey-admin`（5.27.0）與 `feature/batch-account-html-email`（5.25.1）平行 diverged；需單一 ZIP 同時含問卷 Phase 1/2 與品牌 HTML 建帳信。
+- **決策：** 以 survey tip 建 `feature/course-survey-admin-integrated`，merge email 分支；`version` 升至 **5.27.1 / 2026100601**；`upgrade.php` 依序保留 `2026100152`（email）→ survey `2026100200`／`2026100600` → 整合 savepoint。
+- **影響範圍：** merge 衝突解於 `version.php`、`upgrade.php`、`FEATURE_LOG.md`；lang／功能檔並存。
+- **版本／狀態：** **5.27.1 整合完成，待 Owner 用 ZIP 人工驗收。** 不 merge `main`。
+
 ## 2026-10-06 — 課程問卷 V1 階段 2（學員填答）
 
 - **需求：** Phase 1 Owner 驗收 PASS 後，依 SPEC §59 實作學員填答：`my_records` 入口（含 `linked_userid`）、`survey.php`、開放／釘選、`enrolid` 唯一提交、送出後唯讀。
 - **決策：** 不以出席為條件；開放看 `svpin.opens_at`／`starttime`；`ensure_session_survey_pin` 掛在問卷頁與 `my_records`；`lock_pin_before_starttime_edit` 接到 `edit_session` 存檔前。不做 QR／投影／統計／Excel。
 - **影響範圍：** `survey_manager`、`survey.php`、`my_records.php`、`enrolment_manager::get_user_records`、`edit_session.php`、tests、語系、`version.php`。無新資料表。
 - **版本／狀態：** **5.27.0（`2026100600`）交付待 Owner Phase 2 人工驗收。** PHPUnit 本機無 Moodle 環境則不得記 PASS。不合併 `main`。
+
+## 2026-10-06 — 批次建帳通知 HTML Email
+
+- **需求：** `batch_account_created` 純文字信要求「先登入再改密碼」卻未顯示初始密碼；改為品牌化 HTML（雙 Logo、帳號／密碼醒目、按鈕），並保留 plain-text。
+- **決策：**
+  1. 固定系統 HTML layout + plain fallback；主旨／收件仍可由 Admin 設定；既有 body config 不刪、寄信不再用。
+  2. Logo 放 `pix/email/`，以 `/local/tm_course/pix/email/...` 公開 URL 載入（不需登入）。
+  3. 不改建帳、隨機密碼、`forcepasswordchange`、learner＋submitter 同信含密碼。
+- **影響範圍：** `batch_account_created_email.php`、`notification_helper.php`、`settings/notifications.php`、語系、`pix/email/*`、測試、version **5.25.1**。
+- **版本／狀態：** **5.25.1（`2026100152`）；進行中（待 Email 實寄驗收）**
 
 ## 2026-10-06 — 問卷階段 1 Owner 驗收 PASS
 
