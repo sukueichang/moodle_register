@@ -1546,6 +1546,7 @@ class enrolment_manager {
     public static function get_user_records(int $userid): array {
         global $DB;
 
+        // Include seat-hold rows where this user is the linked learner (SPEC §59 / my_records).
         $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
@@ -1555,8 +1556,12 @@ class enrolment_manager {
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                  WHERE e.userid = :userid
+                    OR e.linked_userid = :linkeduserid
               ORDER BY s.starttime DESC, e.timecreated DESC";
-        return $DB->get_records_sql($sql, ['userid' => $userid]);
+        return $DB->get_records_sql($sql, [
+            'userid' => $userid,
+            'linkeduserid' => $userid,
+        ]);
     }
 
     /**

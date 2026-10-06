@@ -1,9 +1,8 @@
 <?php
 /**
- * Course survey definitions, versions, and course assignment.
+ * Course survey definitions, versions, pin/open rules, and learner submission.
  *
- * Learner submission, QR, and reports are later phases. This class owns the
- * editable questionnaire and the freeze / pin rules from SPEC §59.
+ * QR boards and admin reports are later phases (SPEC §59).
  *
  * @package    local_tm_course
  */
@@ -12,6 +11,12 @@ namespace local_tm_course;
 defined('MOODLE_INTERNAL') || die();
 
 class survey_manager {
+
+    /** my_records / survey.php UI states (SPEC §59.6). */
+    public const STATE_NONE = 'none';
+    public const STATE_NOT_OPEN = 'not_open';
+    public const STATE_FILL = 'fill';
+    public const STATE_VIEW = 'view';
 
     public const TYPE_SINGLE = 'single';
     public const TYPE_MULTI = 'multi';
@@ -545,5 +550,379 @@ class survey_manager {
 
     private static function new_stablekey(): string {
         return 'k' . bin2hex(random_bytes(8));
+    }
+
+    /**
+     * Real learner user id for an enrolment row, or 0 when unbound placeholder.
+     */
+    public static function learner_userid_for_enrol(\stdClass $enrol): int {
+        $linked = (int) ($enrol->linked_userid ?? 0);
+        if ($linked > 0) {
+            return $linked;
+        }
+        $userid = (int) ($enrol->userid ?? 0);
+        if ($userid <= 0) {
+            return 0;
+        }
+        if (enrolment_manager::is_placeholder_holder_userid($userid)) {
+            return 0;
+        }
+        return $userid;
+    }
+
+    /**
+     * Enrolment is bound to a real learner (approved-fill denominator base).
+     */
+    public static function is_enrolment_bound(\stdClass $enrol): bool {
+        return self::learner_userid_for_enrol($enrol) > 0;
+    }
+
+    public static function get_pin(int $sessionid): ?\stdClass {
+        global $DB;
+        if ($sessionid <= 0) {
+            return null;
+        }
+        $pin = $DB->get_record('local_tm_course_svpin', ['sessionid' => $sessionid]);
+        return $pin ?: null;
+    }
+
+    public static function get_response_by_enrolid(int $enrolid): ?\stdClass {
+        global $DB;
+        if ($enrolid <= 0) {
+            return null;
+        }
+        $row = $DB->get_record('local_tm_course_svresp', ['enrolid' => $enrolid]);
+        return $row ?: null;
+    }
+
+    /**
+     * Whether the session questionnaire is open for fill-in (SPEC §59.5).
+     * Does not require attendance.
+     */
+    public static function is_session_survey_open(int $sessionid): bool {
+        global $DB;
+        if ($sessionid <= 0) {
+            return false;
+        }
+        self::ensure_session_survey_pin($sessionid);
+        $pin = self::get_pin($sessionid);
+        if ($pin) {
+            return time() >= (int) $pin->opens_at;
+        }
+        $session = $DB->get_record('local_tm_course_sessions', ['id' => $sessionid], 'id, starttime, courseid');
+        if (!$session) {
+            return false;
+        }
+        if (time() < (int) $session->starttime) {
+            return false;
+        }
+        return self::active_surveyid_for_course((int) $session->courseid) > 0;
+    }
+
+    /**
+     * Find this user's enrolment on a session (direct userid or linked_userid).
+     */
+    public static function find_user_enrolment_for_session(int $sessionid, int $userid): ?\stdClass {
+        global $DB;
+        if ($sessionid <= 0 || $userid <= 0) {
+            return null;
+        }
+        $sql = "SELECT e.*
+                  FROM {local_tm_course_enrolments} e
+                 WHERE e.sessionid = :sessionid
+                   AND (e.userid = :uid1 OR e.linked_userid = :uid2)
+              ORDER BY e.id ASC";
+        $rows = $DB->get_records_sql($sql, [
+            'sessionid' => $sessionid,
+            'uid1' => $userid,
+            'uid2' => $userid,
+        ]);
+        foreach ($rows as $enrol) {
+            if (self::learner_userid_for_enrol($enrol) === $userid) {
+                return $enrol;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Eligible to submit a new response (approved + bound + open + no response yet).
+     */
+    public static function can_user_submit(int $sessionid, int $userid): bool {
+        $enrol = self::find_user_enrolment_for_session($sessionid, $userid);
+        if (!$enrol) {
+            return false;
+        }
+        if ((int) $enrol->status !== session_manager::ENROL_APPROVED) {
+            return false;
+        }
+        if (self::learner_userid_for_enrol($enrol) !== $userid) {
+            return false;
+        }
+        if (self::get_response_by_enrolid((int) $enrol->id)) {
+            return false;
+        }
+        return self::is_session_survey_open($sessionid);
+    }
+
+    /**
+     * Can view own submitted answers (even after cancel/reject).
+     */
+    public static function can_user_view_response(int $sessionid, int $userid): bool {
+        $enrol = self::find_user_enrolment_for_session($sessionid, $userid);
+        if (!$enrol || self::learner_userid_for_enrol($enrol) !== $userid) {
+            return false;
+        }
+        return self::get_response_by_enrolid((int) $enrol->id) !== null;
+    }
+
+    /**
+     * UI state for my_records / survey entry (SPEC §59.6).
+     *
+     * @return string one of STATE_* constants
+     */
+    public static function my_records_survey_state(\stdClass $enrol, int $userid): string {
+        global $DB;
+        if (self::learner_userid_for_enrol($enrol) !== $userid) {
+            return self::STATE_NONE;
+        }
+        $sessionid = (int) $enrol->sessionid;
+        if (self::get_response_by_enrolid((int) $enrol->id)) {
+            return self::STATE_VIEW;
+        }
+        if ((int) $enrol->status !== session_manager::ENROL_APPROVED) {
+            return self::STATE_NONE;
+        }
+        $courseid = (int) ($enrol->courseid ?? 0);
+        if ($courseid <= 0) {
+            $courseid = (int) $DB->get_field('local_tm_course_sessions', 'courseid', ['id' => $sessionid]);
+        }
+        // Ensure pin attempt for past-start sessions (SPEC call sites).
+        self::ensure_session_survey_pin($sessionid);
+        $pin = self::get_pin($sessionid);
+        $hasquestionnaire = $pin || self::active_surveyid_for_course($courseid) > 0;
+        if (!$hasquestionnaire) {
+            return self::STATE_NONE;
+        }
+        if (!self::is_session_survey_open($sessionid)) {
+            return self::STATE_NOT_OPEN;
+        }
+        return self::STATE_FILL;
+    }
+
+    /**
+     * Load submitted answers keyed by itemid for view mode.
+     *
+     * @return array<int,array{valueint:?int,valuetext:string,othertext:string,optionids:int[]}>
+     */
+    public static function get_response_answers(int $responseid): array {
+        global $DB;
+        $answers = $DB->get_records('local_tm_course_svans', ['responseid' => $responseid], 'id ASC');
+        $out = [];
+        foreach ($answers as $answer) {
+            $picks = $DB->get_records('local_tm_course_svpick', ['answerid' => $answer->id], 'id ASC', 'id, optionid');
+            $optionids = [];
+            foreach ($picks as $pick) {
+                $optionids[] = (int) $pick->optionid;
+            }
+            $out[(int) $answer->itemid] = [
+                'valueint' => $answer->valueint !== null ? (int) $answer->valueint : null,
+                'valuetext' => (string) ($answer->valuetext ?? ''),
+                'othertext' => (string) ($answer->othertext ?? ''),
+                'optionids' => $optionids,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Validate and persist a formal submission. enrolid unique; race-safe.
+     *
+     * @param array<int|string,mixed> $rawanswers POST answer payload keyed by itemid
+     * @return int response id
+     */
+    public static function submit_response(int $sessionid, int $userid, array $rawanswers): int {
+        global $DB;
+
+        $enrol = self::find_user_enrolment_for_session($sessionid, $userid);
+        if (!$enrol) {
+            throw new \moodle_exception('survey_error_not_eligible', 'local_tm_course');
+        }
+        if ((int) $enrol->status !== session_manager::ENROL_APPROVED) {
+            throw new \moodle_exception('survey_error_not_eligible', 'local_tm_course');
+        }
+        if (self::learner_userid_for_enrol($enrol) !== $userid) {
+            throw new \moodle_exception('survey_error_not_eligible', 'local_tm_course');
+        }
+
+        $existing = self::get_response_by_enrolid((int) $enrol->id);
+        if ($existing) {
+            throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
+        }
+
+        if (!self::is_session_survey_open($sessionid)) {
+            throw new \moodle_exception('survey_error_not_open', 'local_tm_course');
+        }
+
+        $pinid = self::ensure_session_survey_pin($sessionid);
+        $pin = self::get_pin($sessionid);
+        if (!$pin || $pinid <= 0) {
+            throw new \moodle_exception('survey_error_no_survey', 'local_tm_course');
+        }
+        $versionid = (int) $pin->versionid;
+        $structure = self::get_version_structure($versionid);
+        $validated = self::validate_answer_payload($structure, $rawanswers);
+
+        try {
+            $transaction = $DB->start_delegated_transaction();
+            // Re-check inside the transaction for concurrent submits.
+            if ($DB->record_exists('local_tm_course_svresp', ['enrolid' => (int) $enrol->id])) {
+                throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
+            }
+            $responseid = (int) $DB->insert_record('local_tm_course_svresp', (object) [
+                'enrolid' => (int) $enrol->id,
+                'versionid' => $versionid,
+                'sessionid' => $sessionid,
+                'userid' => $userid,
+                'timecreated' => time(),
+            ]);
+            foreach ($validated as $row) {
+                $answerid = (int) $DB->insert_record('local_tm_course_svans', (object) [
+                    'responseid' => $responseid,
+                    'itemid' => (int) $row['itemid'],
+                    'valueint' => $row['valueint'],
+                    'valuetext' => $row['valuetext'],
+                    'othertext' => $row['othertext'],
+                ]);
+                foreach ($row['optionids'] as $optionid) {
+                    $DB->insert_record('local_tm_course_svpick', (object) [
+                        'answerid' => $answerid,
+                        'optionid' => (int) $optionid,
+                    ]);
+                }
+            }
+            $transaction->allow_commit();
+            return $responseid;
+        } catch (\dml_exception $e) {
+            // Unique enrolid race / retry: treat as already submitted if a row now exists.
+            $again = self::get_response_by_enrolid((int) $enrol->id);
+            if ($again) {
+                throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * @param array<int,array<string,mixed>> $structure
+     * @param array<int|string,mixed> $rawanswers
+     * @return array<int,array{itemid:int,valueint:?int,valuetext:?string,othertext:?string,optionids:int[]}>
+     */
+    public static function validate_answer_payload(array $structure, array $rawanswers): array {
+        $items = [];
+        foreach ($structure as $section) {
+            foreach ($section['items'] ?? [] as $item) {
+                $items[(int) $item['id']] = $item;
+            }
+        }
+        $out = [];
+        foreach ($items as $itemid => $item) {
+            $payload = $rawanswers[$itemid] ?? $rawanswers[(string) $itemid] ?? [];
+            if (!is_array($payload)) {
+                $payload = [];
+            }
+            $required = !empty($item['required']);
+            $qtype = (string) $item['qtype'];
+            $optionsbyid = [];
+            foreach ($item['options'] ?? [] as $option) {
+                $optionsbyid[(int) $option['id']] = $option;
+            }
+
+            $valueint = null;
+            $valuetext = null;
+            $othertext = null;
+            $optionids = [];
+
+            if ($qtype === self::TYPE_SCALE) {
+                $raw = $payload['value'] ?? $payload['scale'] ?? '';
+                if ($raw === '' || $raw === null) {
+                    if ($required) {
+                        throw new \moodle_exception('survey_error_required', 'local_tm_course', '', $item['title']);
+                    }
+                    continue;
+                }
+                $valueint = (int) clean_param((string) $raw, PARAM_INT);
+                if ($valueint < 1 || $valueint > 5) {
+                    throw new \moodle_exception('survey_error_bad_answer', 'local_tm_course', '', $item['title']);
+                }
+            } else if ($qtype === self::TYPE_TEXT) {
+                $text = trim(clean_param((string) ($payload['value'] ?? $payload['text'] ?? ''), PARAM_TEXT));
+                if ($text === '') {
+                    if ($required) {
+                        throw new \moodle_exception('survey_error_required', 'local_tm_course', '', $item['title']);
+                    }
+                    continue;
+                }
+                $valuetext = $text;
+            } else if ($qtype === self::TYPE_SINGLE) {
+                $oid = (int) clean_param((string) ($payload['option'] ?? $payload['value'] ?? '0'), PARAM_INT);
+                if ($oid <= 0 || !isset($optionsbyid[$oid])) {
+                    if ($required) {
+                        throw new \moodle_exception('survey_error_required', 'local_tm_course', '', $item['title']);
+                    }
+                    continue;
+                }
+                $valueint = $oid;
+                $optionids = [$oid];
+                if (!empty($optionsbyid[$oid]['isother'])) {
+                    $othertext = trim(clean_param((string) ($payload['other'] ?? ''), PARAM_TEXT));
+                    if ($othertext === '') {
+                        throw new \moodle_exception('survey_error_other_required', 'local_tm_course', '', $item['title']);
+                    }
+                }
+            } else if ($qtype === self::TYPE_MULTI) {
+                $rawopts = $payload['options'] ?? $payload['option'] ?? [];
+                if (!is_array($rawopts)) {
+                    $rawopts = [$rawopts];
+                }
+                foreach ($rawopts as $rawoid) {
+                    $oid = (int) clean_param((string) $rawoid, PARAM_INT);
+                    if ($oid > 0 && isset($optionsbyid[$oid])) {
+                        $optionids[] = $oid;
+                    }
+                }
+                $optionids = array_values(array_unique($optionids));
+                if (!$optionids) {
+                    if ($required) {
+                        throw new \moodle_exception('survey_error_required', 'local_tm_course', '', $item['title']);
+                    }
+                    continue;
+                }
+                $needsother = false;
+                foreach ($optionids as $oid) {
+                    if (!empty($optionsbyid[$oid]['isother'])) {
+                        $needsother = true;
+                        break;
+                    }
+                }
+                if ($needsother) {
+                    $othertext = trim(clean_param((string) ($payload['other'] ?? ''), PARAM_TEXT));
+                    if ($othertext === '') {
+                        throw new \moodle_exception('survey_error_other_required', 'local_tm_course', '', $item['title']);
+                    }
+                }
+            } else {
+                throw new \moodle_exception('survey_error_bad_type', 'local_tm_course');
+            }
+
+            $out[] = [
+                'itemid' => $itemid,
+                'valueint' => $valueint,
+                'valuetext' => $valuetext,
+                'othertext' => $othertext,
+                'optionids' => $qtype === self::TYPE_MULTI ? $optionids : [],
+            ];
+        }
+        return $out;
     }
 }

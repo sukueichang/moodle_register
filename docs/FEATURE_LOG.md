@@ -22,12 +22,26 @@
 
 ---
 
+## 2026-10-06 — 課程問卷 V1 階段 2（學員填答）
+
+- **需求：** Phase 1 Owner 驗收 PASS 後，依 SPEC §59 實作學員填答：`my_records` 入口（含 `linked_userid`）、`survey.php`、開放／釘選、`enrolid` 唯一提交、送出後唯讀。
+- **決策：** 不以出席為條件；開放看 `svpin.opens_at`／`starttime`；`ensure_session_survey_pin` 掛在問卷頁與 `my_records`；`lock_pin_before_starttime_edit` 接到 `edit_session` 存檔前。不做 QR／投影／統計／Excel。
+- **影響範圍：** `survey_manager`、`survey.php`、`my_records.php`、`enrolment_manager::get_user_records`、`edit_session.php`、tests、語系、`version.php`。無新資料表。
+- **版本／狀態：** **5.27.0（`2026100600`）交付待 Owner Phase 2 人工驗收。** PHPUnit 本機無 Moodle 環境則不得記 PASS。不合併 `main`。
+
+## 2026-10-06 — 問卷階段 1 Owner 驗收 PASS
+
+- **需求：** Phase 1 管理端人工驗收（含選項多行、題型動態欄位、「其他」不重複）。
+- **決策：** 記錄為 **PASS**。已知：本機未跑 PHPUnit；版本凍結／場次釘選完整整合驗收留待 Phase 2 有真實開放與提交流程後一併做。
+- **影響範圍：** 僅文件（FEATURE_LOG／SPEC 狀態）。
+- **版本／狀態：** **Phase 1 已驗收（5.26.0）。** 進入 Phase 2。
+
 ## 2026-10-05 — 問卷階段 1 驗收 UI 修正（選項多行／依題型顯示）
 
 - **需求：** Phase 1 人工驗收：選項「一行一個」實為單行 input；所有題型同時顯示量表／其他／選項欄位。
 - **決策：** 選項改 textarea（後端按行解析；「其他」仍只靠 allowother，不寫進選項列）。管理 UI 依題型即時顯示／隱藏欄位（隱藏不 disabled，避免誤清值）。單選與複選皆可允許「其他」（同步更新 SPEC §59）。
 - **影響範圍：** `admin/surveys.php`、`survey_manager`、tests、SPEC／FEATURE_LOG。無 DB／version 變更。
-- **版本／狀態：** **5.26.0 上修正，待 Owner 複測。** 未開階段 2、不合併 `main`。
+- **版本／狀態：** **5.26.0；Owner 複測後於 2026-10-06 記 PASS。**
 
 ## 2026-10-05 — 問卷分支整合 main 5.25.0
 

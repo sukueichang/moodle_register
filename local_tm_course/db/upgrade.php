@@ -1921,6 +1921,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100200, 'local', 'tm_course');
     }
 
+    // 2026100600 — Survey stage 2 learner fill-in (code only; tables already exist).
+    if ($oldversion < 2026100600) {
+        upgrade_plugin_savepoint(true, 2026100600, 'local', 'tm_course');
+    }
+
     return true;
 }
 

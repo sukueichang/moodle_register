@@ -51,7 +51,7 @@
 | TCMS 同步 | `classes/tcms_sync_manager.php`、`classes/tcms_endpoint.php`（VM：`https://tcms.tm-robot.com`） |
 | 證書 | 整合 `mod_customcert` |
 | 批改申請 | `grading/*`、`classes/grading_request_manager.php`（見 §58） |
-| 課程問卷 | 規格見 §59。階段 1：`admin/surveys.php`、`classes/survey_manager.php`。階段 2–4 尚未實作 |
+| 課程問卷 | 規格見 §59。階段 1：`admin/surveys.php`、`classes/survey_manager.php`。階段 2：`survey.php`、`my_records.php` 入口。階段 3–4 尚未實作 |
 
 ### 0.4a TCMS 同步（Moodle → VM，5.19.0）
 
@@ -2249,7 +2249,7 @@ TM AI Cobot 推廣課程的九題只是 §59.10 的驗收案例。題幹、選�
 
 Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只存原始答案，不做商機分數或自動排序。
 
-階段 1（問卷管理、題型、課程指定、啟用停用、版本、資料表）已實作。階段 2–4（學員填答、QR 投影、統計與 Excel）尚未開始。`ensure_session_survey_pin()` 與開放後改開始時間的稽核函式已可呼叫並有測試，但尚未接到場次編輯頁或排程。
+階段 1（問卷管理、題型、課程指定、啟用停用、版本、資料表）已實作，**Owner 人工驗收 PASS（2026-10-06）**。階段 2（學員填答）實作中／待驗收。階段 3–4（QR 投影、統計與 Excel）尚未開始。`ensure_session_survey_pin()` 掛在學員問卷頁與 `my_records`；`lock_pin_before_starttime_edit()` 接到 `edit_session.php` 存檔前。補釘排程仍可於後續階段補強。
 
 ### 59.1 範圍
 
@@ -2306,7 +2306,7 @@ Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只�
 
 開放後若管理員修改 `starttime`：
 
-- 先保證釘選已存在（若當時已達舊的開始時間）。由 `survey_manager::lock_pin_before_starttime_edit()` 負責；階段 1 尚未接到 `edit_session.php`。
+- 先保證釘選已存在（若當時已達舊的開始時間）。由 `survey_manager::lock_pin_before_starttime_edit()` 負責；階段 2 已接到 `edit_session.php` 存檔前。
 - 場次列的 `starttime` 仍可更新（課表本身照舊）。
 - `svpin.opens_at` 與 `svpin.versionid` 不變。
 - 寫一筆 `svaud`：`sessionid`、舊開始時間、新開始時間、操作者、時間。
@@ -2392,18 +2392,19 @@ Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只�
 
 階段 1 已新增：`classes/survey_manager.php`、`admin/surveys.php`、`tests/survey_manager_test.php`、語系、`db/install.xml`、`db/upgrade.php`、`version.php`。導覽只給 `manage`。
 
-尚未新增：`survey.php`、`admin/survey_results.php`、`admin/survey_board.php`、`admin/survey_progress.php`。尚未修改 `my_records.php`、`class_prep.php`、場次存檔、`db/tasks.php`。
+階段 2 已新增／修改：`survey.php`、`my_records.php`（問卷欄）、`enrolment_manager::get_user_records`（含 `linked_userid`）、`edit_session.php`（釘選稽核）。尚未新增：`admin/survey_results.php`、`admin/survey_board.php`、`admin/survey_progress.php`。尚未修改 `class_prep.php`、`db/tasks.php`。
 
 ### 59.13 開發階段與驗收
 
-**階段 1 — 問卷與版本（本分支）**
+**階段 1 — 問卷與版本（本分支）** — **Owner 驗收 PASS（2026-10-06）**
 
 - Admin 可新增、編輯、啟用、停用，並把一份問卷指定給一門課。
 - 四種題型、區塊、排序、必填、單選／複選「其他」、選項一行一個可存後再讀出；管理 UI 依題型動態顯示設定欄位。
 - 一門課不能同時有兩筆課程指定。
 - 沒有填答也沒有釘選時可直接改；一旦凍結，再存就產生新版本，舊題列不被改寫。
+- 已知：本機未跑 PHPUnit；凍結／釘選完整整合驗收併 Phase 2。
 
-**階段 2 — 學員填答** 尚未開始。見上一輪驗收：`my_records` 三種狀態、未開放不能送、不以出席為條件、`enrolid` 唯一、送出後只能看。
+**階段 2 — 學員填答** 實作中／待 Owner 驗收。`my_records` 三種狀態、未開放不能送、不以出席為條件、`enrolid` 唯一、送出後只能看、含 `linked_userid` 保留名額。
 
 **階段 3 — QR 與投影** 尚未開始。
 

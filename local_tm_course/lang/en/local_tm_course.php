@@ -1475,5 +1475,21 @@ $string['survey_error_notfound'] = 'Survey not found.';
 $string['survey_error_bad_type'] = 'That question type is not supported.';
 $string['survey_error_options_required'] = 'Choice question “{$a}” needs at least one option.';
 $string['survey_back'] = 'Back to surveys';
+$string['survey_column'] = 'Survey';
+$string['survey_learner_title'] = 'Course survey';
+$string['survey_back_records'] = 'Back to my records';
+$string['survey_not_open'] = 'Not open yet';
+$string['survey_fill'] = 'Fill survey';
+$string['survey_view_answers'] = 'View answers';
+$string['survey_view_only'] = 'Submitted. You can view your answers but cannot change them.';
+$string['survey_submit'] = 'Submit survey';
+$string['survey_submitted'] = 'Survey submitted.';
+$string['survey_error_not_eligible'] = 'You are not eligible to fill this survey.';
+$string['survey_error_not_open'] = 'This survey is not open yet.';
+$string['survey_error_no_survey'] = 'No survey is available for this session.';
+$string['survey_error_already_submitted'] = 'You have already submitted this survey.';
+$string['survey_error_required'] = 'Please answer required question “{$a}”.';
+$string['survey_error_bad_answer'] = 'Invalid answer for “{$a}”.';
+$string['survey_error_other_required'] = 'Please enter text for “Other” on “{$a}”.';
 
 
