@@ -3,6 +3,15 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.27.4] - 2026-10-06 - CID-embedded email logos
+
+### Fixed
+- Batch account HTML email embeds logos as CID attachments (no public HTTP fetch). Addresses live `pluginfile` `filenotfound` when opening img URLs.
+- Hardened `emaillogo` pluginfile handler (runs before login/context gates; flexible args; base64 fallback if disk image invalid).
+
+### Notes
+- 版號 `2026100604`。強制改密碼／Survey／文案 layout 未改。不 merge `main`。
+
 ## [5.27.3] - 2026-10-06 - Email logos via public pluginfile
 
 ### Fixed

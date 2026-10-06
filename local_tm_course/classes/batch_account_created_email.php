@@ -106,10 +106,22 @@ class batch_account_created_email {
     }
 
     /**
+     * CID identifiers used when embedding logos in outbound HTML email.
+     *
+     * @return array{tm_robot:string,training_center:string}
+     */
+    public static function logo_cids(): array {
+        return [
+            'tm_robot' => 'cid:tm_robot_logo',
+            'training_center' => 'cid:training_center_logo',
+        ];
+    }
+
+    /**
      * Email-safe HTML (table layout + inline CSS). No JavaScript.
      *
      * @param array<string,string> $tokens
-     * @param array{tm_robot?:string,training_center?:string}|null $logourls Override public logo URLs (tests).
+     * @param array{tm_robot?:string,training_center?:string}|null $logourls Override logo URLs/CIDs (tests).
      */
     public static function build_html(array $tokens, ?array $logourls = null): string {
         $learner = self::e(self::token($tokens, 'learner'));
@@ -120,7 +132,8 @@ class batch_account_created_email {
         $login = self::e(self::token($tokens, 'login_url'));
         $reset = self::e(self::token($tokens, 'reset_url'));
 
-        $logos = $logourls ?? self::logo_urls();
+        // Default to CID so Gmail/Outlook render logos without fetching pluginfile HTTP.
+        $logos = $logourls ?? self::logo_cids();
         $tmlogo = self::e((string)($logos['tm_robot'] ?? ''));
         $tclogo = self::e((string)($logos['training_center'] ?? ''));
 

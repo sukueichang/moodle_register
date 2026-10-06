@@ -84,7 +84,12 @@ class batch_account_created_email_test extends \advanced_testcase {
         $this->assertFileExists($root . '/' . $paths['tm_robot']);
         $this->assertFileExists($root . '/' . $paths['training_center']);
         $this->assertFileExists($root . '/classes/email_logo_assets.php');
-        $this->assertFileExists($root . '/email_logo.php');
+    }
+
+    public function test_default_html_uses_cid_logo_refs(): void {
+        $html = batch_account_created_email::build_html($this->sample_tokens());
+        $this->assertStringContainsString('cid:tm_robot_logo', $html);
+        $this->assertStringContainsString('cid:training_center_logo', $html);
     }
 
     public function test_logo_urls_point_at_public_pluginfile_emaillogo(): void {

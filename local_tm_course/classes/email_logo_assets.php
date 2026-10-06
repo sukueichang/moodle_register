@@ -19,7 +19,14 @@ class email_logo_assets {
         $disk = self::disk_path($key);
         if ($disk !== null && is_readable($disk)) {
             $raw = file_get_contents($disk);
-            return ($raw === false || $raw === '') ? null : $raw;
+            // Prefer disk only when it looks like a real image; otherwise fall through
+            // to embedded base64 (partial/empty uploads have caused filenotfound).
+            if ($raw !== false && strlen($raw) > 32) {
+                $ctype = self::content_type($raw);
+                if ($ctype === 'image/png' || $ctype === 'image/jpeg' || $ctype === 'image/gif') {
+                    return $raw;
+                }
+            }
         }
         $map = self::base64_map();
         if (!isset($map[$key])) {

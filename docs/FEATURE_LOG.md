@@ -22,6 +22,12 @@
 
 ---
 
+## 2026-10-06 — Email Logo pluginfile filenotfound → CID 內嵌
+
+- **需求：** 點開 pluginfile Logo URL 仍 `filenotfound`（stack：`lib.php` → `send_file_not_found`）。
+- **決策：** 實寄改 **CID embed**（`get_mailer` + `AddStringEmbeddedImage`），信件不依賴公開 HTTP；並加固 `emaillogo` pluginfile（先於 login／context 檢查）。
+- **版本／狀態：** **5.27.4（`2026100604`）；待實寄複測。**
+
 ## 2026-10-06 — Email Logo 第二輪 FAIL（endpoint 404）
 
 - **需求：** 實寄仍破圖；強制改密碼已 PASS、勿動。

@@ -52,10 +52,7 @@ $tokens = [
 ];
 
 $plain = batch_account_created_email::build_plain($tokens);
-$html = batch_account_created_email::build_html($tokens, [
-    'tm_robot' => 'https://cdn.example.test/pluginfile.php/1/local_tm_course/emaillogo/0/tm_robot_logo.png',
-    'training_center' => 'https://cdn.example.test/pluginfile.php/1/local_tm_course/emaillogo/0/training_center_logo.png',
-]);
+$html = batch_account_created_email::build_html($tokens);
 
 assert_true(str_contains($plain, 'Username: waylon.su_very_long_username_example'), 'plain username');
 assert_true(str_contains($plain, 'Initial password: Ab1!XyZ9_QwertyLongPass'), 'plain password');
@@ -68,12 +65,11 @@ assert_true(str_contains($html, 'Sign in / 登入學習平台'), 'html primary b
 assert_true(str_contains($html, 'Forgot password / 忘記密碼'), 'html secondary button');
 assert_true(str_contains($html, 'href="https://moodle.example.test/login/index.php"'), 'html login href');
 assert_true(!str_contains(strtolower($html), '<script'), 'no javascript');
-assert_true(str_contains($html, 'pluginfile.php/1/local_tm_course/emaillogo/0/tm_robot_logo.png'), 'tm logo pluginfile in html');
-assert_true(str_contains($html, 'pluginfile.php/1/local_tm_course/emaillogo/0/training_center_logo.png'), 'training logo pluginfile in html');
+assert_true(str_contains($html, 'cid:tm_robot_logo'), 'tm logo cid in html');
+assert_true(str_contains($html, 'cid:training_center_logo'), 'training logo cid in html');
 assert_true(is_file($plugin . '/pix/email/tm_robot_logo.png'), 'tm logo asset exists');
 assert_true(is_file($plugin . '/pix/email/training_center_logo.png'), 'training logo asset exists');
 assert_true(is_file($plugin . '/classes/email_logo_assets.php'), 'embedded logo assets class exists');
-assert_true(is_file($plugin . '/email_logo.php'), 'public email_logo.php exists');
 assert_true(!preg_match('/Sign in:\s*https:\/\//i', $html), 'html not bare login line');
 
 // Confirm lib.php serves emaillogo without login gate first (within pluginfile only).
@@ -87,6 +83,10 @@ if (preg_match('/function local_tm_course_pluginfile\(.*?^\}/ms', $libsrc, $m)) 
 } else {
     assert_true(false, 'emaillogo before login check');
 }
+
+$notifysrc = file_get_contents($plugin . '/classes/notification_helper.php');
+assert_true(str_contains($notifysrc, 'addStringEmbeddedImage') || str_contains($notifysrc, 'AddStringEmbeddedImage'), 'CID embed send');
+assert_true(str_contains($notifysrc, 'logo_cids'), 'uses logo_cids');
 // Confirm force-password preference (must remain).
 $enrolsrc = file_get_contents($plugin . '/classes/enrolment_manager.php');
 assert_true(str_contains($enrolsrc, "set_user_preference('auth_forcepasswordchange', 1"), 'force pw preference set');

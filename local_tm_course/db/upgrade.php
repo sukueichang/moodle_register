@@ -1946,6 +1946,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100603, 'local', 'tm_course');
     }
 
+    // 2026100604 — CID-embedded logos in batch account email + hardened pluginfile (no DB).
+    if ($oldversion < 2026100604) {
+        upgrade_plugin_savepoint(true, 2026100604, 'local', 'tm_course');
+    }
+
     return true;
 }
 
