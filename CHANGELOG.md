@@ -3,6 +3,16 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.25.1] - 2026-10-06 - 批次建帳通知 HTML Email
+
+### Changed
+- `batch_account_created` 改為品牌化 HTML Email（雙 Logo、帳號／密碼醒目區、Sign in／Forgot password 按鈕），並保留 plain-text fallback。
+- 管理員仍可編輯主旨與收件對象；內文版面改為系統固定，既有 body 設定保留但不參與寄信。
+
+### Notes
+- 版號 `2026100152`（高於 `main` 5.25.0 / `2026100151`，低於問卷分支 `2026100200`）。無資料表變更。
+- 建帳、隨機初始密碼、`forcepasswordchange`、learner／submitter 收件邏輯不變。
+
 ## [5.25.0] - 2026-10-02 - 授課語言同步合進 main
 
 ### Notes

@@ -750,8 +750,10 @@ $string['notify_event_reservation_submitted_desc'] = 'Triggered when a user form
 $string['notify_event_batch_enrol_completed'] = 'Batch enrolment submitted';
 $string['notify_event_batch_enrol_completed_desc'] = 'Triggered when a user successfully submits a batch enrolment (pending records created).';
 $string['notify_event_batch_account_created'] = 'Batch account created';
-$string['notify_event_batch_account_created_desc'] = 'Triggered when batch enrolment auto-creates a new Moodle account. By default, email goes to the learner and the batch submitter. Each message merges both templates: subject is "English subject ｜ Traditional Chinese subject", body is the full English template followed by the full Chinese template (edit each below).';
-$string['notify_batch_account_bilingual_admin_hint'] = 'This notification is always bilingual: subject = English subject ｜ Chinese subject; body = English body first, then Chinese body (ignores each recipient\'s personal language).';
+$string['notify_event_batch_account_created_desc'] = 'Triggered when batch enrolment auto-creates a new Moodle account. By default, email goes to the learner and the batch submitter. Subject remains bilingual from the templates below; the branded HTML body (with credentials highlight and buttons) is system-fixed.';
+$string['notify_batch_account_bilingual_admin_hint'] = 'Subject is always bilingual: English subject ｜ Traditional Chinese subject (ignores each recipient\'s personal language).';
+$string['notify_batch_account_html_layout_hint'] = 'Email body uses a fixed branded HTML layout (logos, credential card, Sign in / Forgot password buttons, English + Traditional Chinese copy). Admins do not edit HTML. Existing body template settings are kept for compatibility but are not used when sending.';
+$string['notify_batch_account_body_readonly_hint'] = 'Body template is read-only (legacy storage only). Outgoing mail uses the system HTML layout.';
 $string['notify_tpl_new_enrolment_subject'] = '[TM Course] New enrolment: {{session}}';
 $string['notify_tpl_new_enrolment_body'] = 'Learner {{learner}} submitted enrolment for {{session}} (status: {{status}}).';
 $string['notify_tpl_approval_result_subject'] = '[TM Course] {{session}} — {{status}}';

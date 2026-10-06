@@ -22,6 +22,16 @@
 
 ---
 
+## 2026-10-06 — 批次建帳通知 HTML Email
+
+- **需求：** `batch_account_created` 純文字信要求「先登入再改密碼」卻未顯示初始密碼；改為品牌化 HTML（雙 Logo、帳號／密碼醒目、按鈕），並保留 plain-text。
+- **決策：**
+  1. 固定系統 HTML layout + plain fallback；主旨／收件仍可由 Admin 設定；既有 body config 不刪、寄信不再用。
+  2. Logo 放 `pix/email/`，以 `/local/tm_course/pix/email/...` 公開 URL 載入（不需登入）。
+  3. 不改建帳、隨機密碼、`forcepasswordchange`、learner＋submitter 同信含密碼。
+- **影響範圍：** `batch_account_created_email.php`、`notification_helper.php`、`settings/notifications.php`、語系、`pix/email/*`、測試、version **5.25.1**。
+- **版本／狀態：** **5.25.1（`2026100152`）；進行中（待 Email 實寄驗收）**
+
 ## 2026-10-02 — TCMS 同步新增授課語言
 
 - **需求：** Moodle 場次已有 `teaching_language`（`zh_tw` / `en`），同步到 TCMS 的 payload 沒有帶。要在既有 `POST /api/integrations/moodle/sessions` 加上 `teachingLanguage`，原值傳送，不另做語言欄位、資料表或設定畫面。
