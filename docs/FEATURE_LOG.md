@@ -22,6 +22,15 @@
 
 ---
 
+## 2026-10-06 — Email 驗收 FAIL 修正（Logo 404 + 強制改密碼）
+
+- **需求：** 整合 ZIP 人工驗收：兩 Logo 破圖；初始密碼可登入但未強制改密碼。
+- **決策／根因：**
+  1. 實測 `https://…/mymoodle/local/tm_course/pix/email/*.png` → **HTTP 404**（非 redirect login）；`styles.css`／`batch_enrol.js` 可 200。改以無登入的 `email_logo.php?name=…` 白名單讀取原始 `pix/email` PNG。
+  2. Moodle 3.10 強制改密碼用 preference `auth_forcepasswordchange`，非 `mdl_user.forcepasswordchange`。新建帳呼叫 `set_user_preference(..., 1)`；link 既有帳不設。
+- **影響範圍：** `email_logo.php`、`batch_account_created_email.php`、`enrolment_manager.php`、tests、verify script；version **5.27.2**。不改 Survey。
+- **版本／狀態：** **5.27.2（`2026100602`）；待 Email 複測。**
+
 ## 2026-10-06 — 整合問卷 + 批次建帳 HTML Email
 
 - **需求：** `feature/course-survey-admin`（5.27.0）與 `feature/batch-account-html-email`（5.25.1）平行 diverged；需單一 ZIP 同時含問卷 Phase 1/2 與品牌 HTML 建帳信。

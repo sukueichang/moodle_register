@@ -3,6 +3,15 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.27.2] - 2026-10-06 - Email logo public endpoint + force password preference
+
+### Fixed
+- Batch account HTML email logos: serve via public `email_logo.php` (no login) after direct `/pix/email/*.png` returned HTTP 404 on the test site.
+- New batch learners: set Moodle preference `auth_forcepasswordchange=1` so first login forces password change (replacing incorrect `user.forcepasswordchange` column write).
+
+### Notes
+- 版號 `2026100602`。原始 Logo 檔未改動。不 merge `main`。
+
 ## [5.27.1] - 2026-10-06 - 整合問卷 + 批次建帳 HTML Email
 
 ### Added

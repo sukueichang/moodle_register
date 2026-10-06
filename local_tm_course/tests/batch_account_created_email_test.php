@@ -83,12 +83,15 @@ class batch_account_created_email_test extends \advanced_testcase {
         $root = dirname(__DIR__);
         $this->assertFileExists($root . '/' . $paths['tm_robot']);
         $this->assertFileExists($root . '/' . $paths['training_center']);
+        $this->assertFileExists($root . '/email_logo.php');
     }
 
-    public function test_logo_urls_point_at_public_plugin_pix(): void {
+    public function test_logo_urls_point_at_public_email_logo_endpoint(): void {
         $urls = batch_account_created_email::logo_urls();
-        $this->assertStringContainsString('/local/tm_course/pix/email/tm_robot_logo.png', $urls['tm_robot']);
-        $this->assertStringContainsString('/local/tm_course/pix/email/training_center_logo.png', $urls['training_center']);
+        $this->assertStringContainsString('/local/tm_course/email_logo.php', $urls['tm_robot']);
+        $this->assertStringContainsString('name=tm_robot_logo', $urls['tm_robot']);
+        $this->assertStringContainsString('/local/tm_course/email_logo.php', $urls['training_center']);
+        $this->assertStringContainsString('name=training_center_logo', $urls['training_center']);
     }
 
     public function test_provision_creates_user_with_password_and_does_not_break_existing(): void {
@@ -114,13 +117,10 @@ class batch_account_created_email_test extends \advanced_testcase {
         $user = $DB->get_record('user', ['id' => $created['userid']], '*', MUST_EXIST);
         $this->assertSame($email, \core_text::strtolower($user->email));
         $this->assertSame('manual', $user->auth);
-        $usertable = new \xmldb_table('user');
-        $forcepwfield = new \xmldb_field('forcepasswordchange');
-        if ($DB->get_manager()->field_exists($usertable, $forcepwfield)) {
-            $this->assertEquals(1, (int)$DB->get_field('user', 'forcepasswordchange', ['id' => $user->id]));
-        }
+        // Moodle core uses user preference auth_forcepasswordchange (not a user-table column).
+        $this->assertEquals(1, (int) get_user_preferences('auth_forcepasswordchange', 0, $user->id));
 
-        // Existing account path: no second create, empty initial password.
+        // Existing account path: no second create, empty initial password, no force-flag change required.
         $again = enrolment_manager::provision_or_link_batch_user(
             0,
             $email,
@@ -134,6 +134,8 @@ class batch_account_created_email_test extends \advanced_testcase {
         $this->assertSame((int)$user->id, (int)$again['userid']);
         $this->assertSame('', $again['initial_password']);
         $this->assertSame(1, $DB->count_records('user', ['email' => $email, 'deleted' => 0, 'mnethostid' => $CFG->mnet_localhost_id]));
+        // Preference remains 1 from create (link path must not clear it; also must not be unset-only).
+        $this->assertEquals(1, (int) get_user_preferences('auth_forcepasswordchange', 0, $user->id));
     }
 
     public function test_default_targets_unchanged_for_batch_account_created(): void {

@@ -1936,6 +1936,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100601, 'local', 'tm_course');
     }
 
+    // 2026100602 — Public email_logo.php + auth_forcepasswordchange preference (no DB).
+    if ($oldversion < 2026100602) {
+        upgrade_plugin_savepoint(true, 2026100602, 'local', 'tm_course');
+    }
+
     return true;
 }
 

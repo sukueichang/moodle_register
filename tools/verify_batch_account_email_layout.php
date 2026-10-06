@@ -53,8 +53,8 @@ $tokens = [
 
 $plain = batch_account_created_email::build_plain($tokens);
 $html = batch_account_created_email::build_html($tokens, [
-    'tm_robot' => 'https://cdn.example.test/local/tm_course/pix/email/tm_robot_logo.png',
-    'training_center' => 'https://cdn.example.test/local/tm_course/pix/email/training_center_logo.png',
+    'tm_robot' => 'https://cdn.example.test/local/tm_course/email_logo.php?name=tm_robot_logo',
+    'training_center' => 'https://cdn.example.test/local/tm_course/email_logo.php?name=training_center_logo',
 ]);
 
 assert_true(str_contains($plain, 'Username: waylon.su_very_long_username_example'), 'plain username');
@@ -68,11 +68,17 @@ assert_true(str_contains($html, 'Sign in / 登入學習平台'), 'html primary b
 assert_true(str_contains($html, 'Forgot password / 忘記密碼'), 'html secondary button');
 assert_true(str_contains($html, 'href="https://moodle.example.test/login/index.php"'), 'html login href');
 assert_true(!str_contains(strtolower($html), '<script'), 'no javascript');
-assert_true(str_contains($html, 'pix/email/tm_robot_logo.png'), 'tm logo in html');
-assert_true(str_contains($html, 'pix/email/training_center_logo.png'), 'training logo in html');
+assert_true(str_contains($html, 'email_logo.php?name=tm_robot_logo'), 'tm logo endpoint in html');
+assert_true(str_contains($html, 'email_logo.php?name=training_center_logo'), 'training logo endpoint in html');
 assert_true(is_file($plugin . '/pix/email/tm_robot_logo.png'), 'tm logo asset exists');
 assert_true(is_file($plugin . '/pix/email/training_center_logo.png'), 'training logo asset exists');
+assert_true(is_file($plugin . '/email_logo.php'), 'public email_logo.php exists');
 assert_true(!preg_match('/Sign in:\s*https:\/\//i', $html), 'html not bare login line');
+
+// Confirm provision path uses preference name (source contract).
+$enrolsrc = file_get_contents($plugin . '/classes/enrolment_manager.php');
+assert_true(str_contains($enrolsrc, "set_user_preference('auth_forcepasswordchange', 1"), 'force pw preference set');
+assert_true(!str_contains($enrolsrc, "set_field('user', 'forcepasswordchange'"), 'no user.forcepasswordchange column write');
 
 echo $fail === 0 ? "\nAll offline checks passed.\n" : "\n{$fail} check(s) failed.\n";
 exit($fail === 0 ? 0 : 1);

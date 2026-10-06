@@ -20,14 +20,22 @@ class batch_account_created_email {
     public const COLOR_TEAL = '#006D8A';
 
     /**
-     * Absolute public URLs for email logos (plugin pix; no login required).
+     * Absolute public URLs for email logos.
+     *
+     * Served by email_logo.php (no login) so Gmail/Outlook can HTTP GET the PNG
+     * without Moodle session cookies. Direct /pix/... paths are unreliable on
+     * some installs (404 even when the plugin PHP is present).
      *
      * @return array{tm_robot:string,training_center:string}
      */
     public static function logo_urls(): array {
         return [
-            'tm_robot' => (new \moodle_url('/local/tm_course/pix/email/tm_robot_logo.png'))->out(false),
-            'training_center' => (new \moodle_url('/local/tm_course/pix/email/training_center_logo.png'))->out(false),
+            'tm_robot' => (new \moodle_url('/local/tm_course/email_logo.php', [
+                'name' => 'tm_robot_logo',
+            ]))->out(false),
+            'training_center' => (new \moodle_url('/local/tm_course/email_logo.php', [
+                'name' => 'training_center_logo',
+            ]))->out(false),
         ];
     }
 
