@@ -83,22 +83,33 @@ class batch_account_created_email_test extends \advanced_testcase {
         $root = dirname(__DIR__);
         $this->assertFileExists($root . '/' . $paths['tm_robot']);
         $this->assertFileExists($root . '/' . $paths['training_center']);
-        $this->assertFileExists($root . '/classes/email_logo_assets.php');
+        $this->assertStringEndsWith('.jpg', $paths['training_center']);
+        $this->assertFalse(is_file($root . '/email_logo.php'));
+        $this->assertFalse(is_file($root . '/classes/email_logo_assets.php'));
     }
 
-    public function test_default_html_uses_data_uri_logos(): void {
-        $html = batch_account_created_email::build_html($this->sample_tokens());
-        $this->assertStringContainsString('data:image/png;base64,', $html);
-        $this->assertStringContainsString('data:image/jpeg;base64,', $html);
-    }
-
-    public function test_logo_urls_point_at_public_pluginfile_emaillogo(): void {
+    public function test_default_html_uses_theme_image_logos(): void {
         $urls = batch_account_created_email::logo_urls();
-        $this->assertStringContainsString('/pluginfile.php/', $urls['tm_robot']);
-        $this->assertStringContainsString('/local_tm_course/emaillogo/', $urls['tm_robot']);
-        $this->assertStringContainsString('tm_robot_logo.png', $urls['tm_robot']);
-        $this->assertStringContainsString('/pluginfile.php/', $urls['training_center']);
-        $this->assertStringContainsString('training_center_logo.png', $urls['training_center']);
+        $html = batch_account_created_email::build_html($this->sample_tokens());
+        $this->assertStringContainsString('/theme/image.php/', $urls['tm_robot']);
+        $this->assertStringContainsString('email/tm_robot_logo', $urls['tm_robot']);
+        $this->assertStringContainsString('/theme/image.php/', $urls['training_center']);
+        $this->assertStringContainsString('email/training_center_logo', $urls['training_center']);
+        $this->assertStringContainsString($urls['tm_robot'], $html);
+        $this->assertStringContainsString($urls['training_center'], $html);
+        $this->assertStringNotContainsString('data:image/', $html);
+    }
+
+    public function test_logo_urls_use_moodle_image_url_api(): void {
+        $urls = batch_account_created_email::logo_urls();
+        $this->assertStringContainsString('/theme/image.php/', $urls['tm_robot']);
+        $this->assertStringContainsString('local_tm_course', $urls['tm_robot']);
+        $this->assertStringContainsString('email/tm_robot_logo', $urls['tm_robot']);
+        $this->assertStringNotContainsString('pluginfile.php', $urls['tm_robot']);
+        $this->assertStringNotContainsString('email_logo.php', $urls['tm_robot']);
+        $this->assertStringContainsString('/theme/image.php/', $urls['training_center']);
+        $this->assertStringContainsString('email/training_center_logo', $urls['training_center']);
+        $this->assertStringNotContainsString('pluginfile.php', $urls['training_center']);
     }
 
     public function test_provision_creates_user_with_password_and_does_not_break_existing(): void {

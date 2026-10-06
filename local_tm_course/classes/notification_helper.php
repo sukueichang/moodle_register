@@ -419,10 +419,9 @@ class notification_helper {
 
     /**
      * Send batch-account-created mail: bilingual subject from admin templates;
-     * body uses fixed branded HTML with data-URI logos + plain-text fallback.
+     * body uses fixed branded HTML (theme/image.php logos) + plain-text fallback.
      *
-     * Uses Moodle email_to_user() (same path as other notifications) so delivery
-     * is not broken by a custom PHPMailer/CID setup.
+     * Uses Moodle email_to_user() (same path as other notifications).
      */
     private static function send_batch_account_created_bilingual_message(int $useridto, array $tokens): void {
         require_once(__DIR__ . '/batch_account_created_email.php');
@@ -439,7 +438,7 @@ class notification_helper {
         }
 
         $plain = batch_account_created_email::build_plain($tokens);
-        $html = batch_account_created_email::build_html($tokens, batch_account_created_email::logo_data_uris());
+        $html = batch_account_created_email::build_html($tokens);
         self::send_message($useridto, 'batch_account_created', $subject, $plain, $html);
     }
 

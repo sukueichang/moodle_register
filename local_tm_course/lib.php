@@ -264,41 +264,6 @@ function local_tm_course_dashboard_widget_enabled(string $widgetkey, string $aud
  * Serve local_tm_course files.
  */
 function local_tm_course_pluginfile($course, $cm, $context, $filearea, $args, $forcedownload, array $options = []) {
-    // Public email logos FIRST — no login, no context gate.
-    // (Partial deploys previously left callers generating emaillogo URLs while an
-    // older lib.php still rejected non-resvcheck areas.)
-    if ($filearea === 'emaillogo') {
-        require_once(__DIR__ . '/classes/email_logo_assets.php');
-        if (!is_array($args)) {
-            $args = [];
-        }
-        $filename = '';
-        foreach (array_reverse($args) as $part) {
-            $part = (string) $part;
-            if ($part !== '' && $part !== '/' && $part !== '0') {
-                $filename = $part;
-                break;
-            }
-        }
-        $filename = rawurldecode($filename);
-        $key = \local_tm_course\email_logo_assets::key_from_filename($filename);
-        // Also allow key-style names without extension.
-        if ($key === null && \local_tm_course\email_logo_assets::filename($filename) !== null) {
-            $key = $filename;
-        }
-        if ($key === null) {
-            send_file_not_found();
-        }
-        $bytes = \local_tm_course\email_logo_assets::image_bytes($key);
-        if ($bytes === null) {
-            send_file_not_found();
-        }
-        $outname = \local_tm_course\email_logo_assets::filename($key);
-        $mimetype = \local_tm_course\email_logo_assets::content_type($bytes);
-        send_file($bytes, $outname, DAYSECS, 0, true, false, $mimetype, false);
-        return true;
-    }
-
     if ($context->contextlevel !== CONTEXT_SYSTEM) {
         send_file_not_found();
     }

@@ -3,6 +3,17 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.27.6] - 2026-10-06 - Email logos via Moodle theme/image.php
+
+### Changed
+- Batch-account HTML email logos now use Moodle `$OUTPUT->image_url(..., 'local_tm_course')` → `/theme/image.php/...` (no hand-built URL).
+- Training Center logo renamed to `pix/email/training_center_logo.jpg` to match JPEG magic bytes (bytes unchanged).
+- Removed unused logo workarounds: `email_logo.php`, `email_logo_assets.php`, `emaillogo` pluginfile branch, data-URI / CID logo paths.
+- Outbound mail remains Moodle `email_to_user()`; force-password preference / Survey / email copy layout unchanged.
+
+### Notes
+- 版號 `2026100606`。不 merge `main`。
+
 ## [5.27.5] - 2026-10-06 - Restore email delivery + data-URI logos
 
 ### Fixed

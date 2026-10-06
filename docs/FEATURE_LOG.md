@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-10-06 — Email Logo 改 Moodle 原生 theme/image.php
+
+- **需求：** 多輪 Logo 破圖；停止 pix 直連／email_logo.php／pluginfile emaillogo／CID／data-URI；改用 Moodle `$OUTPUT->image_url`。
+- **根因：** 先前 `<img src>` 指向非 Moodle 原生公開圖路徑，或站上 `pix/email` 未實際落地；data-URI 則被 Gmail 等客戶端擋掉／破圖。
+- **決策：** Logo 走 `$OUTPUT->image_url('email/…', 'local_tm_course')` → `/theme/image.php/...`；TC 檔名改 `.jpg`（內容未重壓）；清掉上述 workaround；寄信維持 `email_to_user`。
+- **版本／狀態：** **5.27.6（`2026100606`）；theme image URL 需站上檔案落地後 HTTP 實測 PASS，再請實寄。**
+
 ## 2026-10-06 — 5.27.4 信發不出去 → 恢復 email_to_user + data-URI Logo
 
 - **需求：** 5.27.4 實寄後信件未送達。

@@ -89,6 +89,16 @@ try {
     if (-not (Test-Path (Join-Path $stagingPlugin 'db\install.xml'))) {
         throw 'Staging copy missing db/install.xml'
     }
+    $requiredLogos = @(
+        'pix\email\tm_robot_logo.png',
+        'pix\email\training_center_logo.jpg'
+    )
+    foreach ($rel in $requiredLogos) {
+        $logoPath = Join-Path $stagingPlugin $rel
+        if (-not (Test-Path -LiteralPath $logoPath)) {
+            throw "Staging copy missing required email logo: $rel"
+        }
+    }
 
     if (Test-Path $zipPath) {
         Remove-Item -LiteralPath $zipPath -Force

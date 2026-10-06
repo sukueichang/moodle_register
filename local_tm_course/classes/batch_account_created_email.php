@@ -20,45 +20,39 @@ class batch_account_created_email {
     public const COLOR_TEAL = '#006D8A';
 
     /**
-     * Absolute public URLs for email logos via core pluginfile.php (no login).
+     * Absolute public URLs for email logos via Moodle core theme image serving.
      *
-     * Direct /pix/... and a standalone email_logo.php returned HTTP 404 on the
-     * test site when those files were not present on disk; pluginfile.php is
-     * always present in Moodle core and is updated with lib.php on ZIP install.
+     * Uses $OUTPUT->image_url() so URLs point at /theme/image.php/... (no hand-built
+     * path). Plugin assets live under pix/email/; image names omit the extension.
      *
      * @return array{tm_robot:string,training_center:string}
      */
     public static function logo_urls(): array {
-        $context = \context_system::instance();
+        global $OUTPUT, $PAGE;
+
+        // Notifications / batch enrol may run before a context is set on $PAGE.
+        if (empty($PAGE->context)) {
+            $PAGE->set_context(\context_system::instance());
+        }
+
         return [
-            'tm_robot' => \moodle_url::make_pluginfile_url(
-                $context->id,
-                'local_tm_course',
-                'emaillogo',
-                0,
-                '/',
-                'tm_robot_logo.png'
-            )->out(false),
-            'training_center' => \moodle_url::make_pluginfile_url(
-                $context->id,
-                'local_tm_course',
-                'emaillogo',
-                0,
-                '/',
-                'training_center_logo.png'
-            )->out(false),
+            'tm_robot' => $OUTPUT->image_url('email/tm_robot_logo', 'local_tm_course')->out(false),
+            'training_center' => $OUTPUT->image_url('email/training_center_logo', 'local_tm_course')->out(false),
         ];
     }
 
     /**
      * Relative plugin paths for logo assets (for tests / packaging checks).
      *
+     * Training Center binary is JPEG — filename must use .jpg so theme/image.php
+     * resolves the correct extension / Content-Type.
+     *
      * @return array{tm_robot:string,training_center:string}
      */
     public static function logo_plugin_paths(): array {
         return [
             'tm_robot' => 'pix/email/tm_robot_logo.png',
-            'training_center' => 'pix/email/training_center_logo.png',
+            'training_center' => 'pix/email/training_center_logo.jpg',
         ];
     }
 
@@ -106,41 +100,10 @@ class batch_account_created_email {
     }
 
     /**
-     * Data-URI logo srcs for HTML email (no public HTTP; works with email_to_user).
-     *
-     * @return array{tm_robot:string,training_center:string}
-     */
-    public static function logo_data_uris(): array {
-        require_once(__DIR__ . '/email_logo_assets.php');
-        $out = ['tm_robot' => '', 'training_center' => ''];
-        foreach (['tm_robot' => 'tm_robot_logo', 'training_center' => 'training_center_logo'] as $slot => $key) {
-            $bytes = email_logo_assets::image_bytes($key);
-            if ($bytes === null) {
-                continue;
-            }
-            $mime = email_logo_assets::content_type($bytes);
-            $out[$slot] = 'data:' . $mime . ';base64,' . base64_encode($bytes);
-        }
-        return $out;
-    }
-
-    /**
-     * CID identifiers (legacy / tests). Prefer logo_data_uris() for outbound mail.
-     *
-     * @return array{tm_robot:string,training_center:string}
-     */
-    public static function logo_cids(): array {
-        return [
-            'tm_robot' => 'cid:tm_robot_logo',
-            'training_center' => 'cid:training_center_logo',
-        ];
-    }
-
-    /**
      * Email-safe HTML (table layout + inline CSS). No JavaScript.
      *
      * @param array<string,string> $tokens
-     * @param array{tm_robot?:string,training_center?:string}|null $logourls Override logo URLs/data-URIs (tests).
+     * @param array{tm_robot?:string,training_center?:string}|null $logourls Override logo URLs (tests).
      */
     public static function build_html(array $tokens, ?array $logourls = null): string {
         $learner = self::e(self::token($tokens, 'learner'));
@@ -151,8 +114,8 @@ class batch_account_created_email {
         $login = self::e(self::token($tokens, 'login_url'));
         $reset = self::e(self::token($tokens, 'reset_url'));
 
-        // Default: data-URI logos so email_to_user can send without pluginfile/CID mailer.
-        $logos = $logourls ?? self::logo_data_uris();
+        // Default: Moodle theme/image.php URLs from $OUTPUT->image_url().
+        $logos = $logourls ?? self::logo_urls();
         $tmlogo = self::e((string)($logos['tm_robot'] ?? ''));
         $tclogo = self::e((string)($logos['training_center'] ?? ''));
 

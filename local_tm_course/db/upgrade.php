@@ -1956,6 +1956,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100605, 'local', 'tm_course');
     }
 
+    // 2026100606 — Email logos via Moodle $OUTPUT->image_url / theme/image.php (no DB).
+    if ($oldversion < 2026100606) {
+        upgrade_plugin_savepoint(true, 2026100606, 'local', 'tm_course');
+    }
+
     return true;
 }
 
