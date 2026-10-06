@@ -22,6 +22,15 @@
 
 ---
 
+## 2026-10-06 — Email Logo 第二輪 FAIL（endpoint 404）
+
+- **需求：** 實寄仍破圖；強制改密碼已 PASS、勿動。
+- **實測：**  
+  `…/email_logo.php?name=tm_robot_logo` → **HTTP 404**、`Content-Type: text/html`、body 同不存在的 PHP（無 MoodleSession）→ **檔案未部署到站台磁碟**。  
+  `styles.css`／`batch_enrol.php` 為 200。
+- **決策：** Logo 改走核心 `pluginfile.php` + `lib.php` `emaillogo`（免登入）；`email_logo_assets` 內嵌原始圖 bytes 作後備；依 magic 回傳 `image/png` 或 `image/jpeg`（Training Center 檔名 png、內容 JPEG）。
+- **版本／狀態：** **5.27.3（`2026100603`）；待實寄複測。**
+
 ## 2026-10-06 — Email 驗收 FAIL 修正（Logo 404 + 強制改密碼）
 
 - **需求：** 整合 ZIP 人工驗收：兩 Logo 破圖；初始密碼可登入但未強制改密碼。

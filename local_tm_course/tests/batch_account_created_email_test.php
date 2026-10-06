@@ -83,15 +83,17 @@ class batch_account_created_email_test extends \advanced_testcase {
         $root = dirname(__DIR__);
         $this->assertFileExists($root . '/' . $paths['tm_robot']);
         $this->assertFileExists($root . '/' . $paths['training_center']);
+        $this->assertFileExists($root . '/classes/email_logo_assets.php');
         $this->assertFileExists($root . '/email_logo.php');
     }
 
-    public function test_logo_urls_point_at_public_email_logo_endpoint(): void {
+    public function test_logo_urls_point_at_public_pluginfile_emaillogo(): void {
         $urls = batch_account_created_email::logo_urls();
-        $this->assertStringContainsString('/local/tm_course/email_logo.php', $urls['tm_robot']);
-        $this->assertStringContainsString('name=tm_robot_logo', $urls['tm_robot']);
-        $this->assertStringContainsString('/local/tm_course/email_logo.php', $urls['training_center']);
-        $this->assertStringContainsString('name=training_center_logo', $urls['training_center']);
+        $this->assertStringContainsString('/pluginfile.php/', $urls['tm_robot']);
+        $this->assertStringContainsString('/local_tm_course/emaillogo/', $urls['tm_robot']);
+        $this->assertStringContainsString('tm_robot_logo.png', $urls['tm_robot']);
+        $this->assertStringContainsString('/pluginfile.php/', $urls['training_center']);
+        $this->assertStringContainsString('training_center_logo.png', $urls['training_center']);
     }
 
     public function test_provision_creates_user_with_password_and_does_not_break_existing(): void {

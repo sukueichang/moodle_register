@@ -1941,6 +1941,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100602, 'local', 'tm_course');
     }
 
+    // 2026100603 — pluginfile emaillogo (public) + embedded logo asset fallback (no DB).
+    if ($oldversion < 2026100603) {
+        upgrade_plugin_savepoint(true, 2026100603, 'local', 'tm_course');
+    }
+
     return true;
 }
 

@@ -20,22 +20,33 @@ class batch_account_created_email {
     public const COLOR_TEAL = '#006D8A';
 
     /**
-     * Absolute public URLs for email logos.
+     * Absolute public URLs for email logos via core pluginfile.php (no login).
      *
-     * Served by email_logo.php (no login) so Gmail/Outlook can HTTP GET the PNG
-     * without Moodle session cookies. Direct /pix/... paths are unreliable on
-     * some installs (404 even when the plugin PHP is present).
+     * Direct /pix/... and a standalone email_logo.php returned HTTP 404 on the
+     * test site when those files were not present on disk; pluginfile.php is
+     * always present in Moodle core and is updated with lib.php on ZIP install.
      *
      * @return array{tm_robot:string,training_center:string}
      */
     public static function logo_urls(): array {
+        $context = \context_system::instance();
         return [
-            'tm_robot' => (new \moodle_url('/local/tm_course/email_logo.php', [
-                'name' => 'tm_robot_logo',
-            ]))->out(false),
-            'training_center' => (new \moodle_url('/local/tm_course/email_logo.php', [
-                'name' => 'training_center_logo',
-            ]))->out(false),
+            'tm_robot' => \moodle_url::make_pluginfile_url(
+                $context->id,
+                'local_tm_course',
+                'emaillogo',
+                0,
+                '/',
+                'tm_robot_logo.png'
+            )->out(false),
+            'training_center' => \moodle_url::make_pluginfile_url(
+                $context->id,
+                'local_tm_course',
+                'emaillogo',
+                0,
+                '/',
+                'training_center_logo.png'
+            )->out(false),
         ];
     }
 

@@ -267,6 +267,27 @@ function local_tm_course_pluginfile($course, $cm, $context, $filearea, $args, $f
     if ($context->contextlevel !== CONTEXT_SYSTEM) {
         send_file_not_found();
     }
+
+    // Public email logos (no login) — used by batch_account_created HTML mail.
+    // Served via core pluginfile.php so the URL exists even when a new plugin PHP
+    // script was not copied onto the server.
+    if ($filearea === 'emaillogo') {
+        require_once(__DIR__ . '/classes/email_logo_assets.php');
+        $filename = (string) array_pop($args);
+        $key = \local_tm_course\email_logo_assets::key_from_filename($filename);
+        if ($key === null) {
+            send_file_not_found();
+        }
+        $bytes = \local_tm_course\email_logo_assets::image_bytes($key);
+        if ($bytes === null) {
+            send_file_not_found();
+        }
+        $mimetype = \local_tm_course\email_logo_assets::content_type($bytes);
+        // pathisstring=true → $bytes is the file content (no temp file).
+        send_file($bytes, $filename, DAYSECS, 0, true, false, $mimetype, false);
+        return true;
+    }
+
     if (!isloggedin() || isguestuser()) {
         send_file_not_found();
     }
