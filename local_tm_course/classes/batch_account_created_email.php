@@ -106,7 +106,26 @@ class batch_account_created_email {
     }
 
     /**
-     * CID identifiers used when embedding logos in outbound HTML email.
+     * Data-URI logo srcs for HTML email (no public HTTP; works with email_to_user).
+     *
+     * @return array{tm_robot:string,training_center:string}
+     */
+    public static function logo_data_uris(): array {
+        require_once(__DIR__ . '/email_logo_assets.php');
+        $out = ['tm_robot' => '', 'training_center' => ''];
+        foreach (['tm_robot' => 'tm_robot_logo', 'training_center' => 'training_center_logo'] as $slot => $key) {
+            $bytes = email_logo_assets::image_bytes($key);
+            if ($bytes === null) {
+                continue;
+            }
+            $mime = email_logo_assets::content_type($bytes);
+            $out[$slot] = 'data:' . $mime . ';base64,' . base64_encode($bytes);
+        }
+        return $out;
+    }
+
+    /**
+     * CID identifiers (legacy / tests). Prefer logo_data_uris() for outbound mail.
      *
      * @return array{tm_robot:string,training_center:string}
      */
@@ -121,7 +140,7 @@ class batch_account_created_email {
      * Email-safe HTML (table layout + inline CSS). No JavaScript.
      *
      * @param array<string,string> $tokens
-     * @param array{tm_robot?:string,training_center?:string}|null $logourls Override logo URLs/CIDs (tests).
+     * @param array{tm_robot?:string,training_center?:string}|null $logourls Override logo URLs/data-URIs (tests).
      */
     public static function build_html(array $tokens, ?array $logourls = null): string {
         $learner = self::e(self::token($tokens, 'learner'));
@@ -132,8 +151,8 @@ class batch_account_created_email {
         $login = self::e(self::token($tokens, 'login_url'));
         $reset = self::e(self::token($tokens, 'reset_url'));
 
-        // Default to CID so Gmail/Outlook render logos without fetching pluginfile HTTP.
-        $logos = $logourls ?? self::logo_cids();
+        // Default: data-URI logos so email_to_user can send without pluginfile/CID mailer.
+        $logos = $logourls ?? self::logo_data_uris();
         $tmlogo = self::e((string)($logos['tm_robot'] ?? ''));
         $tclogo = self::e((string)($logos['training_center'] ?? ''));
 

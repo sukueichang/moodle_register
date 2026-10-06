@@ -3,6 +3,15 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.27.5] - 2026-10-06 - Restore email delivery + data-URI logos
+
+### Fixed
+- Reverted batch-account outbound mail to Moodle `email_to_user()` after 5.27.4 custom PHPMailer/CID path failed to deliver (`send()` false with no fallback).
+- Logos embedded as `data:image/...;base64,...` in HTML (no pluginfile HTTP, no custom mailer).
+
+### Notes
+- 版號 `2026100605`。強制改密碼／Survey 未改。不 merge `main`。
+
 ## [5.27.4] - 2026-10-06 - CID-embedded email logos
 
 ### Fixed

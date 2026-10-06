@@ -65,8 +65,8 @@ assert_true(str_contains($html, 'Sign in / 登入學習平台'), 'html primary b
 assert_true(str_contains($html, 'Forgot password / 忘記密碼'), 'html secondary button');
 assert_true(str_contains($html, 'href="https://moodle.example.test/login/index.php"'), 'html login href');
 assert_true(!str_contains(strtolower($html), '<script'), 'no javascript');
-assert_true(str_contains($html, 'cid:tm_robot_logo'), 'tm logo cid in html');
-assert_true(str_contains($html, 'cid:training_center_logo'), 'training logo cid in html');
+assert_true(str_contains($html, 'data:image/png;base64,'), 'tm logo data-uri in html');
+assert_true(str_contains($html, 'data:image/jpeg;base64,'), 'training logo data-uri in html');
 assert_true(is_file($plugin . '/pix/email/tm_robot_logo.png'), 'tm logo asset exists');
 assert_true(is_file($plugin . '/pix/email/training_center_logo.png'), 'training logo asset exists');
 assert_true(is_file($plugin . '/classes/email_logo_assets.php'), 'embedded logo assets class exists');
@@ -85,8 +85,9 @@ if (preg_match('/function local_tm_course_pluginfile\(.*?^\}/ms', $libsrc, $m)) 
 }
 
 $notifysrc = file_get_contents($plugin . '/classes/notification_helper.php');
-assert_true(str_contains($notifysrc, 'addStringEmbeddedImage') || str_contains($notifysrc, 'AddStringEmbeddedImage'), 'CID embed send');
-assert_true(str_contains($notifysrc, 'logo_cids'), 'uses logo_cids');
+assert_true(str_contains($notifysrc, 'email_to_user'), 'uses email_to_user');
+assert_true(str_contains($notifysrc, 'logo_data_uris'), 'uses logo_data_uris');
+assert_true(!str_contains($notifysrc, 'send_batch_account_created_email'), 'no custom CID mailer');
 // Confirm force-password preference (must remain).
 $enrolsrc = file_get_contents($plugin . '/classes/enrolment_manager.php');
 assert_true(str_contains($enrolsrc, "set_user_preference('auth_forcepasswordchange', 1"), 'force pw preference set');

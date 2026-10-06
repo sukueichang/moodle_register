@@ -419,11 +419,13 @@ class notification_helper {
 
     /**
      * Send batch-account-created mail: bilingual subject from admin templates;
-     * body uses fixed branded HTML with CID-embedded logos + plain-text fallback.
+     * body uses fixed branded HTML with data-URI logos + plain-text fallback.
+     *
+     * Uses Moodle email_to_user() (same path as other notifications) so delivery
+     * is not broken by a custom PHPMailer/CID setup.
      */
     private static function send_batch_account_created_bilingual_message(int $useridto, array $tokens): void {
         require_once(__DIR__ . '/batch_account_created_email.php');
-        require_once(__DIR__ . '/email_logo_assets.php');
 
         $tplen = self::get_event_template('batch_account_created', 'en');
         $tplzh = self::get_event_template('batch_account_created', 'zh_tw');
@@ -437,108 +439,8 @@ class notification_helper {
         }
 
         $plain = batch_account_created_email::build_plain($tokens);
-        // CID img src — logos travel with the message (no public HTTP fetch).
-        $html = batch_account_created_email::build_html($tokens, batch_account_created_email::logo_cids());
-        self::send_batch_account_created_email($useridto, $subject, $plain, $html);
-    }
-
-    /**
-     * In-app bell (no embedded images) + outbound email with CID logo attachments.
-     */
-    private static function send_batch_account_created_email(
-        int $useridto,
-        string $subject,
-        string $plain,
-        string $html
-    ): void {
-        global $DB, $CFG;
-        $userto = $DB->get_record('user', ['id' => $useridto, 'deleted' => 0], '*', IGNORE_MISSING);
-        if (!$userto) {
-            return;
-        }
-
-        $usertoinapp = clone $userto;
-        $usertoinapp->emailstop = 1;
-        try {
-            $eventdata = new \core\message\message();
-            $eventdata->component = 'local_tm_course';
-            $eventdata->name = 'batch_account_created';
-            $eventdata->userfrom = \core_user::get_noreply_user();
-            $eventdata->userto = $usertoinapp;
-            $eventdata->subject = $subject;
-            $eventdata->fullmessage = $plain;
-            $eventdata->fullmessageformat = FORMAT_HTML;
-            $eventdata->fullmessagehtml = $html;
-            $eventdata->smallmessage = $subject;
-            $eventdata->notification = 1;
-            message_send($eventdata);
-        } catch (\Throwable $t) {
-            debugging('TM Course notification failed: ' . $t->getMessage(), DEBUG_DEVELOPER);
-        }
-
-        try {
-            require_once($CFG->libdir . '/phpmailer/moodle_phpmailer.php');
-            $noreply = \core_user::get_noreply_user();
-            $mail = get_mailer();
-            $mail->Sender = $noreply->email;
-            $mail->From = $noreply->email;
-            $mail->FromName = fullname($noreply);
-            $mail->Subject = $subject;
-            $mail->addAddress($userto->email, fullname($userto));
-            $mail->isHTML(true);
-            $mail->Body = $html;
-            $mail->AltBody = $plain;
-
-            $tm = email_logo_assets::image_bytes('tm_robot_logo');
-            $tc = email_logo_assets::image_bytes('training_center_logo');
-            if ($tm !== null) {
-                if (method_exists($mail, 'addStringEmbeddedImage')) {
-                    $mail->addStringEmbeddedImage(
-                        $tm,
-                        'tm_robot_logo',
-                        'tm_robot_logo.png',
-                        'base64',
-                        email_logo_assets::content_type($tm)
-                    );
-                } else {
-                    $mail->AddStringEmbeddedImage(
-                        $tm,
-                        'tm_robot_logo',
-                        'tm_robot_logo.png',
-                        'base64',
-                        email_logo_assets::content_type($tm)
-                    );
-                }
-            }
-            if ($tc !== null) {
-                if (method_exists($mail, 'addStringEmbeddedImage')) {
-                    $mail->addStringEmbeddedImage(
-                        $tc,
-                        'training_center_logo',
-                        'training_center_logo.png',
-                        'base64',
-                        email_logo_assets::content_type($tc)
-                    );
-                } else {
-                    $mail->AddStringEmbeddedImage(
-                        $tc,
-                        'training_center_logo',
-                        'training_center_logo.png',
-                        'base64',
-                        email_logo_assets::content_type($tc)
-                    );
-                }
-            }
-            $mail->send();
-        } catch (\Throwable $t) {
-            debugging('TM Course email notification failed: ' . $t->getMessage(), DEBUG_DEVELOPER);
-            // Last resort: plain email_to_user without embedded images.
-            try {
-                email_to_user($userto, \core_user::get_noreply_user(), $subject, $plain, $html);
-            } catch (\Throwable $t2) {
-                debugging('TM Course email fallback failed: ' . $t2->getMessage(), DEBUG_DEVELOPER);
-            }
-        }
+        $html = batch_account_created_email::build_html($tokens, batch_account_created_email::logo_data_uris());
+        self::send_message($useridto, 'batch_account_created', $subject, $plain, $html);
     }
 
     public static function notify_pending_overdue_to_admins_by_threshold(int $threshold): void {

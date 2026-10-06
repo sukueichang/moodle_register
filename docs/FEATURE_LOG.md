@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-10-06 — 5.27.4 信發不出去 → 恢復 email_to_user + data-URI Logo
+
+- **需求：** 5.27.4 實寄後信件未送達。
+- **根因：** 自訂 `get_mailer()` CID 路徑中 `$mail->send()` 失敗時多為回傳 false、不丟例外，未觸發 fallback。
+- **決策：** 寄信改回 `email_to_user()`；Logo 用 HTML data-URI（內嵌原始圖 bytes），不依賴公開 URL／CID mailer。
+- **版本／狀態：** **5.27.5（`2026100605`）；待實寄複測。**
+
 ## 2026-10-06 — Email Logo pluginfile filenotfound → CID 內嵌
 
 - **需求：** 點開 pluginfile Logo URL 仍 `filenotfound`（stack：`lib.php` → `send_file_not_found`）。

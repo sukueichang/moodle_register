@@ -86,10 +86,10 @@ class batch_account_created_email_test extends \advanced_testcase {
         $this->assertFileExists($root . '/classes/email_logo_assets.php');
     }
 
-    public function test_default_html_uses_cid_logo_refs(): void {
+    public function test_default_html_uses_data_uri_logos(): void {
         $html = batch_account_created_email::build_html($this->sample_tokens());
-        $this->assertStringContainsString('cid:tm_robot_logo', $html);
-        $this->assertStringContainsString('cid:training_center_logo', $html);
+        $this->assertStringContainsString('data:image/png;base64,', $html);
+        $this->assertStringContainsString('data:image/jpeg;base64,', $html);
     }
 
     public function test_logo_urls_point_at_public_pluginfile_emaillogo(): void {
