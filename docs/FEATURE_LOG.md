@@ -22,12 +22,19 @@
 
 ---
 
+## 2026-10-07 — 便當發送歷史＋問卷安全刪除
+
+- **需求：** (1) 便當需求成功發送後在 `class_prep` 顯示多筆歷史（時間／發送者）；(2) Survey List 可刪未使用問卷，有 pin／response 則阻擋並提示停用。
+- **決策：** 新增表 `local_tm_course_bento_log`（sessionid／userid／timecreated／recipientcount）；僅 `sent > 0` 寫入。刪除：`can_delete_survey`／`delete_survey` 級聯清 structure＋`svcrs`，有 `svpin`／`svresp` 拒絕。
+- **影響範圍：** `db/install.xml`／`upgrade.php`、`bento_notification_manager`、`survey_manager`、`class_prep`、`admin/surveys.php`、lang、tests、SPEC、version **5.28.3／2026100703**。
+- **版本／狀態：** **5.28.3** 待 Owner 驗收。PHPUnit 本機未跑。不 merge `main`。
+
 ## 2026-10-07 — Survey UX／管理流程（不 silent 搶課、複製、層級 UI）
 
 - **需求：** (1) 指定課程不得 silent 搶走其他問卷；(2) Admin 編輯器資訊層級（基本設定＋摺疊題卡）；(3) 清單複製問卷（僅結構、不複製課程／回覆／token）；(4) 學員填答 UI；(5) `class_prep` 課前作業／課後問卷分區。
 - **決策：** `assign_course`／`set_course_assignments` 衝突時丟 `survey_error_course_assigned`，儲存前先 `assert_courses_assignable`；`copy_survey`＋`unique_copy_name`（`(副本)`／`(副本 N)`）；不改 DB schema、不碰 Excel／excellib；`class_prep` 開／關呼叫既有 token API。
 - **影響範圍：** `survey_manager`、`admin/surveys.php`、`survey.php`、`admin/class_prep.php`、`styles.css`、lang en/zh_tw、tests、SPEC §59、version **5.28.2／2026100702**。
-- **版本／狀態：** **5.28.2** 待 Owner 人工驗收。PHPUnit 本機未跑（環境無 Moodle PHPUnit）。不 merge `main`。
+- **版本／狀態：** **5.28.2** Owner UX 驗收 OK；後續見上則 5.28.3。不 merge `main`。
 
 ## 2026-10-07 — Phase 4 Excel Export FAIL → Moodle excellib
 

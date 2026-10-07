@@ -239,10 +239,12 @@ class bento_notification_manager {
                 $rendered['html'],
                 $ccemails
             )) {
+                $recipientlist = array_keys($recipientusers);
+                self::record_successful_send($sessionid, $senderid, count($recipientlist));
                 return [
                     'sent' => 1,
                     'failed' => 0,
-                    'recipients' => array_keys($recipientusers),
+                    'recipients' => $recipientlist,
                 ];
             }
         } catch (\Throwable $t) {
@@ -250,6 +252,69 @@ class bento_notification_manager {
         }
 
         return ['sent' => 0, 'failed' => 1, 'recipients' => []];
+    }
+
+    /**
+     * Persist one successful send. Call only when mail actually sent (sent > 0).
+     *
+     * @return int new log id
+     */
+    public static function record_successful_send(int $sessionid, int $userid, int $recipientcount): int {
+        global $DB;
+        if ($sessionid <= 0) {
+            return 0;
+        }
+        return (int) $DB->insert_record('local_tm_course_bento_log', (object) [
+            'sessionid' => $sessionid,
+            'userid' => max(0, $userid),
+            'timecreated' => time(),
+            'recipientcount' => max(0, $recipientcount),
+        ]);
+    }
+
+    /**
+     * Successful send history for a session (newest first).
+     *
+     * @return \stdClass[] each: id, sessionid, userid, timecreated, recipientcount, sendername
+     */
+    public static function get_send_history(int $sessionid): array {
+        global $DB;
+        if ($sessionid <= 0) {
+            return [];
+        }
+        $rows = $DB->get_records(
+            'local_tm_course_bento_log',
+            ['sessionid' => $sessionid],
+            'timecreated DESC, id DESC'
+        );
+        if (!$rows) {
+            return [];
+        }
+        $userids = [];
+        foreach ($rows as $row) {
+            if ((int) $row->userid > 0) {
+                $userids[(int) $row->userid] = true;
+            }
+        }
+        $users = [];
+        if ($userids) {
+            list($insql, $params) = $DB->get_in_or_equal(array_keys($userids), SQL_PARAMS_NAMED);
+            $users = $DB->get_records_select('user', "id $insql", $params, '', 'id, firstname, lastname');
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            $uid = (int) $row->userid;
+            $sendername = '';
+            if ($uid > 0 && !empty($users[$uid])) {
+                $sendername = fullname($users[$uid]);
+            }
+            if ($sendername === '') {
+                $sendername = get_string('unknownuser', 'moodle');
+            }
+            $row->sendername = $sendername;
+            $out[] = $row;
+        }
+        return $out;
     }
 
     /**

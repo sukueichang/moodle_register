@@ -250,6 +250,54 @@ class survey_manager {
     }
 
     /**
+     * True when any version of this survey has a session pin or a response.
+     */
+    public static function survey_has_usage_history(int $surveyid): bool {
+        global $DB;
+        self::get_survey($surveyid);
+        $versions = $DB->get_records('local_tm_course_svver', ['surveyid' => $surveyid], '', 'id');
+        foreach ($versions as $version) {
+            $versionid = (int) $version->id;
+            if ($DB->record_exists('local_tm_course_svpin', ['versionid' => $versionid])) {
+                return true;
+            }
+            if ($DB->record_exists('local_tm_course_svresp', ['versionid' => $versionid])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Safe to hard-delete when unused (no pins / responses on any version).
+     */
+    public static function can_delete_survey(int $surveyid): bool {
+        return !self::survey_has_usage_history($surveyid);
+    }
+
+    /**
+     * Hard-delete a survey and its structure. Refuses when pin or response history exists.
+     * Clears course assignments. Leaves no orphan version/section/item/option rows.
+     */
+    public static function delete_survey(int $surveyid): void {
+        global $DB;
+        self::get_survey($surveyid);
+        if (!self::can_delete_survey($surveyid)) {
+            throw new \moodle_exception('survey_error_cannot_delete', 'local_tm_course');
+        }
+        $transaction = $DB->start_delegated_transaction();
+        $DB->delete_records('local_tm_course_svcrs', ['surveyid' => $surveyid]);
+        $versions = $DB->get_records('local_tm_course_svver', ['surveyid' => $surveyid], '', 'id');
+        foreach ($versions as $version) {
+            $versionid = (int) $version->id;
+            self::delete_version_content($versionid);
+            $DB->delete_records('local_tm_course_svver', ['id' => $versionid]);
+        }
+        $DB->delete_records('local_tm_course_svdef', ['id' => $surveyid]);
+        $transaction->allow_commit();
+    }
+
+    /**
      * Deep-copy survey content into a new survey. No courses, pins, tokens, or responses.
      *
      * @return int new survey id

@@ -176,6 +176,23 @@ if (optional_param('action', '', PARAM_ALPHANUMEXT) === 'copy' && confirm_sesske
     );
 }
 
+if (optional_param('action', '', PARAM_ALPHANUMEXT) === 'delete' && confirm_sesskey()) {
+    $deleteid = required_param('deleteid', PARAM_INT);
+    $listurl = new moodle_url('/local/tm_course/admin/surveys.php');
+    try {
+        $todelete = survey_manager::get_survey($deleteid);
+        survey_manager::delete_survey($deleteid);
+        redirect(
+            $listurl,
+            get_string('survey_deleted', 'local_tm_course', $todelete->name),
+            null,
+            \core\output\notification::NOTIFY_SUCCESS
+        );
+    } catch (\moodle_exception $e) {
+        redirect($listurl, $e->getMessage(), null, \core\output\notification::NOTIFY_ERROR);
+    }
+}
+
 $error = '';
 $posted = null;
 if ($surveyid > 0 && optional_param('action', '', PARAM_ALPHANUMEXT) === 'save' && confirm_sesskey()) {
@@ -238,12 +255,14 @@ if ($surveyid <= 0) {
             get_string('survey_version', 'local_tm_course', ''),
             get_string('survey_courses', 'local_tm_course'),
             get_string('survey_copy', 'local_tm_course'),
+            get_string('survey_delete', 'local_tm_course'),
         ];
+        $listactionurl = (new moodle_url('/local/tm_course/admin/surveys.php'))->out(false);
         foreach ($surveys as $survey) {
             $url = new moodle_url('/local/tm_course/admin/surveys.php', ['id' => $survey->id]);
             $copyform = html_writer::start_tag('form', [
                 'method' => 'post',
-                'action' => (new moodle_url('/local/tm_course/admin/surveys.php'))->out(false),
+                'action' => $listactionurl,
                 'class' => 'd-inline',
             ]);
             $copyform .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
@@ -255,12 +274,41 @@ if ($surveyid <= 0) {
                 'value' => get_string('survey_copy', 'local_tm_course'),
             ]);
             $copyform .= html_writer::end_tag('form');
+
+            $candelete = survey_manager::can_delete_survey((int) $survey->id);
+            if ($candelete) {
+                $deleteform = html_writer::start_tag('form', [
+                    'method' => 'post',
+                    'action' => $listactionurl,
+                    'class' => 'd-inline',
+                    'onsubmit' => 'return confirm(' . json_encode(
+                        get_string('survey_delete_confirm', 'local_tm_course', $survey->name),
+                        JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+                    ) . ');',
+                ]);
+                $deleteform .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+                $deleteform .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'delete']);
+                $deleteform .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'deleteid', 'value' => (int) $survey->id]);
+                $deleteform .= html_writer::empty_tag('input', [
+                    'type' => 'submit',
+                    'class' => 'btn btn-outline-danger btn-sm',
+                    'value' => get_string('survey_delete', 'local_tm_course'),
+                ]);
+                $deleteform .= html_writer::end_tag('form');
+            } else {
+                $deleteform = html_writer::tag('span', get_string('survey_delete_blocked', 'local_tm_course'), [
+                    'class' => 'text-muted small',
+                    'title' => get_string('survey_error_cannot_delete', 'local_tm_course'),
+                ]);
+            }
+
             $table->data[] = [
                 html_writer::link($url, s($survey->name)),
                 (int) $survey->enabled ? get_string('survey_enabled', 'local_tm_course') : get_string('survey_disabled', 'local_tm_course'),
                 (int) $survey->versionno . ($survey->versionfrozen ? ' (' . get_string('survey_version_frozen', 'local_tm_course') . ')' : ''),
                 (int) $survey->coursecount,
                 $copyform,
+                $deleteform,
             ];
         }
         echo html_writer::table($table);

@@ -622,12 +622,27 @@ echo $OUTPUT->header();
 <div class="tm-card-body">
     <h4 class="tm-prep-section-title"><?php echo get_string('bento_send_button', 'local_tm_course'); ?></h4>
     <p class="text-muted small mb-3"><?php echo get_string('bento_modal_intro', 'local_tm_course'); ?></p>
-    <button type="button"
-            class="btn btn-tm-primary"
-            id="tm-bento-open-btn"
-            <?php echo ($stats['present'] < 1) ? 'disabled title="' . s(get_string('bento_send_need_present', 'local_tm_course')) . '"' : ''; ?>>
-        <?php echo get_string('bento_send_button', 'local_tm_course'); ?>
-    </button>
+    <div class="d-flex flex-wrap align-items-start gap-3">
+        <button type="button"
+                class="btn btn-tm-primary"
+                id="tm-bento-open-btn"
+                <?php echo ($stats['present'] < 1) ? 'disabled title="' . s(get_string('bento_send_need_present', 'local_tm_course')) . '"' : ''; ?>>
+            <?php echo get_string('bento_send_button', 'local_tm_course'); ?>
+        </button>
+        <?php
+        $bentohistory = bento_notification_manager::get_send_history($sessionid);
+        if ($bentohistory):
+        ?>
+        <ul class="tm-bento-send-history list-unstyled mb-0 small text-muted">
+            <?php foreach ($bentohistory as $blog): ?>
+            <li><?php echo get_string('bento_send_history_line', 'local_tm_course', (object) [
+                'time' => userdate((int) $blog->timecreated, get_string('strftimedatetimeshort', 'langconfig')),
+                'user' => $blog->sendername,
+            ]); ?></li>
+            <?php endforeach; ?>
+        </ul>
+        <?php endif; ?>
+    </div>
 </div>
 </div>
 <?php endif; ?>

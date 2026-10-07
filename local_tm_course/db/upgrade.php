@@ -2054,7 +2054,38 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100701, 'local', 'tm_course');
     }
 
+    // 2026100702 — Survey UX hierarchy / copy / no silent reassignment (no DB).
+    if ($oldversion < 2026100702) {
+        upgrade_plugin_savepoint(true, 2026100702, 'local', 'tm_course');
+    }
+
+    // 2026100703 — Bento send history log + survey delete (safe hard-delete).
+    if ($oldversion < 2026100703) {
+        local_tm_course_upgrade_create_bento_log_table($dbman);
+        upgrade_plugin_savepoint(true, 2026100703, 'local', 'tm_course');
+    }
+
     return true;
+}
+
+/**
+ * Create bento send-history table when missing.
+ *
+ * @param \database_manager $dbman
+ */
+function local_tm_course_upgrade_create_bento_log_table(\database_manager $dbman): void {
+    if ($dbman->table_exists('local_tm_course_bento_log')) {
+        return;
+    }
+    $table = new xmldb_table('local_tm_course_bento_log');
+    $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+    $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+    $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+    $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+    $table->add_field('recipientcount', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+    $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+    $table->add_index('idx_bento_log_sess', XMLDB_INDEX_NOTUNIQUE, ['sessionid']);
+    $dbman->create_table($table);
 }
 
 /**

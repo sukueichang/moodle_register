@@ -3,6 +3,15 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.3] - 2026-10-07 - Bento send history + safe survey delete
+
+### Added
+- Table `local_tm_course_bento_log`: append-only successful lunch-request send history per session; shown next to the class_prep send button.
+- Survey list Delete: allowed only when unused (no session pin / response); otherwise blocked with disable guidance.
+
+### Notes
+- Upgrade savepoint `2026100703` / release `5.28.3`。不 merge `main`。
+
 ## [5.28.2] - 2026-10-07 - Survey UX / admin flow
 
 ### Changed
@@ -13,7 +22,7 @@
 - Class prep: “Pre-class tasks” (attendance / bento / equipment) + “Post-class survey” card (status, counts, open/close, projection).
 
 ### Notes
-- 版號 `2026100702` / release `5.28.2`。無 DB schema 變更；未改 Excel export。待 Owner 驗收。不 merge `main`。
+- 版號 `2026100702` / release `5.28.2`。無 DB schema 變更；未改 Excel export。Owner UX 驗收 OK。不 merge `main`。
 
 ## [5.28.1] - 2026-10-07 - Fix survey Excel export (Moodle excellib)
 

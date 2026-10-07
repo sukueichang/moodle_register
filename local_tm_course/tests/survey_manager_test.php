@@ -57,6 +57,79 @@ class survey_manager_test extends \advanced_testcase {
         $this->assertSame([(int) $course->id], survey_manager::assigned_courseids($first));
     }
 
+    public function test_delete_survey_allowed_when_unused_and_clears_structure(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $course = $this->getDataGenerator()->create_course();
+        $surveyid = survey_manager::create_survey('Disposable', 2);
+        survey_manager::save_structure($surveyid, [[
+            'name' => 'S',
+            'items' => [[
+                'qtype' => survey_manager::TYPE_TEXT,
+                'title' => 'Q1',
+                'required' => 0,
+            ]],
+        ]], 2);
+        survey_manager::assign_course($surveyid, (int) $course->id);
+        $this->assertTrue(survey_manager::can_delete_survey($surveyid));
+
+        survey_manager::delete_survey($surveyid);
+        $this->assertFalse($DB->record_exists('local_tm_course_svdef', ['id' => $surveyid]));
+        $this->assertSame(0, $DB->count_records('local_tm_course_svcrs', ['surveyid' => $surveyid]));
+        $this->assertSame(0, $DB->count_records('local_tm_course_svver', ['surveyid' => $surveyid]));
+        $this->assertSame(0, survey_manager::active_surveyid_for_course((int) $course->id));
+    }
+
+    public function test_delete_survey_blocked_when_pinned_or_has_response(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $surveyid = survey_manager::create_survey('In use', 2);
+        $versionid = survey_manager::save_structure($surveyid, [[
+            'name' => 'S',
+            'items' => [[
+                'qtype' => survey_manager::TYPE_SCALE,
+                'title' => 'Rate',
+                'required' => 1,
+                'scalemin' => 'Lo',
+                'scalemax' => 'Hi',
+            ]],
+        ]], 2);
+
+        $DB->insert_record('local_tm_course_svpin', (object) [
+            'sessionid' => 9001,
+            'versionid' => $versionid,
+            'opens_at' => time(),
+            'timecreated' => time(),
+        ]);
+        $this->assertFalse(survey_manager::can_delete_survey($surveyid));
+        try {
+            survey_manager::delete_survey($surveyid);
+            $this->fail('Expected delete to be blocked when pinned');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('survey_error_cannot_delete', $e->errorcode);
+        }
+        $this->assertTrue($DB->record_exists('local_tm_course_svdef', ['id' => $surveyid]));
+
+        $DB->delete_records('local_tm_course_svpin', ['versionid' => $versionid]);
+        $DB->insert_record('local_tm_course_svresp', (object) [
+            'enrolid' => 0,
+            'versionid' => $versionid,
+            'sessionid' => 9002,
+            'userid' => 0,
+            'email' => 'learner@example.com',
+            'mapped' => 0,
+            'timecreated' => time(),
+        ]);
+        $this->assertFalse(survey_manager::can_delete_survey($surveyid));
+        try {
+            survey_manager::delete_survey($surveyid);
+            $this->fail('Expected delete to be blocked when responses exist');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('survey_error_cannot_delete', $e->errorcode);
+        }
+        $this->assertTrue($DB->record_exists('local_tm_course_svdef', ['id' => $surveyid]));
+    }
+
     public function test_copy_survey_copies_structure_not_courses_or_responses(): void {
         global $DB;
         $this->resetAfterTest(true);
