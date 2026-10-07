@@ -3,6 +3,22 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.0] - 2026-10-07 - Survey Phase 3+4 (Email Quick Access, board, stats)
+
+### Added
+- Email quick-access survey (`survey.php?t=TOKEN`) without login; email step then questionnaire.
+- Session survey tokens (`local_tm_course_svtok`); open / close / regenerate on projection board.
+- Projection board (`admin/survey_board.php`) + progress JSON; class prep link.
+- Results / filters / question stats (`admin/survey_results.php`) and Excel export.
+- Scheduled task `pin_session_surveys` (every 15 minutes).
+
+### Changed
+- `svresp`: add `email` + `mapped`; drop unique `enrolid`; unique `(sessionid, versionid, email)`.
+- `submit_response` delegates to `submit_response_by_email`; FILL requires token enabled.
+
+### Notes
+- 版號 `2026100700` / release `5.28.0`。不 merge `main`。Batch-account email / force-password untouched.
+
 ## [5.27.6] - 2026-10-06 - Email logos via Moodle theme/image.php
 
 ### Changed

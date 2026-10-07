@@ -421,6 +421,10 @@ echo $OUTPUT->header();
     <a href="<?php echo $sessions_url->out(); ?>" class="btn btn-sm btn-secondary">
         ← <?php echo get_string('nav_sessions', 'local_tm_course'); ?>
     </a>
+    <a href="<?php echo (new moodle_url('/local/tm_course/admin/survey_board.php', ['sessionid' => $sessionid]))->out(); ?>"
+       class="btn btn-sm btn-primary ml-2" target="_blank" rel="noopener">
+        <?php echo get_string('survey_board_open_link', 'local_tm_course'); ?>
+    </a>
 </div>
 
 <div class="tm-card">

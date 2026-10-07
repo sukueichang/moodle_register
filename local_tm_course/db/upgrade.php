@@ -1961,6 +1961,94 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100606, 'local', 'tm_course');
     }
 
+    // 2026100700 — Survey Phase 3+4: email/mapped on svresp, svtok, drop enrol unique.
+    if ($oldversion < 2026100700) {
+        local_tm_course_upgrade_create_survey_tables($dbman);
+
+        $table = new xmldb_table('local_tm_course_svresp');
+
+        // Drop unique enrolid so multiple unmatched rows may share enrolid=0.
+        $ukey = new xmldb_key('uq_svresp_enrol', XMLDB_KEY_UNIQUE, ['enrolid']);
+        try {
+            $keyname = $dbman->find_key_name($table, $ukey);
+            if ($keyname) {
+                $dbman->drop_key($table, $ukey);
+            }
+        } catch (\Throwable $e) {
+            // Already dropped or named differently on this site.
+        }
+        // Some installs store the unique constraint as an index.
+        $uindexlegacy = new xmldb_index('uq_svresp_enrol', XMLDB_INDEX_UNIQUE, ['enrolid']);
+        try {
+            if ($dbman->index_exists($table, $uindexlegacy)) {
+                $dbman->drop_index($table, $uindexlegacy);
+            }
+        } catch (\Throwable $e) {
+            // Ignore.
+        }
+
+        $field = new xmldb_field('email', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, '');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $field = new xmldb_field('mapped', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $index = new xmldb_index('idx_svresp_enrol', XMLDB_INDEX_NOTUNIQUE, ['enrolid']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        // Backfill email / mapped before unique (sessionid, versionid, email).
+        $resps = $DB->get_records_select('local_tm_course_svresp', "email = '' OR email IS NULL", null, 'id ASC');
+        foreach ($resps as $resp) {
+            $email = '';
+            $userid = (int) $resp->userid;
+            if ($userid > 0) {
+                $uemail = $DB->get_field('user', 'email', ['id' => $userid]);
+                if (is_string($uemail)) {
+                    $candidate = strtolower(trim($uemail));
+                    if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+                        $email = $candidate;
+                    }
+                }
+            }
+            if ($email === '') {
+                $email = 'legacy-resp-' . ((int) $resp->id) . '@tm-course.invalid';
+            }
+            $mapped = ((int) $resp->enrolid > 0) ? 1 : 0;
+            $DB->update_record('local_tm_course_svresp', (object) [
+                'id' => (int) $resp->id,
+                'email' => $email,
+                'mapped' => $mapped,
+            ]);
+        }
+
+        $uindex = new xmldb_index('uq_svresp_sess_ver_email', XMLDB_INDEX_UNIQUE, ['sessionid', 'versionid', 'email']);
+        if (!$dbman->index_exists($table, $uindex)) {
+            $dbman->add_index($table, $uindex);
+        }
+
+        // Ensure svtok exists (also created in helper for fresh paths).
+        if (!$dbman->table_exists('local_tm_course_svtok')) {
+            $tok = new xmldb_table('local_tm_course_svtok');
+            $tok->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+            $tok->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $tok->add_field('token', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, '');
+            $tok->add_field('enabled', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+            $tok->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $tok->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $tok->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $tok->add_key('uq_svtok_session', XMLDB_KEY_UNIQUE, ['sessionid']);
+            $tok->add_key('uq_svtok_token', XMLDB_KEY_UNIQUE, ['token']);
+            $dbman->create_table($tok);
+        }
+
+        upgrade_plugin_savepoint(true, 2026100700, 'local', 'tm_course');
+    }
+
     return true;
 }
 
@@ -2071,11 +2159,28 @@ function local_tm_course_upgrade_create_survey_tables(\database_manager $dbman):
         $table->add_field('versionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
         $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
         $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('email', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, '');
+        $table->add_field('mapped', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
         $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
         $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
-        $table->add_key('uq_svresp_enrol', XMLDB_KEY_UNIQUE, ['enrolid']);
+        $table->add_index('idx_svresp_enrol', XMLDB_INDEX_NOTUNIQUE, ['enrolid']);
         $table->add_index('idx_svresp_ver', XMLDB_INDEX_NOTUNIQUE, ['versionid']);
         $table->add_index('idx_svresp_sess', XMLDB_INDEX_NOTUNIQUE, ['sessionid']);
+        $table->add_index('uq_svresp_sess_ver_email', XMLDB_INDEX_UNIQUE, ['sessionid', 'versionid', 'email']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svtok')) {
+        $table = new xmldb_table('local_tm_course_svtok');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('token', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, '');
+        $table->add_field('enabled', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('uq_svtok_session', XMLDB_KEY_UNIQUE, ['sessionid']);
+        $table->add_key('uq_svtok_token', XMLDB_KEY_UNIQUE, ['token']);
         $dbman->create_table($table);
     }
 

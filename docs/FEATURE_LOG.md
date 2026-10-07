@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-10-07 — 課程問卷 Phase 3+4（Email Quick Access／投影／統計）
+
+- **需求：** QR 免登入以 email 填答；投影板與即時人數；管理端篩選／題目統計／Excel；補釘排程。
+- **決策：** `svresp` 改 `(sessionid,versionid,email)` 唯一，`enrolid` 可 0＋`mapped`；新表 `svtok`（一場次一 token，regenerate 換字串）；`survey.php?t=` 免登入；FILL 需 token 啟用；QR 用 qrserver 圖（無 Composer）；xlsx 自寫 ZipArchive。不改 batch-account email／force-password。
+- **影響範圍：** `survey_manager`、`survey.php`、`survey_stats`／`survey_xlsx_writer`／`qrcode_svg`、admin board／progress／results／export、`class_prep`、`lib` nav、`db/*`、`version` **5.28.0／2026100700**、tests、SPEC §59。
+- **版本／狀態：** **5.28.0 實作完成，待 Owner 測站驗收。** 不 merge `main`。
+
 ## 2026-10-06 — Email Logo 改 Moodle 原生 theme/image.php
 
 - **需求：** 多輪 Logo 破圖；停止 pix 直連／email_logo.php／pluginfile emaillogo／CID／data-URI；改用 Moodle `$OUTPUT->image_url`。

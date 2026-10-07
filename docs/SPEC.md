@@ -51,7 +51,7 @@
 | TCMS 同步 | `classes/tcms_sync_manager.php`、`classes/tcms_endpoint.php`（VM：`https://tcms.tm-robot.com`） |
 | 證書 | 整合 `mod_customcert` |
 | 批改申請 | `grading/*`、`classes/grading_request_manager.php`（見 §58） |
-| 課程問卷 | 規格見 §59。階段 1：`admin/surveys.php`、`classes/survey_manager.php`。階段 2：`survey.php`、`my_records.php` 入口。階段 3–4 尚未實作 |
+| 課程問卷 | 規格見 §59。階段 1–4 已實作：管理／學員填答／Email Quick Access QR 投影／統計與 Excel |
 
 ### 0.4a TCMS 同步（Moodle → VM，5.19.0）
 
@@ -2249,7 +2249,7 @@ TM AI Cobot 推廣課程的九題只是 §59.10 的驗收案例。題幹、選�
 
 Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只存原始答案，不做商機分數或自動排序。
 
-階段 1（問卷管理、題型、課程指定、啟用停用、版本、資料表）已實作，**Owner 人工驗收 PASS（2026-10-06）**。階段 2（學員填答）實作中／待驗收。階段 3–4（QR 投影、統計與 Excel）尚未開始。`ensure_session_survey_pin()` 掛在學員問卷頁與 `my_records`；`lock_pin_before_starttime_edit()` 接到 `edit_session.php` 存檔前。補釘排程仍可於後續階段補強。
+階段 1（問卷管理）**Owner 驗收 PASS（2026-10-06）**。階段 2（學員填答）已實作。階段 3–4（Email Quick Access、QR 投影、統計與 Excel）已實作於 **5.28.0**（待 Owner 人工驗收）。`ensure_session_survey_pin()` 建立釘選時一併 `ensure_session_survey_token()`；排程 `pin_session_surveys` 每 15 分鐘補釘。
 
 ### 59.1 範圍
 
@@ -2343,26 +2343,26 @@ Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只�
 
 ### 59.6 學員流程
 
-階段 2。入口在 `my_records.php`。頁面 `/local/tm_course/survey.php?sessionid=N`。QR 與電腦入口同一網址，不帶學員 id。
+階段 2＋3。入口在 `my_records.php`（`survey.php?sessionid=N` → 轉 `?t=TOKEN`）。**Email Quick Access：** QR／公開連結不需登入；先輸入 email，再填答。同一 `(sessionid, versionid, email)` 只能交一次。
 
 | 狀態 | 顯示 |
 |------|------|
 | 非已核准且沒有提交 | 不顯示問卷操作 |
-| 已核准但尚未開放 | 尚未開放 |
-| 已核准、已開放、未提交 | 填寫問卷 |
-| 已有提交（含後來被取消） | 已完成／查看答案 |
+| 已核准但尚未開放／token 已關 | 尚未開放 |
+| 已核准、時間已開、token 啟用、未提交 | 填寫問卷 |
+| 已有提交（含後來被取消；依 enrol 或 email） | 已完成／查看答案 |
 
 ### 59.7 投影
 
-階段 3。`admin/class_prep.php` 加區塊；投影頁 `admin/survey_board.php`。權限為 `permissions_manager::user_can_attendance()`。畫面只有課程名稱、場次日期、問卷名稱、QR 與人數。約 8 秒背景更新，只回傳計數。
+階段 3。`admin/class_prep.php` 連到投影頁 `admin/survey_board.php`。權限 `user_can_attendance()`。畫面：課程／場次／問卷名、QR、短網址、已填／應到／比例；可 open／close／regenerate token。約 8 秒 AJAX（`survey_progress.php`）只回計數。**不列出 email。**
 
 ### 59.8 提交
 
-階段 2。一筆報名一筆 `svresp`，`enrolid` 唯一。交易失敗不留半份。送出後只能看。
+階段 3。唯一鍵改為 `(sessionid, versionid, email)`。`enrolid` 可為 0（未對應）；`mapped=1` 僅當綁到 userid+enrolid。舊「一報名一筆」仍以 enrolid 查重相容。交易失敗不留半份。送出後只能看。
 
 ### 59.9 管理端報表
 
-階段 4。只有 `local/tm_course:manage` 可以看個別答案、統計與 Excel。跨場次只合併 `stablekey`、題型與選項簽名都相同的題。
+階段 4。`admin/survey_results.php`／`survey_export.php`：`local/tm_course:manage`。篩選 survey／version／course／session／email／mapped；摘要卡、題目統計、Excel（Responses + Statistics）。
 
 ### 59.10 驗收案例（不得寫死）
 
@@ -2381,7 +2381,8 @@ Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只�
 | `local_tm_course_svopt` | `itemid`、`stablekey`、標籤、排序、`is_other` | |
 | `local_tm_course_svcrs` | `courseid`、`surveyid` | `courseid` 唯一 |
 | `local_tm_course_svpin` | `sessionid`、`versionid`、`opens_at`、建立時間 | `sessionid` 唯一 |
-| `local_tm_course_svresp` | `enrolid`、`versionid`、`sessionid`、提交者 user id、`timecreated` | **`enrolid` 唯一** |
+| `local_tm_course_svresp` | `enrolid`（0=未對應）、`versionid`、`sessionid`、`userid`、`email`、`mapped`、`timecreated` | **`(sessionid, versionid, email)` 唯一**；`enrolid` 非唯一 |
+| `local_tm_course_svtok` | `sessionid`、`token`、`enabled`、建立／修改時間 | `sessionid` 唯一、`token` 唯一；regenerate 只換 token 字串 |
 | `local_tm_course_svans` | `responseid`、`itemid`、量表或單選值、自由文字、其他文字 | `(responseid, itemid)` 唯一 |
 | `local_tm_course_svpick` | `answerid`、`optionid` | `(answerid, optionid)` 唯一 |
 | `local_tm_course_svaud` | `sessionid`、舊／新 `starttime`、操作者、時間 | 只記開放後的場次時間修改 |
@@ -2392,23 +2393,19 @@ Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只�
 
 階段 1 已新增：`classes/survey_manager.php`、`admin/surveys.php`、`tests/survey_manager_test.php`、語系、`db/install.xml`、`db/upgrade.php`、`version.php`。導覽只給 `manage`。
 
-階段 2 已新增／修改：`survey.php`、`my_records.php`（問卷欄）、`enrolment_manager::get_user_records`（含 `linked_userid`）、`edit_session.php`（釘選稽核）。尚未新增：`admin/survey_results.php`、`admin/survey_board.php`、`admin/survey_progress.php`。尚未修改 `class_prep.php`、`db/tasks.php`。
+階段 2：`survey.php`、`my_records.php`、`edit_session.php` 釘選稽核。
+
+階段 3–4：`survey.php` Email Quick Access、`svtok`、`admin/survey_board.php`、`survey_progress.php`、`survey_results.php`、`survey_export.php`、`survey_stats`／`survey_xlsx_writer`、`class_prep` 連結、`pin_session_surveys` 排程、`db/tasks.php`。
 
 ### 59.13 開發階段與驗收
 
-**階段 1 — 問卷與版本（本分支）** — **Owner 驗收 PASS（2026-10-06）**
+**階段 1 — 問卷與版本** — **Owner 驗收 PASS（2026-10-06）**
 
-- Admin 可新增、編輯、啟用、停用，並把一份問卷指定給一門課。
-- 四種題型、區塊、排序、必填、單選／複選「其他」、選項一行一個可存後再讀出；管理 UI 依題型動態顯示設定欄位。
-- 一門課不能同時有兩筆課程指定。
-- 沒有填答也沒有釘選時可直接改；一旦凍結，再存就產生新版本，舊題列不被改寫。
-- 已知：本機未跑 PHPUnit；凍結／釘選完整整合驗收併 Phase 2。
+**階段 2 — 學員填答** — 已實作（待／已驗收依交付紀錄）。
 
-**階段 2 — 學員填答** 實作中／待 Owner 驗收。`my_records` 三種狀態、未開放不能送、不以出席為條件、`enrolid` 唯一、送出後只能看、含 `linked_userid` 保留名額。
+**階段 3 — Email Quick Access 與投影** — 已實作於 5.28.0。QR 免登入；token 可關／重生；投影不列 email。
 
-**階段 3 — QR 與投影** 尚未開始。
-
-**階段 4 — 統計與匯出** 尚未開始。不得做商機分數。
+**階段 4 — 統計與匯出** — 已實作於 5.28.0。不得做商機分數。
 
 ### 59.14 實作前檢查
 

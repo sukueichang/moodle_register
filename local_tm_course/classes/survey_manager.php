@@ -2,7 +2,7 @@
 /**
  * Course survey definitions, versions, pin/open rules, and learner submission.
  *
- * QR boards and admin reports are later phases (SPEC §59).
+ * Phase 3+4: email quick-access tokens, QR board helpers, mapped responses (SPEC §59).
  *
  * @package    local_tm_course
  */
@@ -22,6 +22,10 @@ class survey_manager {
     public const TYPE_MULTI = 'multi';
     public const TYPE_SCALE = 'scale';
     public const TYPE_TEXT = 'text';
+
+    /** Response mapping flags (svresp.mapped). */
+    public const MAPPED = 1;
+    public const UNMAPPED = 0;
 
     /**
      * @return string[]
@@ -332,12 +336,16 @@ class survey_manager {
         if (!$version) {
             return 0;
         }
-        return (int) $DB->insert_record('local_tm_course_svpin', (object) [
+        $pinid = (int) $DB->insert_record('local_tm_course_svpin', (object) [
             'sessionid' => $sessionid,
             'versionid' => (int) $version->id,
             'opens_at' => (int) $session->starttime,
             'timecreated' => time(),
         ]);
+        if ($pinid > 0) {
+            self::ensure_session_survey_token($sessionid, true);
+        }
+        return $pinid;
     }
 
     /**
@@ -365,6 +373,7 @@ class survey_manager {
                         'timecreated' => time(),
                     ]);
                     $pin = $DB->get_record('local_tm_course_svpin', ['id' => $pinid], '*', MUST_EXIST);
+                    self::ensure_session_survey_token($sessionid, true);
                 }
             }
         }
@@ -646,7 +655,7 @@ class survey_manager {
     }
 
     /**
-     * Eligible to submit a new response (approved + bound + open + no response yet).
+     * Eligible to submit a new response (approved + bound + quick open + no response yet).
      */
     public static function can_user_submit(int $sessionid, int $userid): bool {
         $enrol = self::find_user_enrolment_for_session($sessionid, $userid);
@@ -659,25 +668,22 @@ class survey_manager {
         if (self::learner_userid_for_enrol($enrol) !== $userid) {
             return false;
         }
-        if (self::get_response_by_enrolid((int) $enrol->id)) {
+        if (self::get_response_for_user_session($sessionid, $userid)) {
             return false;
         }
-        return self::is_session_survey_open($sessionid);
+        return self::is_quick_survey_accepting($sessionid);
     }
 
     /**
      * Can view own submitted answers (even after cancel/reject).
      */
     public static function can_user_view_response(int $sessionid, int $userid): bool {
-        $enrol = self::find_user_enrolment_for_session($sessionid, $userid);
-        if (!$enrol || self::learner_userid_for_enrol($enrol) !== $userid) {
-            return false;
-        }
-        return self::get_response_by_enrolid((int) $enrol->id) !== null;
+        return self::get_response_for_user_session($sessionid, $userid) !== null;
     }
 
     /**
      * UI state for my_records / survey entry (SPEC §59.6).
+     * FILL only when token is enabled and time-open (is_quick_survey_accepting).
      *
      * @return string one of STATE_* constants
      */
@@ -687,7 +693,7 @@ class survey_manager {
             return self::STATE_NONE;
         }
         $sessionid = (int) $enrol->sessionid;
-        if (self::get_response_by_enrolid((int) $enrol->id)) {
+        if (self::get_response_for_user_session($sessionid, $userid)) {
             return self::STATE_VIEW;
         }
         if ((int) $enrol->status !== session_manager::ENROL_APPROVED) {
@@ -697,7 +703,7 @@ class survey_manager {
         if ($courseid <= 0) {
             $courseid = (int) $DB->get_field('local_tm_course_sessions', 'courseid', ['id' => $sessionid]);
         }
-        // Ensure pin attempt for past-start sessions (SPEC call sites).
+        // Ensure pin attempt for past-start sessions (also creates token when pin is new).
         self::ensure_session_survey_pin($sessionid);
         $pin = self::get_pin($sessionid);
         $hasquestionnaire = $pin || self::active_surveyid_for_course($courseid) > 0;
@@ -705,6 +711,10 @@ class survey_manager {
             return self::STATE_NONE;
         }
         if (!self::is_session_survey_open($sessionid)) {
+            return self::STATE_NOT_OPEN;
+        }
+        if (!self::is_quick_survey_accepting($sessionid)) {
+            // Time-open but admin closed the token — treat as not fillable.
             return self::STATE_NOT_OPEN;
         }
         return self::STATE_FILL;
@@ -736,7 +746,7 @@ class survey_manager {
     }
 
     /**
-     * Validate and persist a formal submission. enrolid unique; race-safe.
+     * Phase 2 API: approved learner submit via their Moodle email (delegates to email path).
      *
      * @param array<int|string,mixed> $rawanswers POST answer payload keyed by itemid
      * @return int response id
@@ -755,12 +765,287 @@ class survey_manager {
             throw new \moodle_exception('survey_error_not_eligible', 'local_tm_course');
         }
 
-        $existing = self::get_response_by_enrolid((int) $enrol->id);
-        if ($existing) {
-            throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
+        $user = $DB->get_record('user', ['id' => $userid], 'id, email', MUST_EXIST);
+        $email = self::normalize_email((string) ($user->email ?? ''));
+        if ($email === '') {
+            throw new \moodle_exception('survey_error_not_eligible', 'local_tm_course');
         }
 
+        // Ensure token exists so is_quick_survey_accepting can pass for Phase 2 tests / my_records.
+        self::ensure_session_survey_pin($sessionid);
+        if (!self::get_token_for_session($sessionid)) {
+            self::ensure_session_survey_token($sessionid, true);
+        }
+
+        return self::submit_response_by_email($sessionid, $email, $rawanswers);
+    }
+
+    /**
+     * Trim + lowercase; return '' if not a valid email.
+     */
+    public static function normalize_email(string $email): string {
+        $email = strtolower(trim($email));
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return '';
+        }
+        return $email;
+    }
+
+    /**
+     * @return \stdClass|null
+     */
+    public static function get_token_by_value(string $token) {
+        global $DB;
+        $token = trim($token);
+        if ($token === '' || \core_text::strlen($token) > 64) {
+            return null;
+        }
+        $row = $DB->get_record('local_tm_course_svtok', ['token' => $token]);
+        return $row ? $row : null;
+    }
+
+    /**
+     * @return \stdClass|null
+     */
+    public static function get_token_for_session(int $sessionid) {
+        global $DB;
+        if ($sessionid <= 0) {
+            return null;
+        }
+        $row = $DB->get_record('local_tm_course_svtok', ['sessionid' => $sessionid]);
+        return $row ? $row : null;
+    }
+
+    /**
+     * Create token row if missing. When $enable is true and row exists, set enabled=1.
+     *
+     * @return \stdClass
+     */
+    public static function ensure_session_survey_token(int $sessionid, bool $enable = true) {
+        global $DB;
+        if ($sessionid <= 0) {
+            throw new \moodle_exception('survey_error_no_survey', 'local_tm_course');
+        }
+        $existing = self::get_token_for_session($sessionid);
+        $now = time();
+        if ($existing) {
+            if ($enable && !(int) $existing->enabled) {
+                $DB->update_record('local_tm_course_svtok', (object) [
+                    'id' => (int) $existing->id,
+                    'enabled' => 1,
+                    'timemodified' => $now,
+                ]);
+                $existing->enabled = 1;
+                $existing->timemodified = $now;
+            }
+            return $existing;
+        }
+        $token = bin2hex(random_bytes(32));
+        $id = (int) $DB->insert_record('local_tm_course_svtok', (object) [
+            'sessionid' => $sessionid,
+            'token' => $token,
+            'enabled' => $enable ? 1 : 0,
+            'timecreated' => $now,
+            'timemodified' => $now,
+        ]);
+        return $DB->get_record('local_tm_course_svtok', ['id' => $id], '*', MUST_EXIST);
+    }
+
+    public static function set_session_survey_token_enabled(int $sessionid, bool $enabled): void {
+        global $DB;
+        $row = self::ensure_session_survey_token($sessionid, false);
+        $DB->update_record('local_tm_course_svtok', (object) [
+            'id' => (int) $row->id,
+            'enabled' => $enabled ? 1 : 0,
+            'timemodified' => time(),
+        ]);
+    }
+
+    /**
+     * Replace token string and set enabled=1 (old string immediately invalid).
+     *
+     * @return \stdClass
+     */
+    public static function regenerate_session_survey_token(int $sessionid) {
+        global $DB;
+        $row = self::ensure_session_survey_token($sessionid, false);
+        $now = time();
+        $token = bin2hex(random_bytes(32));
+        $DB->update_record('local_tm_course_svtok', (object) [
+            'id' => (int) $row->id,
+            'token' => $token,
+            'enabled' => 1,
+            'timemodified' => $now,
+        ]);
+        $row->token = $token;
+        $row->enabled = 1;
+        $row->timemodified = $now;
+        return $row;
+    }
+
+    /**
+     * @return \moodle_url
+     */
+    public static function quick_fill_url(string $token) {
+        return new \moodle_url('/local/tm_course/survey.php', ['t' => $token]);
+    }
+
+    /**
+     * @return \stdClass|null
+     */
+    public static function get_response_by_email(int $sessionid, int $versionid, string $email) {
+        global $DB;
+        $email = self::normalize_email($email);
+        if ($email === '' || $sessionid <= 0 || $versionid <= 0) {
+            return null;
+        }
+        $row = $DB->get_record('local_tm_course_svresp', [
+            'sessionid' => $sessionid,
+            'versionid' => $versionid,
+            'email' => $email,
+        ]);
+        return $row ? $row : null;
+    }
+
+    /**
+     * Map an email to userid/enrolid for a session (approved enrolment preferred).
+     *
+     * @return array{email:string,userid:int,enrolid:int,mapped:int}
+     */
+    public static function map_email_to_session(int $sessionid, string $email): array {
+        global $DB;
+        $email = self::normalize_email($email);
+        $out = [
+            'email' => $email,
+            'userid' => 0,
+            'enrolid' => 0,
+            'mapped' => self::UNMAPPED,
+        ];
+        if ($email === '' || $sessionid <= 0) {
+            return $out;
+        }
+        $sql = "SELECT u.id
+                  FROM {user} u
+                 WHERE " . $DB->sql_equal('u.email', ':email', false, false) . "
+                   AND u.deleted = 0
+              ORDER BY u.id ASC";
+        $users = $DB->get_records_sql($sql, ['email' => $email], 0, 1);
+        if (!$users) {
+            return $out;
+        }
+        $user = reset($users);
+        $userid = (int) $user->id;
+        $out['userid'] = $userid;
+
+        $sql = "SELECT e.*
+                  FROM {local_tm_course_enrolments} e
+                 WHERE e.sessionid = :sessionid
+                   AND (e.userid = :uid1 OR e.linked_userid = :uid2)
+              ORDER BY CASE WHEN e.status = :approved THEN 0 ELSE 1 END, e.id ASC";
+        $rows = $DB->get_records_sql($sql, [
+            'sessionid' => $sessionid,
+            'uid1' => $userid,
+            'uid2' => $userid,
+            'approved' => session_manager::ENROL_APPROVED,
+        ]);
+        $enrol = null;
+        foreach ($rows as $candidate) {
+            if (self::learner_userid_for_enrol($candidate) === $userid) {
+                $enrol = $candidate;
+                break;
+            }
+        }
+        if ($enrol) {
+            $out['enrolid'] = (int) $enrol->id;
+            $out['mapped'] = self::MAPPED;
+        }
+        return $out;
+    }
+
+    /**
+     * Pin open by time AND token exists AND enabled.
+     */
+    public static function is_quick_survey_accepting(int $sessionid): bool {
         if (!self::is_session_survey_open($sessionid)) {
+            return false;
+        }
+        $tok = self::get_token_for_session($sessionid);
+        return $tok && (int) $tok->enabled === 1;
+    }
+
+    public static function count_session_responses(int $sessionid): int {
+        global $DB;
+        if ($sessionid <= 0) {
+            return 0;
+        }
+        return (int) $DB->count_records('local_tm_course_svresp', ['sessionid' => $sessionid]);
+    }
+
+    /**
+     * Approved enrolment headcount for the session.
+     */
+    public static function expected_headcount(int $sessionid): int {
+        return session_manager::confirmed_count($sessionid);
+    }
+
+    /**
+     * Response for a user on a session: enrol-bound first, then email+pinned version.
+     *
+     * @return \stdClass|null
+     */
+    public static function get_response_for_user_session(int $sessionid, int $userid) {
+        global $DB;
+        if ($sessionid <= 0 || $userid <= 0) {
+            return null;
+        }
+        $enrol = self::find_user_enrolment_for_session($sessionid, $userid);
+        if ($enrol) {
+            $byenrol = self::get_response_by_enrolid((int) $enrol->id);
+            if ($byenrol) {
+                return $byenrol;
+            }
+        }
+        $user = $DB->get_record('user', ['id' => $userid], 'id, email');
+        if (!$user) {
+            return null;
+        }
+        $email = self::normalize_email((string) ($user->email ?? ''));
+        if ($email === '') {
+            return null;
+        }
+        $pin = self::get_pin($sessionid);
+        if ($pin) {
+            $byemail = self::get_response_by_email($sessionid, (int) $pin->versionid, $email);
+            if ($byemail) {
+                return $byemail;
+            }
+        }
+        $row = $DB->get_record_sql(
+            "SELECT * FROM {local_tm_course_svresp}
+              WHERE sessionid = :sessionid AND email = :email
+           ORDER BY id DESC",
+            ['sessionid' => $sessionid, 'email' => $email],
+            0,
+            1
+        );
+        return $row ? $row : null;
+    }
+
+    /**
+     * Public / QR submit path keyed by email.
+     *
+     * @param array<int|string,mixed> $rawanswers
+     * @return int response id
+     */
+    public static function submit_response_by_email(int $sessionid, string $email, array $rawanswers): int {
+        global $DB;
+
+        $email = self::normalize_email($email);
+        if ($email === '') {
+            throw new \moodle_exception('survey_error_invalid_email', 'local_tm_course');
+        }
+
+        if (!self::is_quick_survey_accepting($sessionid)) {
             throw new \moodle_exception('survey_error_not_open', 'local_tm_course');
         }
 
@@ -770,20 +1055,42 @@ class survey_manager {
             throw new \moodle_exception('survey_error_no_survey', 'local_tm_course');
         }
         $versionid = (int) $pin->versionid;
+
+        if (self::get_response_by_email($sessionid, $versionid, $email)) {
+            throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
+        }
+
+        $map = self::map_email_to_session($sessionid, $email);
+        $enrolid = (int) $map['enrolid'];
+        $userid = (int) $map['userid'];
+        $mapped = (int) $map['mapped'];
+
+        if ($enrolid > 0 && self::get_response_by_enrolid($enrolid)) {
+            throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
+        }
+
         $structure = self::get_version_structure($versionid);
         $validated = self::validate_answer_payload($structure, $rawanswers);
 
         try {
             $transaction = $DB->start_delegated_transaction();
-            // Re-check inside the transaction for concurrent submits.
-            if ($DB->record_exists('local_tm_course_svresp', ['enrolid' => (int) $enrol->id])) {
+            if ($DB->record_exists('local_tm_course_svresp', [
+                'sessionid' => $sessionid,
+                'versionid' => $versionid,
+                'email' => $email,
+            ])) {
+                throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
+            }
+            if ($enrolid > 0 && $DB->record_exists('local_tm_course_svresp', ['enrolid' => $enrolid])) {
                 throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
             }
             $responseid = (int) $DB->insert_record('local_tm_course_svresp', (object) [
-                'enrolid' => (int) $enrol->id,
+                'enrolid' => $enrolid,
                 'versionid' => $versionid,
                 'sessionid' => $sessionid,
                 'userid' => $userid,
+                'email' => $email,
+                'mapped' => $mapped,
                 'timecreated' => time(),
             ]);
             foreach ($validated as $row) {
@@ -804,9 +1111,8 @@ class survey_manager {
             $transaction->allow_commit();
             return $responseid;
         } catch (\dml_exception $e) {
-            // Unique enrolid race / retry: treat as already submitted if a row now exists.
-            $again = self::get_response_by_enrolid((int) $enrol->id);
-            if ($again) {
+            if (self::get_response_by_email($sessionid, $versionid, $email)
+                || ($enrolid > 0 && self::get_response_by_enrolid($enrolid))) {
                 throw new \moodle_exception('survey_error_already_submitted', 'local_tm_course');
             }
             throw $e;

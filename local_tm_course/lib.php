@@ -170,6 +170,7 @@ function local_tm_course_extend_navigation(global_navigation $nav): void {
         $node->add(get_string('nav_sessions', 'local_tm_course'), new moodle_url('/local/tm_course/admin/sessions.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_sessions');
         $node->add(get_string('nav_enrolments', 'local_tm_course'), new moodle_url('/local/tm_course/admin/review_center.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_enrolments');
         $node->add(get_string('nav_surveys', 'local_tm_course'), new moodle_url('/local/tm_course/admin/surveys.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_surveys');
+        $node->add(get_string('nav_survey_results', 'local_tm_course'), new moodle_url('/local/tm_course/admin/survey_results.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_survey_results');
         $node->add(get_string('nav_class_prep', 'local_tm_course'), new moodle_url('/local/tm_course/admin/sessions.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_attendance');
         $node->add(get_string('equipment_check_manage_title', 'local_tm_course'), new moodle_url('/local/tm_course/settings/equipment_check_items.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_equipment_check');
     }
@@ -233,6 +234,7 @@ function local_tm_course_extend_settings_navigation(settings_navigation $setting
     $root->add(get_string('nav_sessions', 'local_tm_course'), new moodle_url('/local/tm_course/admin/sessions.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_sessions');
     $root->add(get_string('nav_enrolments', 'local_tm_course'), new moodle_url('/local/tm_course/admin/review_center.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_enrolments');
     $root->add(get_string('nav_surveys', 'local_tm_course'), new moodle_url('/local/tm_course/admin/surveys.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_surveys');
+    $root->add(get_string('nav_survey_results', 'local_tm_course'), new moodle_url('/local/tm_course/admin/survey_results.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_survey_results');
     $root->add(get_string('nav_class_prep', 'local_tm_course'), new moodle_url('/local/tm_course/admin/sessions.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_attendance');
     $root->add(get_string('equipment_check_manage_title', 'local_tm_course'), new moodle_url('/local/tm_course/settings/equipment_check_items.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_equipment_check');
 }

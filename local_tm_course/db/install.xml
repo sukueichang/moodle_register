@@ -731,23 +731,42 @@
       </INDEXES>
     </TABLE>
 
-    <TABLE NAME="local_tm_course_svresp" COMMENT="One formal survey submission per enrolment">
+    <TABLE NAME="local_tm_course_svresp" COMMENT="One formal survey submission per session+version+email (enrolid 0 = unmatched)">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="enrolid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="versionid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="sessionid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="userid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="email" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT=""/>
+        <FIELD NAME="mapped" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
       </FIELDS>
       <KEYS>
         <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
-        <KEY NAME="uq_svresp_enrol" TYPE="unique" FIELDS="enrolid"/>
       </KEYS>
       <INDEXES>
+        <INDEX NAME="idx_svresp_enrol" UNIQUE="false" FIELDS="enrolid"/>
         <INDEX NAME="idx_svresp_ver" UNIQUE="false" FIELDS="versionid"/>
         <INDEX NAME="idx_svresp_sess" UNIQUE="false" FIELDS="sessionid"/>
+        <INDEX NAME="uq_svresp_sess_ver_email" UNIQUE="true" FIELDS="sessionid, versionid, email"/>
       </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_tm_course_svtok" COMMENT="One active survey quick-access token per session">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="sessionid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="token" TYPE="char" LENGTH="64" NOTNULL="true" DEFAULT=""/>
+        <FIELD NAME="enabled" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="1"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+        <KEY NAME="uq_svtok_session" TYPE="unique" FIELDS="sessionid"/>
+        <KEY NAME="uq_svtok_token" TYPE="unique" FIELDS="token"/>
+      </KEYS>
     </TABLE>
 
     <TABLE NAME="local_tm_course_svans" COMMENT="One answer row per question per submission">

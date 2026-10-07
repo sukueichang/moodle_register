@@ -1,8 +1,9 @@
 <?php
 /**
- * Learner course survey fill-in / view (SPEC §59 stage 2).
+ * Course survey — email quick-access (QR) and logged-in redirect (SPEC §59 Phase 3).
  *
- * URL: /local/tm_course/survey.php?sessionid=N
+ * URL: /local/tm_course/survey.php?t=TOKEN
+ *      /local/tm_course/survey.php?sessionid=N  (login → redirect to t=)
  *
  * @package    local_tm_course
  */
@@ -12,261 +13,209 @@ require_once(__DIR__ . '/classes/permissions_manager.php');
 require_once(__DIR__ . '/classes/enrolment_manager.php');
 require_once(__DIR__ . '/classes/session_manager.php');
 
-use local_tm_course\permissions_manager;
 use local_tm_course\survey_manager;
 
-$sessionid = required_param('sessionid', PARAM_INT);
-$wanturl = new moodle_url('/local/tm_course/survey.php', ['sessionid' => $sessionid]);
-require_login();
-permissions_manager::require_view_access();
-
-$PAGE->set_context(context_system::instance());
-$PAGE->set_pagelayout('admin');
-$PAGE->set_url($wanturl);
-$PAGE->requires->css('/local/tm_course/styles.css');
-$PAGE->set_title(get_string('survey_learner_title', 'local_tm_course'));
-
-global $DB, $USER, $OUTPUT;
-
-$session = $DB->get_record('local_tm_course_sessions', ['id' => $sessionid], '*', MUST_EXIST);
-$enrol = survey_manager::find_user_enrolment_for_session($sessionid, (int) $USER->id);
-$error = '';
+$tokenparam = optional_param('t', '', PARAM_ALPHANUM);
+$sessionidparam = optional_param('sessionid', 0, PARAM_INT);
 $saved = optional_param('saved', 0, PARAM_BOOL);
+$step = optional_param('step', '', PARAM_ALPHA);
 
-if (!$enrol) {
-    echo $OUTPUT->header();
-    echo $OUTPUT->notification(get_string('survey_error_not_eligible', 'local_tm_course'), 'error');
-    echo html_writer::link(new moodle_url('/local/tm_course/my_records.php'), get_string('survey_back_records', 'local_tm_course'));
-    echo $OUTPUT->footer();
-    exit;
-}
+global $DB, $USER, $OUTPUT, $PAGE, $SESSION, $CFG;
 
-$state = survey_manager::my_records_survey_state($enrol, (int) $USER->id);
-$response = survey_manager::get_response_by_enrolid((int) $enrol->id);
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
+/**
+ * Rate-limit email POSTs: max 30 / hour per IP (application cache).
+ */
+function local_tm_course_survey_rate_ok(): bool {
+    global $SESSION;
+    $ip = getremoteaddr();
+    $hour = (string) floor(time() / 3600);
+    $key = 'survey_quick_' . md5(($ip !== '' ? $ip : 'unknown') . '_' . $hour);
     try {
-        survey_manager::submit_response($sessionid, (int) $USER->id, $_POST['answer'] ?? []);
-        redirect(new moodle_url('/local/tm_course/survey.php', [
-            'sessionid' => $sessionid,
-            'saved' => 1,
-        ]));
-    } catch (\moodle_exception $e) {
-        if ($e->errorcode === 'survey_error_already_submitted') {
-            redirect(new moodle_url('/local/tm_course/survey.php', [
-                'sessionid' => $sessionid,
-                'saved' => 1,
-            ]));
+        $cache = \cache::make_from_params(\cache_store::MODE_APPLICATION, 'local_tm_course', 'survey_quick');
+        $hits = (int) $cache->get($key);
+        if ($hits >= 30) {
+            return false;
         }
-        $error = $e->getMessage();
-        $state = survey_manager::STATE_FILL;
-        $response = survey_manager::get_response_by_enrolid((int) $enrol->id);
-        if ($response) {
-            $state = survey_manager::STATE_VIEW;
-        }
+        $cache->set($key, $hits + 1);
+        return true;
+    } catch (\Throwable $e) {
+        // Cache unavailable — session counter fallback.
     }
-}
-
-$pin = survey_manager::get_pin($sessionid);
-$versionid = 0;
-if ($response) {
-    $versionid = (int) $response->versionid;
-    $state = survey_manager::STATE_VIEW;
-} else if ($pin) {
-    $versionid = (int) $pin->versionid;
-} else if ($state === survey_manager::STATE_FILL || $state === survey_manager::STATE_NOT_OPEN) {
-    survey_manager::ensure_session_survey_pin($sessionid);
-    $pin = survey_manager::get_pin($sessionid);
-    $versionid = $pin ? (int) $pin->versionid : 0;
-}
-
-$structure = $versionid > 0 ? survey_manager::get_version_structure($versionid) : [];
-$answers = ($response && $state === survey_manager::STATE_VIEW)
-    ? survey_manager::get_response_answers((int) $response->id)
-    : [];
-
-$surveyname = '';
-if ($versionid > 0) {
-    $ver = $DB->get_record('local_tm_course_svver', ['id' => $versionid], 'id, surveyid');
-    if ($ver) {
-        $def = $DB->get_record('local_tm_course_svdef', ['id' => $ver->surveyid], 'id, name');
-        $surveyname = $def ? (string) $def->name : '';
+    if (empty($SESSION->tm_survey_rl)) {
+        $SESSION->tm_survey_rl = ['n' => 0, 't' => time()];
     }
+    if (time() - (int) $SESSION->tm_survey_rl['t'] > 3600) {
+        $SESSION->tm_survey_rl = ['n' => 0, 't' => time()];
+    }
+    $SESSION->tm_survey_rl['n']++;
+    return (int) $SESSION->tm_survey_rl['n'] <= 30;
 }
 
-echo $OUTPUT->header();
-echo html_writer::link(
-    new moodle_url('/local/tm_course/my_records.php'),
-    get_string('survey_back_records', 'local_tm_course'),
-    ['class' => 'd-inline-block mb-3']
-);
-echo html_writer::tag('h2', get_string('survey_learner_title', 'local_tm_course'));
-echo html_writer::tag('p', s($session->name) . ($surveyname !== '' ? ' — ' . s($surveyname) : ''), ['class' => 'text-muted']);
+/**
+ * Render questionnaire fill or view (shared markup).
+ *
+ * @param array $structure
+ * @param array $answers
+ * @param moodle_url $formurl
+ * @param bool $viewonly
+ * @param string $error
+ * @param bool $savedflag
+ */
+function local_tm_course_survey_render_form(
+    array $structure,
+    array $answers,
+    moodle_url $formurl,
+    bool $viewonly,
+    string $error,
+    bool $savedflag
+): void {
+    global $OUTPUT, $PAGE;
 
-if ($saved) {
-    echo $OUTPUT->notification(get_string('survey_submitted', 'local_tm_course'), 'success');
-}
-if ($error !== '') {
-    echo $OUTPUT->notification($error, 'error');
-}
+    if ($savedflag) {
+        echo $OUTPUT->notification(get_string('survey_submitted', 'local_tm_course'), 'success');
+    }
+    if ($error !== '') {
+        echo $OUTPUT->notification($error, 'error');
+    }
 
-if ($state === survey_manager::STATE_NONE) {
-    echo $OUTPUT->notification(get_string('survey_error_not_eligible', 'local_tm_course'), 'info');
-    echo $OUTPUT->footer();
-    exit;
-}
-
-if ($state === survey_manager::STATE_NOT_OPEN) {
-    echo $OUTPUT->notification(get_string('survey_not_open', 'local_tm_course'), 'info');
-    echo $OUTPUT->footer();
-    exit;
-}
-
-if ($state === survey_manager::STATE_VIEW) {
-    echo html_writer::tag('p', get_string('survey_view_only', 'local_tm_course'), ['class' => 'font-weight-bold']);
     if (!$structure) {
         echo $OUTPUT->notification(get_string('survey_error_no_survey', 'local_tm_course'), 'error');
-        echo $OUTPUT->footer();
-        exit;
+        return;
     }
+
+    if ($viewonly) {
+        echo html_writer::tag('p', get_string('survey_view_only', 'local_tm_course'), ['class' => 'font-weight-bold']);
+        foreach ($structure as $section) {
+            if (($section['name'] ?? '') !== '') {
+                echo html_writer::tag('h3', s($section['name']), ['class' => 'mt-3']);
+            }
+            foreach ($section['items'] ?? [] as $item) {
+                $itemid = (int) $item['id'];
+                $ans = $answers[$itemid] ?? null;
+                echo html_writer::start_div('border rounded p-3 mb-3');
+                echo html_writer::tag('div', s($item['title']) . (!empty($item['required']) ? ' *' : ''), ['class' => 'font-weight-bold']);
+                if (($item['help'] ?? '') !== '') {
+                    echo html_writer::tag('div', s($item['help']), ['class' => 'text-muted small mb-2']);
+                }
+                $display = '—';
+                if ($ans) {
+                    if ($item['qtype'] === survey_manager::TYPE_SCALE) {
+                        $display = (string) ($ans['valueint'] ?? '—');
+                    } else if ($item['qtype'] === survey_manager::TYPE_TEXT) {
+                        $display = $ans['valuetext'] !== '' ? $ans['valuetext'] : '—';
+                    } else if ($item['qtype'] === survey_manager::TYPE_SINGLE) {
+                        $label = '—';
+                        foreach ($item['options'] as $option) {
+                            if ((int) $option['id'] === (int) ($ans['valueint'] ?? 0)) {
+                                $label = (string) $option['label'];
+                                break;
+                            }
+                        }
+                        $display = $label;
+                        if ($ans['othertext'] !== '') {
+                            $display .= ' (' . $ans['othertext'] . ')';
+                        }
+                    } else if ($item['qtype'] === survey_manager::TYPE_MULTI) {
+                        $labels = [];
+                        $picked = array_map('intval', $ans['optionids']);
+                        foreach ($item['options'] as $option) {
+                            if (in_array((int) $option['id'], $picked, true)) {
+                                $labels[] = (string) $option['label'];
+                            }
+                        }
+                        $display = $labels ? implode(', ', $labels) : '—';
+                        if ($ans['othertext'] !== '') {
+                            $display .= ' (' . $ans['othertext'] . ')';
+                        }
+                    }
+                }
+                echo html_writer::tag('div', s($display));
+                echo html_writer::end_div();
+            }
+        }
+        return;
+    }
+
+    echo html_writer::start_tag('form', [
+        'method' => 'post',
+        'action' => $formurl->out(false),
+        'id' => 'survey-fill-form',
+    ]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+    echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'step', 'value' => 'answers']);
+
     foreach ($structure as $section) {
         if (($section['name'] ?? '') !== '') {
             echo html_writer::tag('h3', s($section['name']), ['class' => 'mt-3']);
         }
         foreach ($section['items'] ?? [] as $item) {
             $itemid = (int) $item['id'];
-            $ans = $answers[$itemid] ?? null;
-            echo html_writer::start_div('border rounded p-3 mb-3');
-            echo html_writer::tag('div', s($item['title']) . (!empty($item['required']) ? ' *' : ''), ['class' => 'font-weight-bold']);
+            $prefix = 'answer[' . $itemid . ']';
+            echo html_writer::start_div('border rounded p-3 mb-3 survey-fill-item');
+            echo html_writer::tag('div', s($item['title']) . (!empty($item['required']) ? ' *' : ''), ['class' => 'font-weight-bold mb-1']);
             if (($item['help'] ?? '') !== '') {
                 echo html_writer::tag('div', s($item['help']), ['class' => 'text-muted small mb-2']);
             }
-            $display = '—';
-            if ($ans) {
-                if ($item['qtype'] === survey_manager::TYPE_SCALE) {
-                    $display = (string) ($ans['valueint'] ?? '—');
-                } else if ($item['qtype'] === survey_manager::TYPE_TEXT) {
-                    $display = $ans['valuetext'] !== '' ? $ans['valuetext'] : '—';
-                } else if ($item['qtype'] === survey_manager::TYPE_SINGLE) {
-                    $label = '—';
-                    foreach ($item['options'] as $option) {
-                        if ((int) $option['id'] === (int) ($ans['valueint'] ?? 0)) {
-                            $label = (string) $option['label'];
-                            break;
-                        }
-                    }
-                    $display = $label;
-                    if ($ans['othertext'] !== '') {
-                        $display .= ' (' . $ans['othertext'] . ')';
-                    }
-                } else if ($item['qtype'] === survey_manager::TYPE_MULTI) {
-                    $labels = [];
-                    $picked = array_map('intval', $ans['optionids']);
-                    foreach ($item['options'] as $option) {
-                        if (in_array((int) $option['id'], $picked, true)) {
-                            $labels[] = (string) $option['label'];
-                        }
-                    }
-                    $display = $labels ? implode(', ', $labels) : '—';
-                    if ($ans['othertext'] !== '') {
-                        $display .= ' (' . $ans['othertext'] . ')';
-                    }
+            $qtype = (string) $item['qtype'];
+            if ($qtype === survey_manager::TYPE_SCALE) {
+                $min = (string) ($item['scalemin'] ?? '');
+                $max = (string) ($item['scalemax'] ?? '');
+                if ($min !== '' || $max !== '') {
+                    echo html_writer::tag('div', s($min) . ' ← → ' . s($max), ['class' => 'small text-muted mb-2']);
                 }
-            }
-            echo html_writer::tag('div', s($display));
-            echo html_writer::end_div();
-        }
-    }
-    echo $OUTPUT->footer();
-    exit;
-}
-
-// Fill mode.
-if (!$structure || $versionid <= 0) {
-    echo $OUTPUT->notification(get_string('survey_error_no_survey', 'local_tm_course'), 'error');
-    echo $OUTPUT->footer();
-    exit;
-}
-
-echo html_writer::start_tag('form', [
-    'method' => 'post',
-    'action' => $wanturl->out(false),
-    'id' => 'survey-fill-form',
-]);
-echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
-
-foreach ($structure as $section) {
-    if (($section['name'] ?? '') !== '') {
-        echo html_writer::tag('h3', s($section['name']), ['class' => 'mt-3']);
-    }
-    foreach ($section['items'] ?? [] as $item) {
-        $itemid = (int) $item['id'];
-        $prefix = 'answer[' . $itemid . ']';
-        echo html_writer::start_div('border rounded p-3 mb-3 survey-fill-item');
-        echo html_writer::tag('div', s($item['title']) . (!empty($item['required']) ? ' *' : ''), ['class' => 'font-weight-bold mb-1']);
-        if (($item['help'] ?? '') !== '') {
-            echo html_writer::tag('div', s($item['help']), ['class' => 'text-muted small mb-2']);
-        }
-        $qtype = (string) $item['qtype'];
-        if ($qtype === survey_manager::TYPE_SCALE) {
-            $min = (string) ($item['scalemin'] ?? '');
-            $max = (string) ($item['scalemax'] ?? '');
-            if ($min !== '' || $max !== '') {
-                echo html_writer::tag('div', s($min) . ' ← → ' . s($max), ['class' => 'small text-muted mb-2']);
-            }
-            echo html_writer::start_div('d-flex flex-wrap');
-            for ($n = 1; $n <= 5; $n++) {
-                echo html_writer::tag('label',
-                    html_writer::empty_tag('input', [
-                        'type' => 'radio', 'name' => $prefix . '[value]', 'value' => $n,
-                        'class' => 'mr-1',
-                    ]) . ' ' . $n,
-                    ['class' => 'mr-3 mb-1']
-                );
-            }
-            echo html_writer::end_div();
-        } else if ($qtype === survey_manager::TYPE_TEXT) {
-            echo html_writer::tag('textarea', '', [
-                'name' => $prefix . '[value]', 'class' => 'form-control', 'rows' => 3,
-            ]);
-        } else if ($qtype === survey_manager::TYPE_SINGLE || $qtype === survey_manager::TYPE_MULTI) {
-            $inputtype = $qtype === survey_manager::TYPE_SINGLE ? 'radio' : 'checkbox';
-            $name = $qtype === survey_manager::TYPE_SINGLE ? $prefix . '[option]' : $prefix . '[options][]';
-            foreach ($item['options'] as $option) {
-                $oid = (int) $option['id'];
-                $isother = !empty($option['isother']);
-                echo html_writer::start_div('mb-1');
-                echo html_writer::tag('label',
-                    html_writer::empty_tag('input', [
-                        'type' => $inputtype, 'name' => $name, 'value' => $oid,
-                        'class' => 'mr-1 survey-opt' . ($isother ? ' survey-opt-other' : ''),
-                        'data-item' => $itemid,
-                    ]) . ' ' . s($option['label'])
-                );
-                if ($isother) {
-                    echo html_writer::empty_tag('input', [
-                        'type' => 'text', 'name' => $prefix . '[other]',
-                        'class' => 'form-control form-control-sm mt-1 survey-other-text',
-                        'data-item' => $itemid,
-                        'placeholder' => get_string('survey_option_other', 'local_tm_course'),
-                    ]);
+                echo html_writer::start_div('d-flex flex-wrap');
+                for ($n = 1; $n <= 5; $n++) {
+                    echo html_writer::tag('label',
+                        html_writer::empty_tag('input', [
+                            'type' => 'radio', 'name' => $prefix . '[value]', 'value' => $n,
+                            'class' => 'mr-1',
+                        ]) . ' ' . $n,
+                        ['class' => 'mr-3 mb-1']
+                    );
                 }
                 echo html_writer::end_div();
+            } else if ($qtype === survey_manager::TYPE_TEXT) {
+                echo html_writer::tag('textarea', '', [
+                    'name' => $prefix . '[value]', 'class' => 'form-control', 'rows' => 3,
+                ]);
+            } else if ($qtype === survey_manager::TYPE_SINGLE || $qtype === survey_manager::TYPE_MULTI) {
+                $inputtype = $qtype === survey_manager::TYPE_SINGLE ? 'radio' : 'checkbox';
+                $name = $qtype === survey_manager::TYPE_SINGLE ? $prefix . '[option]' : $prefix . '[options][]';
+                foreach ($item['options'] as $option) {
+                    $oid = (int) $option['id'];
+                    $isother = !empty($option['isother']);
+                    echo html_writer::start_div('mb-1');
+                    echo html_writer::tag('label',
+                        html_writer::empty_tag('input', [
+                            'type' => $inputtype, 'name' => $name, 'value' => $oid,
+                            'class' => 'mr-1 survey-opt' . ($isother ? ' survey-opt-other' : ''),
+                            'data-item' => $itemid,
+                        ]) . ' ' . s($option['label'])
+                    );
+                    if ($isother) {
+                        echo html_writer::empty_tag('input', [
+                            'type' => 'text', 'name' => $prefix . '[other]',
+                            'class' => 'form-control form-control-sm mt-1 survey-other-text',
+                            'data-item' => $itemid,
+                            'placeholder' => get_string('survey_option_other', 'local_tm_course'),
+                        ]);
+                    }
+                    echo html_writer::end_div();
+                }
             }
+            echo html_writer::end_div();
         }
-        echo html_writer::end_div();
     }
-}
 
-echo html_writer::empty_tag('input', [
-    'type' => 'submit',
-    'class' => 'btn btn-primary',
-    'id' => 'survey-submit-btn',
-    'value' => get_string('survey_submit', 'local_tm_course'),
-]);
-echo html_writer::end_tag('form');
+    echo html_writer::empty_tag('input', [
+        'type' => 'submit',
+        'class' => 'btn btn-primary',
+        'id' => 'survey-submit-btn',
+        'value' => get_string('survey_submit', 'local_tm_course'),
+    ]);
+    echo html_writer::end_tag('form');
 
-$PAGE->requires->js_init_code(<<<'JS'
+    $PAGE->requires->js_init_code(<<<'JS'
 (function() {
     var form = document.getElementById('survey-fill-form');
     var btn = document.getElementById('survey-submit-btn');
@@ -280,6 +229,203 @@ $PAGE->requires->js_init_code(<<<'JS'
     });
 })();
 JS
+    );
+}
+
+// ---- Path: sessionid without token → login + redirect (or view if closed + existing) ----
+if ($tokenparam === '' && $sessionidparam > 0) {
+    require_login();
+    $sessionid = $sessionidparam;
+    $session = $DB->get_record('local_tm_course_sessions', ['id' => $sessionid], '*', MUST_EXIST);
+    survey_manager::ensure_session_survey_pin($sessionid);
+    $tok = survey_manager::get_token_for_session($sessionid);
+    $response = survey_manager::get_response_for_user_session($sessionid, (int) $USER->id);
+
+    if ($tok && !(int) $tok->enabled && $response) {
+        // Token closed but learner has a response — allow view while logged in.
+        $PAGE->set_context(context_system::instance());
+        $PAGE->set_pagelayout('admin');
+        $PAGE->set_url(new moodle_url('/local/tm_course/survey.php', ['sessionid' => $sessionid]));
+        $PAGE->requires->css('/local/tm_course/styles.css');
+        $PAGE->set_title(get_string('survey_learner_title', 'local_tm_course'));
+        $structure = survey_manager::get_version_structure((int) $response->versionid);
+        $answers = survey_manager::get_response_answers((int) $response->id);
+        echo $OUTPUT->header();
+        echo html_writer::tag('h2', get_string('survey_learner_title', 'local_tm_course'));
+        echo html_writer::tag('p', s($session->name), ['class' => 'text-muted']);
+        local_tm_course_survey_render_form(
+            $structure,
+            $answers,
+            new moodle_url('/local/tm_course/survey.php', ['sessionid' => $sessionid]),
+            true,
+            '',
+            (bool) $saved
+        );
+        echo $OUTPUT->footer();
+        exit;
+    }
+
+    if (!$tok) {
+        $tok = survey_manager::ensure_session_survey_token($sessionid, true);
+    }
+    redirect(survey_manager::quick_fill_url((string) $tok->token));
+}
+
+if ($tokenparam === '') {
+    print_error('invalidparameter', 'error');
+}
+
+// ---- Public token path (no require_login) ----
+$tokrow = survey_manager::get_token_by_value($tokenparam);
+if (!$tokrow || !(int) $tokrow->enabled) {
+    $PAGE->set_context(context_system::instance());
+    $PAGE->set_pagelayout('popup');
+    $PAGE->set_url(new moodle_url('/local/tm_course/survey.php', ['t' => $tokenparam]));
+    $PAGE->set_title(get_string('survey_learner_title', 'local_tm_course'));
+    echo $OUTPUT->header();
+    echo $OUTPUT->notification(get_string('survey_quick_token_invalid', 'local_tm_course'), 'error');
+    echo $OUTPUT->footer();
+    exit;
+}
+
+$sessionid = (int) $tokrow->sessionid;
+$session = $DB->get_record('local_tm_course_sessions', ['id' => $sessionid], '*', MUST_EXIST);
+$wanturl = survey_manager::quick_fill_url((string) $tokrow->token);
+
+$PAGE->set_context(context_system::instance());
+$PAGE->set_pagelayout('popup');
+$PAGE->set_url($wanturl);
+$PAGE->requires->css('/local/tm_course/styles.css');
+$PAGE->set_title(get_string('survey_learner_title', 'local_tm_course'));
+
+if (empty($SESSION->tm_survey_email) || !is_array($SESSION->tm_survey_email)) {
+    $SESSION->tm_survey_email = [];
+}
+
+$error = '';
+$email = '';
+if (!empty($SESSION->tm_survey_email[$tokenparam])) {
+    $email = survey_manager::normalize_email((string) $SESSION->tm_survey_email[$tokenparam]);
+}
+
+// POST email step.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
+    $poststep = optional_param('step', '', PARAM_ALPHA);
+    if ($poststep === 'email' || ($poststep === '' && optional_param('email', '', PARAM_RAW) !== '')) {
+        if (!local_tm_course_survey_rate_ok()) {
+            $error = get_string('survey_quick_rate_limited', 'local_tm_course');
+        } else {
+            $rawemail = optional_param('email', '', PARAM_RAW_TRIMMED);
+            $norm = survey_manager::normalize_email($rawemail);
+            if ($norm === '') {
+                $error = get_string('survey_error_invalid_email', 'local_tm_course');
+            } else {
+                $SESSION->tm_survey_email[$tokenparam] = $norm;
+                redirect(new moodle_url('/local/tm_course/survey.php', ['t' => $tokenparam, 'step' => 'form']));
+            }
+        }
+    } else if ($poststep === 'answers') {
+        if ($email === '') {
+            redirect(new moodle_url('/local/tm_course/survey.php', ['t' => $tokenparam]));
+        }
+        try {
+            survey_manager::submit_response_by_email($sessionid, $email, $_POST['answer'] ?? []);
+            redirect(new moodle_url('/local/tm_course/survey.php', [
+                't' => $tokenparam,
+                'step' => 'form',
+                'saved' => 1,
+            ]));
+        } catch (\moodle_exception $e) {
+            if ($e->errorcode === 'survey_error_already_submitted') {
+                redirect(new moodle_url('/local/tm_course/survey.php', [
+                    't' => $tokenparam,
+                    'step' => 'form',
+                    'saved' => 1,
+                ]));
+            }
+            $error = $e->getMessage();
+        }
+    }
+}
+
+$surveyname = '';
+$pin = survey_manager::get_pin($sessionid);
+if (!$pin) {
+    survey_manager::ensure_session_survey_pin($sessionid);
+    $pin = survey_manager::get_pin($sessionid);
+}
+$versionid = $pin ? (int) $pin->versionid : 0;
+if ($versionid > 0) {
+    $ver = $DB->get_record('local_tm_course_svver', ['id' => $versionid], 'id, surveyid');
+    if ($ver) {
+        $def = $DB->get_record('local_tm_course_svdef', ['id' => $ver->surveyid], 'id, name');
+        $surveyname = $def ? (string) $def->name : '';
+    }
+}
+
+echo $OUTPUT->header();
+echo html_writer::tag('h2', get_string('survey_learner_title', 'local_tm_course'));
+echo html_writer::tag(
+    'p',
+    s($session->name) . ($surveyname !== '' ? ' — ' . s($surveyname) : ''),
+    ['class' => 'text-muted']
 );
 
+if (!survey_manager::is_quick_survey_accepting($sessionid) && $email === '') {
+    echo $OUTPUT->notification(get_string('survey_not_open', 'local_tm_course'), 'info');
+    echo $OUTPUT->footer();
+    exit;
+}
+
+// Step 1: email form when session email not set.
+if ($email === '' || ($step !== 'form' && $step !== 'answers' && empty($SESSION->tm_survey_email[$tokenparam]))) {
+    if ($email === '') {
+        $prefill = '';
+        if (isloggedin() && !isguestuser() && !empty($USER->email)) {
+            $prefill = (string) $USER->email;
+        }
+        echo html_writer::tag('p', get_string('survey_quick_email_help', 'local_tm_course'));
+        if ($error !== '') {
+            echo $OUTPUT->notification($error, 'error');
+        }
+        echo html_writer::start_tag('form', ['method' => 'post', 'action' => $wanturl->out(false)]);
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'step', 'value' => 'email']);
+        echo html_writer::tag('label', get_string('survey_quick_email', 'local_tm_course'), ['for' => 'survey-email']);
+        echo html_writer::empty_tag('input', [
+            'type' => 'email',
+            'name' => 'email',
+            'id' => 'survey-email',
+            'class' => 'form-control mb-3',
+            'required' => 'required',
+            'value' => $prefill,
+            'autocomplete' => 'email',
+        ]);
+        echo html_writer::empty_tag('input', [
+            'type' => 'submit',
+            'class' => 'btn btn-primary',
+            'value' => get_string('survey_quick_continue', 'local_tm_course'),
+        ]);
+        echo html_writer::end_tag('form');
+        echo $OUTPUT->footer();
+        exit;
+    }
+}
+
+// Step 2: questionnaire / view.
+$response = null;
+if ($email !== '' && $versionid > 0) {
+    $response = survey_manager::get_response_by_email($sessionid, $versionid, $email);
+}
+$viewonly = $response !== null;
+$structure = $versionid > 0 ? survey_manager::get_version_structure($versionid) : [];
+$answers = $viewonly ? survey_manager::get_response_answers((int) $response->id) : [];
+
+if (!$viewonly && !survey_manager::is_quick_survey_accepting($sessionid)) {
+    echo $OUTPUT->notification(get_string('survey_not_open', 'local_tm_course'), 'info');
+    echo $OUTPUT->footer();
+    exit;
+}
+
+local_tm_course_survey_render_form($structure, $answers, $wanturl, $viewonly, $error, (bool) $saved);
 echo $OUTPUT->footer();

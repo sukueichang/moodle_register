@@ -194,6 +194,13 @@ echo $OUTPUT->header();
 if ($surveyid <= 0) {
     $surveys = survey_manager::list_surveys();
     echo html_writer::tag('h2', get_string('survey_list_title', 'local_tm_course'));
+    echo html_writer::div(
+        html_writer::link(
+            new moodle_url('/local/tm_course/admin/survey_results.php'),
+            get_string('survey_stats_title', 'local_tm_course'),
+            ['class' => 'btn btn-secondary btn-sm mb-3']
+        )
+    );
     echo html_writer::start_tag('form', ['method' => 'post', 'action' => $PAGE->url->out(false), 'class' => 'mb-4']);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'create']);
