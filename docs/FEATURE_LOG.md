@@ -22,12 +22,18 @@
 
 ---
 
+## 2026-10-07 — Bento history fullname() debug warning
+
+- **現象：** 5.28.3 驗收時歷史顯示正常，但 `fullname()` 因 user 缺姓名欄位噴 debug warning。
+- **修正：** `get_send_history()` 改用 `get_all_user_name_fields(true)` 選取欄位。無 DB schema 變更。
+- **版本／狀態：** **5.28.4／2026100704**。不 merge `main`。
+
 ## 2026-10-07 — 便當發送歷史＋問卷安全刪除
 
 - **需求：** (1) 便當需求成功發送後在 `class_prep` 顯示多筆歷史（時間／發送者）；(2) Survey List 可刪未使用問卷，有 pin／response 則阻擋並提示停用。
 - **決策：** 新增表 `local_tm_course_bento_log`（sessionid／userid／timecreated／recipientcount）；僅 `sent > 0` 寫入。刪除：`can_delete_survey`／`delete_survey` 級聯清 structure＋`svcrs`，有 `svpin`／`svresp` 拒絕。
 - **影響範圍：** `db/install.xml`／`upgrade.php`、`bento_notification_manager`、`survey_manager`、`class_prep`、`admin/surveys.php`、lang、tests、SPEC、version **5.28.3／2026100703**。
-- **版本／狀態：** **5.28.3** 待 Owner 驗收。PHPUnit 本機未跑。不 merge `main`。
+- **版本／狀態：** **5.28.3** 功能 OK；fullname warning 見上則 5.28.4。不 merge `main`。
 
 ## 2026-10-07 — Survey UX／管理流程（不 silent 搶課、複製、層級 UI）
 

@@ -3,6 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.4] - 2026-10-07 - Fix bento history fullname() warning
+
+### Fixed
+- `get_send_history()` loads all Moodle name fields via `get_all_user_name_fields()` so `fullname()` no longer triggers a debug warning.
+
+### Notes
+- 版號 `2026100704`。無 DB schema 變更。不 merge `main`。
+
 ## [5.28.3] - 2026-10-07 - Bento send history + safe survey delete
 
 ### Added

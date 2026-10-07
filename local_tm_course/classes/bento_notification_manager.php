@@ -298,8 +298,10 @@ class bento_notification_manager {
         }
         $users = [];
         if ($userids) {
+            // fullname() requires all configured name fields (middle/phonetic/alternate, etc.).
+            $namefields = get_all_user_name_fields(true);
             list($insql, $params) = $DB->get_in_or_equal(array_keys($userids), SQL_PARAMS_NAMED);
-            $users = $DB->get_records_select('user', "id $insql", $params, '', 'id, firstname, lastname');
+            $users = $DB->get_records_select('user', "id $insql", $params, '', 'id, ' . $namefields);
         }
         $out = [];
         foreach ($rows as $row) {

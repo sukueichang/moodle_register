@@ -2065,6 +2065,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100703, 'local', 'tm_course');
     }
 
+    // 2026100704 — Bento history fullname() name fields (no DB).
+    if ($oldversion < 2026100704) {
+        upgrade_plugin_savepoint(true, 2026100704, 'local', 'tm_course');
+    }
+
     return true;
 }
 
