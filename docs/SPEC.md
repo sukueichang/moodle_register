@@ -2249,7 +2249,7 @@ TM AI Cobot 推廣課程的九題只是 §59.10 的驗收案例。題幹、選�
 
 Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只存原始答案，不做商機分數或自動排序。
 
-階段 1（問卷管理）**Owner 驗收 PASS（2026-10-06）**。階段 2（學員填答）已實作。階段 3–4（Email Quick Access、QR 投影、統計與 Excel）已實作於 **5.28.0**（待 Owner 人工驗收）。`ensure_session_survey_pin()` 建立釘選時一併 `ensure_session_survey_token()`；排程 `pin_session_surveys` 每 15 分鐘補釘。
+階段 1（問卷管理）**Owner 驗收 PASS（2026-10-06）**。階段 2（學員填答）已實作。階段 3（Email Quick Access／QR 投影）**Owner PASS（2026-10-07）**。階段 4 篩選／題型統計 **Owner PASS**；Excel 匯出於 5.28.0 FAIL（`send_file`），已於 **5.28.1** 改 Moodle `excellib`，待 Owner 重測 Excel。`ensure_session_survey_pin()` 建立釘選時一併 `ensure_session_survey_token()`；排程 `pin_session_surveys` 每 15 分鐘補釘。
 
 ### 59.1 範圍
 

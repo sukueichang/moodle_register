@@ -390,4 +390,39 @@ class survey_stats {
 
         return [$responses, $statistics];
     }
+
+    /**
+     * Fill a MoodleExcelWorkbook with Responses + Statistics sheets (same filters as UI).
+     *
+     * @param \MoodleExcelWorkbook $workbook
+     * @param \stdClass $filters
+     */
+    public static function fill_moodle_excel_workbook($workbook, $filters): void {
+        list($responses, $statistics) = self::export_rows($filters);
+        self::write_sheet_rows($workbook->add_worksheet('Responses'), $responses);
+        self::write_sheet_rows($workbook->add_worksheet('Statistics'), $statistics);
+    }
+
+    /**
+     * @param \MoodleExcelWorksheet $worksheet
+     * @param array<int,array<int,string>> $rows
+     */
+    private static function write_sheet_rows($worksheet, array $rows): void {
+        $r = 0;
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $c = 0;
+            foreach ($row as $value) {
+                // Always string — preserves email / leading zeros / Chinese safely.
+                $worksheet->write_string($r, $c, (string) $value);
+                $c++;
+            }
+            $r++;
+        }
+        if ($r === 0) {
+            $worksheet->write_string(0, 0, '');
+        }
+    }
 }

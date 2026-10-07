@@ -1,15 +1,16 @@
 <?php
 /**
- * Excel export for survey results (SPEC §59 Phase 4).
+ * Excel export for survey results via Moodle excellib (SPEC §59 Phase 4).
+ *
+ * URL: /local/tm_course/admin/survey_export.php?...&sesskey=
  *
  * @package    local_tm_course
  */
 require_once(__DIR__ . '/../../../config.php');
+require_once($CFG->libdir . '/excellib.class.php');
 require_once(__DIR__ . '/../classes/survey_stats.php');
-require_once(__DIR__ . '/../classes/survey_xlsx_writer.php');
 
 use local_tm_course\survey_stats;
-use local_tm_course\survey_xlsx_writer;
 
 require_login();
 require_capability('local/tm_course:manage', context_system::instance());
@@ -41,14 +42,14 @@ $params = [
     'mapped' => optional_param('mapped', -1, PARAM_INT),
 ];
 $filters = survey_stats::filters_from_params($params);
-list($responses, $statistics) = survey_stats::export_rows($filters);
 
-$tmpdir = make_temp_directory('local_tm_course_survey');
-$path = $tmpdir . '/survey_export_' . time() . '_' . random_int(1000, 9999) . '.xlsx';
-survey_xlsx_writer::write($path, [
-    ['name' => 'Responses', 'rows' => $responses],
-    ['name' => 'Statistics', 'rows' => $statistics],
-]);
+// No page chrome — excellib streams the XLSX to the browser.
+\core\session\manager::write_close();
+raise_memory_limit(MEMORY_EXTRA);
 
-$filename = 'survey_export_' . date('Ymd_His') . '.xlsx';
-send_file($path, $filename, 0, 0, false, true, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', true);
+$downloadname = clean_filename('survey_export_' . date('Ymd_His'));
+$workbook = new MoodleExcelWorkbook('-');
+$workbook->send($downloadname);
+survey_stats::fill_moodle_excel_workbook($workbook, $filters);
+$workbook->close();
+exit;

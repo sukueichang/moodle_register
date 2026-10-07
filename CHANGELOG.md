@@ -3,6 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.1] - 2026-10-07 - Fix survey Excel export (Moodle excellib)
+
+### Fixed
+- Phase 4 Excel download used `send_file()` without loading `filelib.php`, and bypassed Moodle `excellib`. Export now uses `MoodleExcelWorkbook` from `lib/excellib.class.php` (two sheets: Responses, Statistics; same filters as results UI).
+
+### Notes
+- 版號 `2026100701`。Phase 3／Phase 4 篩選與題型統計未改。Excel 待 Owner 重新下載驗收（不自行標 PASS）。
+
 ## [5.28.0] - 2026-10-07 - Survey Phase 3+4 (Email Quick Access, board, stats)
 
 ### Added

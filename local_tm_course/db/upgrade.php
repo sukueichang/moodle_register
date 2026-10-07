@@ -2049,6 +2049,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100700, 'local', 'tm_course');
     }
 
+    // 2026100701 — Survey Excel export via Moodle excellib (no DB).
+    if ($oldversion < 2026100701) {
+        upgrade_plugin_savepoint(true, 2026100701, 'local', 'tm_course');
+    }
+
     return true;
 }
 

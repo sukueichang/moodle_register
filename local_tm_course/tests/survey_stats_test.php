@@ -116,18 +116,53 @@ class survey_stats_test extends \advanced_testcase {
         // Header + 2 data rows.
         $this->assertCount(3, $responses);
         $this->assertGreaterThan(3, count($statistics));
+        $emails = [];
+        foreach (array_slice($responses, 1) as $row) {
+            $emails[] = $row[1];
+        }
+        sort($emails);
+        $this->assertSame(['a@example.com', 'b@example.com'], $emails);
 
-        $path = tempnam(sys_get_temp_dir(), 'svx') . '.xlsx';
-        survey_xlsx_writer::write($path, [
-            ['name' => 'Responses', 'rows' => $responses],
-            ['name' => 'Statistics', 'rows' => $statistics],
+        // Narrow filter must not include the other email.
+        $one = survey_stats::filters_from_params([
+            'sessionid' => $seed['sessionid'],
+            'email' => 'a@example.com',
         ]);
+        list($onlya, ) = survey_stats::export_rows($one);
+        $this->assertCount(2, $onlya);
+        $this->assertSame('a@example.com', $onlya[1][1]);
+    }
+
+    public function test_export_script_uses_moodle_excellib(): void {
+        $src = file_get_contents(dirname(__DIR__) . '/admin/survey_export.php');
+        $this->assertStringContainsString("excellib.class.php", $src);
+        $this->assertStringContainsString('MoodleExcelWorkbook', $src);
+        $this->assertStringContainsString('fill_moodle_excel_workbook', $src);
+        $this->assertStringNotContainsString('send_file(', $src);
+        $this->assertStringNotContainsString('survey_xlsx_writer', $src);
+    }
+
+    public function test_fill_moodle_excel_workbook_writes_two_sheets(): void {
+        global $CFG;
+        $this->resetAfterTest(true);
+        require_once($CFG->libdir . '/excellib.class.php');
+        $seed = $this->seed_with_responses();
+        $filters = survey_stats::filters_from_params(['sessionid' => $seed['sessionid']]);
+
+        $path = make_request_directory() . '/survey_export_test.xlsx';
+        $workbook = new \MoodleExcelWorkbook($path);
+        survey_stats::fill_moodle_excel_workbook($workbook, $filters);
+        $workbook->close();
+
         $this->assertFileExists($path);
+        $this->assertGreaterThan(100, filesize($path));
+        // XLSX is a zip package.
         $zip = new \ZipArchive();
         $this->assertTrue($zip->open($path));
-        $this->assertNotFalse($zip->locateName('xl/worksheets/sheet1.xml'));
-        $this->assertNotFalse($zip->locateName('xl/worksheets/sheet2.xml'));
+        $this->assertNotFalse($zip->locateName('xl/workbook.xml'));
+        $wb = $zip->getFromName('xl/workbook.xml');
+        $this->assertStringContainsString('Responses', $wb);
+        $this->assertStringContainsString('Statistics', $wb);
         $zip->close();
-        @unlink($path);
     }
 }

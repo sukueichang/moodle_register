@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.28.0
+ * Version: 5.28.1
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026100700;   // Survey Phase 3+4: email quick access, QR board, stats/export
-$plugin->release   = '5.28.0';
+$plugin->version   = 2026100701;   // Fix survey Excel export via Moodle excellib (send_file undefined)
+$plugin->release   = '5.28.1';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

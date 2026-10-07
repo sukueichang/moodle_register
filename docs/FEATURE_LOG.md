@@ -22,12 +22,19 @@
 
 ---
 
+## 2026-10-07 — Phase 4 Excel Export FAIL → Moodle excellib
+
+- **Owner 驗收（5.28.0）：** Phase 3 **PASS**；Phase 4 篩選／題型統計 **PASS**；Phase 4 Excel **FAIL**（`Call to undefined function send_file()` at `survey_export.php`）。
+- **根因：** 匯出腳本呼叫 `send_file()` 但未載入 Moodle `filelib.php`；且未使用規格要求的 `lib/excellib.class.php`。
+- **修正：** `survey_export.php` 改 `MoodleExcelWorkbook` + `survey_stats::fill_moodle_excel_workbook()`；兩 sheet、同 filter；無頁面輸出以免損壞 xlsx。
+- **版本／狀態：** **5.28.1／2026100701**；Excel 待 Owner 重新下載實測（不標 Owner PASS）。不 merge `main`。
+
 ## 2026-10-07 — 課程問卷 Phase 3+4（Email Quick Access／投影／統計）
 
 - **需求：** QR 免登入以 email 填答；投影板與即時人數；管理端篩選／題目統計／Excel；補釘排程。
 - **決策：** `svresp` 改 `(sessionid,versionid,email)` 唯一，`enrolid` 可 0＋`mapped`；新表 `svtok`（一場次一 token，regenerate 換字串）；`survey.php?t=` 免登入；FILL 需 token 啟用；QR 用 qrserver 圖（無 Composer）；xlsx 自寫 ZipArchive。不改 batch-account email／force-password。
 - **影響範圍：** `survey_manager`、`survey.php`、`survey_stats`／`survey_xlsx_writer`／`qrcode_svg`、admin board／progress／results／export、`class_prep`、`lib` nav、`db/*`、`version` **5.28.0／2026100700**、tests、SPEC §59。
-- **版本／狀態：** **5.28.0 實作完成，待 Owner 測站驗收。** 不 merge `main`。
+- **版本／狀態：** **5.28.0** — Owner：Phase 3 PASS；Phase 4 filter/stats PASS；Excel FAIL（見上則 5.28.1）。不 merge `main`。
 
 ## 2026-10-06 — Email Logo 改 Moodle 原生 theme/image.php
 
