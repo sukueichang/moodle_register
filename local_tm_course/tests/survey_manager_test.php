@@ -29,17 +29,87 @@ class survey_manager_test extends \advanced_testcase {
         $this->assertSame($surveyb, survey_manager::active_surveyid_for_course((int) $b->id));
     }
 
-    public function test_one_course_keeps_a_single_assignment(): void {
+    public function test_one_course_cannot_be_silently_reassigned(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $course = $this->getDataGenerator()->create_course(['fullname' => 'Course X']);
+        $first = survey_manager::create_survey('A Survey', 2);
+        $second = survey_manager::create_survey('B Survey', 2);
+        survey_manager::assign_course($first, (int) $course->id);
+        try {
+            survey_manager::assign_course($second, (int) $course->id);
+            $this->fail('Expected course reassignment to be blocked');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('survey_error_course_assigned', $e->errorcode);
+        }
+        $this->assertSame(1, $DB->count_records('local_tm_course_svcrs', ['courseid' => $course->id]));
+        $this->assertSame($first, survey_manager::active_surveyid_for_course((int) $course->id));
+        $this->assertSame([(int) $course->id], survey_manager::assigned_courseids($first));
+        $this->assertSame([], survey_manager::assigned_courseids($second));
+
+        // Failed set_course_assignments must not clear the original assignment.
+        try {
+            survey_manager::set_course_assignments($second, [(int) $course->id]);
+            $this->fail('Expected set_course_assignments to be blocked');
+        } catch (\moodle_exception $e) {
+            $this->assertSame('survey_error_course_assigned', $e->errorcode);
+        }
+        $this->assertSame([(int) $course->id], survey_manager::assigned_courseids($first));
+    }
+
+    public function test_copy_survey_copies_structure_not_courses_or_responses(): void {
         global $DB;
         $this->resetAfterTest(true);
         $course = $this->getDataGenerator()->create_course();
-        $first = survey_manager::create_survey('First', 2);
-        $second = survey_manager::create_survey('Second', 2);
-        survey_manager::assign_course($first, (int) $course->id);
-        survey_manager::assign_course($second, (int) $course->id);
-        $this->assertSame(1, $DB->count_records('local_tm_course_svcrs', ['courseid' => $course->id]));
-        $this->assertSame($second, survey_manager::active_surveyid_for_course((int) $course->id));
-        $this->assertSame([], survey_manager::assigned_courseids($first));
+        $surveyid = survey_manager::create_survey('Original Survey', 2);
+        $versionid = survey_manager::save_structure($surveyid, [[
+            'name' => 'Section One',
+            'items' => [
+                [
+                    'qtype' => survey_manager::TYPE_SINGLE,
+                    'title' => 'Pick',
+                    'required' => 1,
+                    'allowother' => 1,
+                    'options' => [['label' => 'Yes'], ['label' => 'No']],
+                ],
+                [
+                    'qtype' => survey_manager::TYPE_SCALE,
+                    'title' => 'Rate',
+                    'required' => 0,
+                    'scalemin' => 'Low',
+                    'scalemax' => 'High',
+                ],
+            ],
+        ]], 2);
+        survey_manager::assign_course($surveyid, (int) $course->id);
+
+        $copyid = survey_manager::copy_survey($surveyid, 3);
+        $copy = survey_manager::get_survey($copyid);
+        $suffix = get_string('survey_copy_suffix', 'local_tm_course');
+        $this->assertSame('Original Survey (' . $suffix . ')', $copy->name);
+        $this->assertSame([], survey_manager::assigned_courseids($copyid));
+        $this->assertSame([(int) $course->id], survey_manager::assigned_courseids($surveyid));
+
+        $copystructure = survey_manager::get_version_structure(
+            (int) survey_manager::current_version($copyid)->id
+        );
+        $this->assertSame('Section One', $copystructure[0]['name']);
+        $this->assertCount(2, $copystructure[0]['items']);
+        $this->assertSame('Pick', $copystructure[0]['items'][0]['title']);
+        $this->assertSame(survey_manager::TYPE_SINGLE, $copystructure[0]['items'][0]['qtype']);
+        $this->assertSame(1, (int) $copystructure[0]['items'][0]['allowother']);
+        $this->assertSame('Low', $copystructure[0]['items'][1]['scalemin']);
+
+        // Second copy gets a numbered suffix.
+        $copy2 = survey_manager::get_survey(survey_manager::copy_survey($surveyid, 3));
+        $this->assertSame('Original Survey (' . $suffix . ' 2)', $copy2->name);
+
+        // Source version id must not become the copy's version.
+        $this->assertNotSame(
+            $versionid,
+            (int) survey_manager::current_version($copyid)->id
+        );
+        $this->assertSame(0, $DB->count_records('local_tm_course_svtok', ['sessionid' => 0]));
     }
 
     public function test_question_types_roundtrip_and_enable_flag(): void {

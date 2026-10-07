@@ -19,6 +19,7 @@ require_once(__DIR__ . '/../classes/permissions_manager.php');
 require_once(__DIR__ . '/../classes/bento_notification_manager.php');
 require_once(__DIR__ . '/../classes/notification_editor_helper.php');
 require_once(__DIR__ . '/../classes/equipment_check_manager.php');
+require_once(__DIR__ . '/../classes/survey_manager.php');
 
 use local_tm_course\session_manager;
 use local_tm_course\attendance_manager;
@@ -27,6 +28,7 @@ use local_tm_course\permissions_manager;
 use local_tm_course\bento_notification_manager;
 use local_tm_course\notification_editor_helper;
 use local_tm_course\equipment_check_manager;
+use local_tm_course\survey_manager;
 
 require_login();
 $ctx = context_system::instance();
@@ -375,6 +377,19 @@ if ($action && confirm_sesskey()) {
         redirect($back_url, get_string('equipment_check_save_all_success', 'local_tm_course', $saveddesks),
             null, \core\output\notification::NOTIFY_SUCCESS);
     }
+
+    if ($action === 'survey_open') {
+        survey_manager::ensure_session_survey_pin($sessionid);
+        survey_manager::ensure_session_survey_token($sessionid, true);
+        redirect($back_url, get_string('survey_board_token_open', 'local_tm_course'),
+            null, \core\output\notification::NOTIFY_SUCCESS);
+    }
+
+    if ($action === 'survey_close') {
+        survey_manager::set_session_survey_token_enabled($sessionid, false);
+        redirect($back_url, get_string('survey_board_token_closed', 'local_tm_course'),
+            null, \core\output\notification::NOTIFY_SUCCESS);
+    }
 }
 
 $view = enrolment_manager::build_session_attendance_view($sessionid);
@@ -407,6 +422,27 @@ $equipmentmanageurl = (new moodle_url('/local/tm_course/settings/equipment_check
     'courseid' => (int) $session->courseid,
 ]))->out();
 
+global $DB;
+$course = $DB->get_record('course', ['id' => (int) $session->courseid], 'id, fullname', MUST_EXIST);
+$surveycrs = $DB->get_record('local_tm_course_svcrs', ['courseid' => (int) $session->courseid]);
+$surveydef = $surveycrs ? survey_manager::get_survey((int) $surveycrs->surveyid) : null;
+$surveytok = survey_manager::get_token_for_session($sessionid);
+$surveyresponsecount = survey_manager::count_session_responses($sessionid);
+$surveyeligible = survey_manager::expected_headcount($sessionid);
+$surveyboardurl = new moodle_url('/local/tm_course/admin/survey_board.php', ['sessionid' => $sessionid]);
+if ($surveydef) {
+    if ($surveytok && (int) $surveytok->enabled) {
+        $surveystatuslabel = get_string('class_prep_survey_open', 'local_tm_course');
+        $surveystatusclass = 'tm-badge tm-badge-approved';
+    } else if ($surveytok) {
+        $surveystatuslabel = get_string('class_prep_survey_closed', 'local_tm_course');
+        $surveystatusclass = 'tm-badge tm-badge-pending';
+    } else {
+        $surveystatuslabel = get_string('class_prep_survey_not_ready', 'local_tm_course');
+        $surveystatusclass = 'tm-badge tm-badge-pending';
+    }
+}
+
 echo $OUTPUT->header();
 ?>
 
@@ -421,16 +457,12 @@ echo $OUTPUT->header();
     <a href="<?php echo $sessions_url->out(); ?>" class="btn btn-sm btn-secondary">
         ← <?php echo get_string('nav_sessions', 'local_tm_course'); ?>
     </a>
-    <a href="<?php echo (new moodle_url('/local/tm_course/admin/survey_board.php', ['sessionid' => $sessionid]))->out(); ?>"
-       class="btn btn-sm btn-primary ml-2" target="_blank" rel="noopener">
-        <?php echo get_string('survey_board_open_link', 'local_tm_course'); ?>
-    </a>
 </div>
 
-<div class="tm-card">
+<div class="tm-card tm-prep-header-card">
 <div class="tm-card-body">
-
-    <div class="row mb-3 p-2" style="background:#f4f6f8; border-radius:6px">
+    <h3 class="h5 mb-3"><?php echo s($course->fullname); ?></h3>
+    <div class="row mb-0 p-2" style="background:#f4f6f8; border-radius:6px">
         <div class="col-md-3">
             <strong><?php echo get_string('session_startdate', 'local_tm_course'); ?>:</strong><br>
             <?php echo userdate($session->starttime, get_string('strftimedatetimeshort')); ?>
@@ -452,16 +484,18 @@ echo $OUTPUT->header();
             <?php endif; ?>
         </div>
     </div>
-
 </div>
 </div>
 
 <!-- ============================================================
-     Section 1: 出缺勤 (attendance) — blue theme
+     Pre-class tasks: attendance / bento / equipment
      ============================================================ -->
+<div class="tm-prep-group tm-prep-group-prework mt-4">
+    <h3 class="tm-prep-group-title"><?php echo get_string('class_prep_prework', 'local_tm_course'); ?></h3>
+
 <div class="tm-card tm-prep-section tm-prep-section-attendance">
 <div class="tm-card-body">
-    <h3 class="tm-prep-section-title"><span class="tm-prep-section-icon" aria-hidden="true">📋</span> <?php echo get_string('nav_attendance', 'local_tm_course'); ?></h3>
+    <h4 class="tm-prep-section-title"><?php echo get_string('nav_attendance', 'local_tm_course'); ?></h4>
 
     <div class="d-flex gap-2 mb-3 flex-wrap">
         <a href="<?php echo att_url('setup', $sessionid); ?>"
@@ -583,13 +617,10 @@ echo $OUTPUT->header();
 </div>
 </div>
 
-<!-- ============================================================
-     Section 2: 便當通知 (bento notification) — blue theme, existing popup
-     ============================================================ -->
 <?php if ($isonsite): ?>
 <div class="tm-card tm-prep-section tm-prep-section-bento">
 <div class="tm-card-body">
-    <h3 class="tm-prep-section-title"><span class="tm-prep-section-icon" aria-hidden="true">🍱</span> <?php echo get_string('bento_send_button', 'local_tm_course'); ?></h3>
+    <h4 class="tm-prep-section-title"><?php echo get_string('bento_send_button', 'local_tm_course'); ?></h4>
     <p class="text-muted small mb-3"><?php echo get_string('bento_modal_intro', 'local_tm_course'); ?></p>
     <button type="button"
             class="btn btn-tm-primary"
@@ -601,13 +632,10 @@ echo $OUTPUT->header();
 </div>
 <?php endif; ?>
 
-<!-- ============================================================
-     Section 3: 設備檢查 (equipment check) — orange theme
-     ============================================================ -->
 <div class="tm-card tm-prep-section tm-prep-section-equipment">
 <div class="tm-card-body">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
-        <h3 class="tm-prep-section-title mb-0"><span class="tm-prep-section-icon" aria-hidden="true">🔧</span> <?php echo get_string('equipment_check_section_title', 'local_tm_course'); ?></h3>
+        <h4 class="tm-prep-section-title mb-0"><?php echo get_string('equipment_check_section_title', 'local_tm_course'); ?></h4>
         <a href="<?php echo s($equipmentmanageurl); ?>" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">
             <?php echo get_string('equipment_check_manage_open_button', 'local_tm_course'); ?>
         </a>
@@ -619,6 +647,64 @@ echo $OUTPUT->header();
     require(__DIR__ . '/equipment_check_partial.php');
     ?>
 </div>
+</div>
+
+</div><!-- /.tm-prep-group-prework -->
+
+<!-- ============================================================
+     Post-class: survey
+     ============================================================ -->
+<div class="tm-prep-group tm-prep-group-postwork mt-4">
+    <h3 class="tm-prep-group-title"><?php echo get_string('class_prep_postwork', 'local_tm_course'); ?></h3>
+    <div class="tm-card tm-prep-section tm-prep-section-survey">
+    <div class="tm-card-body">
+        <?php if (!$surveydef): ?>
+            <p class="text-muted mb-0"><?php echo get_string('class_prep_survey_none', 'local_tm_course'); ?></p>
+        <?php else: ?>
+            <h4 class="tm-prep-section-title mb-3"><?php echo s($surveydef->name); ?></h4>
+            <div class="row mb-3">
+                <div class="col-md-4 mb-2">
+                    <div class="text-muted small"><?php echo get_string('class_prep_survey_status', 'local_tm_course'); ?></div>
+                    <span class="<?php echo s($surveystatusclass); ?>"><?php echo s($surveystatuslabel); ?></span>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <div class="text-muted small"><?php echo get_string('class_prep_survey_responses', 'local_tm_course'); ?></div>
+                    <strong style="font-size:1.4rem"><?php echo (int) $surveyresponsecount; ?></strong>
+                    <?php if ($surveyeligible > 0): ?>
+                        <span class="text-muted"> / <?php echo (int) $surveyeligible; ?></span>
+                    <?php endif; ?>
+                </div>
+                <div class="col-md-4 mb-2">
+                    <div class="text-muted small"><?php echo get_string('class_prep_survey_eligible', 'local_tm_course'); ?></div>
+                    <strong><?php echo (int) $surveyeligible; ?></strong>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <?php if (!$surveytok || !(int) $surveytok->enabled): ?>
+                <form method="post" action="<?php echo $back_url->out(false); ?>" class="d-inline">
+                    <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                    <input type="hidden" name="action" value="survey_open">
+                    <button type="submit" class="btn btn-tm-primary">
+                        <?php echo get_string('survey_board_open', 'local_tm_course'); ?>
+                    </button>
+                </form>
+                <?php else: ?>
+                <form method="post" action="<?php echo $back_url->out(false); ?>" class="d-inline">
+                    <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                    <input type="hidden" name="action" value="survey_close">
+                    <button type="submit" class="btn btn-warning">
+                        <?php echo get_string('survey_board_close', 'local_tm_course'); ?>
+                    </button>
+                </form>
+                <?php endif; ?>
+                <a href="<?php echo $surveyboardurl->out(); ?>"
+                   class="btn btn-outline-primary" target="_blank" rel="noopener">
+                    <?php echo get_string('class_prep_survey_project', 'local_tm_course'); ?>
+                </a>
+            </div>
+        <?php endif; ?>
+    </div>
+    </div>
 </div>
 
 <?php if ($isonsite): ?>

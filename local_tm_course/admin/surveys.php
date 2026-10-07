@@ -165,6 +165,17 @@ if (optional_param('action', '', PARAM_ALPHANUMEXT) === 'create' && confirm_sess
     redirect(new moodle_url('/local/tm_course/admin/surveys.php', ['id' => $newid]));
 }
 
+if (optional_param('action', '', PARAM_ALPHANUMEXT) === 'copy' && confirm_sesskey()) {
+    $sourceid = required_param('copyid', PARAM_INT);
+    $newid = survey_manager::copy_survey($sourceid, (int) $USER->id);
+    redirect(
+        new moodle_url('/local/tm_course/admin/surveys.php', ['id' => $newid]),
+        get_string('survey_copied', 'local_tm_course'),
+        null,
+        \core\output\notification::NOTIFY_SUCCESS
+    );
+}
+
 $error = '';
 $posted = null;
 if ($surveyid > 0 && optional_param('action', '', PARAM_ALPHANUMEXT) === 'save' && confirm_sesskey()) {
@@ -173,11 +184,14 @@ if ($surveyid > 0 && optional_param('action', '', PARAM_ALPHANUMEXT) === 'save' 
         if ($versionid > 0 && (!$currentbefore || $versionid !== (int) $currentbefore->id)) {
             throw new moodle_exception('survey_error_notfound', 'local_tm_course');
         }
+        $courseids = optional_param_array('courseids', [], PARAM_INT);
+        // Validate course conflicts before any name/enabled/structure writes.
+        survey_manager::assert_courses_assignable($surveyid, $courseids);
         $sections = survey_admin_read_post();
         survey_manager::normalise_sections($sections);
         survey_manager::update_name($surveyid, required_param('name', PARAM_TEXT));
         survey_manager::set_enabled($surveyid, (bool) optional_param('enabled', 0, PARAM_BOOL));
-        survey_manager::set_course_assignments($surveyid, optional_param_array('courseids', [], PARAM_INT));
+        survey_manager::set_course_assignments($surveyid, $courseids);
         $savedversion = survey_manager::save_structure($surveyid, $sections, (int) $USER->id);
         redirect(new moodle_url('/local/tm_course/admin/surveys.php', [
             'id' => $surveyid,
@@ -223,14 +237,30 @@ if ($surveyid <= 0) {
             get_string('survey_enabled', 'local_tm_course'),
             get_string('survey_version', 'local_tm_course', ''),
             get_string('survey_courses', 'local_tm_course'),
+            get_string('survey_copy', 'local_tm_course'),
         ];
         foreach ($surveys as $survey) {
             $url = new moodle_url('/local/tm_course/admin/surveys.php', ['id' => $survey->id]);
+            $copyform = html_writer::start_tag('form', [
+                'method' => 'post',
+                'action' => (new moodle_url('/local/tm_course/admin/surveys.php'))->out(false),
+                'class' => 'd-inline',
+            ]);
+            $copyform .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+            $copyform .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'copy']);
+            $copyform .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'copyid', 'value' => (int) $survey->id]);
+            $copyform .= html_writer::empty_tag('input', [
+                'type' => 'submit',
+                'class' => 'btn btn-outline-secondary btn-sm',
+                'value' => get_string('survey_copy', 'local_tm_course'),
+            ]);
+            $copyform .= html_writer::end_tag('form');
             $table->data[] = [
                 html_writer::link($url, s($survey->name)),
                 (int) $survey->enabled ? get_string('survey_enabled', 'local_tm_course') : get_string('survey_disabled', 'local_tm_course'),
                 (int) $survey->versionno . ($survey->versionfrozen ? ' (' . get_string('survey_version_frozen', 'local_tm_course') . ')' : ''),
                 (int) $survey->coursecount,
+                $copyform,
             ];
         }
         echo html_writer::table($table);
@@ -292,70 +322,145 @@ if (!$iseditable) {
     echo $OUTPUT->notification(get_string('survey_readonly_old', 'local_tm_course'), 'info');
 }
 
-echo html_writer::start_tag('form', ['method' => 'post', 'id' => 'survey-editor']);
-echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
-echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'save']);
-echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $surveyid]);
-
-$disabled = $iseditable ? [] : ['disabled' => 'disabled'];
-echo html_writer::start_div('form-group');
-echo html_writer::tag('label', get_string('survey_name', 'local_tm_course'));
-echo html_writer::empty_tag('input', [
-    'type' => 'text', 'name' => 'name', 'class' => 'form-control', 'maxlength' => 255,
-    'value' => $posted !== null ? optional_param('name', '', PARAM_TEXT) : $survey->name,
-] + $disabled);
-echo html_writer::end_div();
-echo html_writer::start_div('form-group');
-$enabledchecked = $posted !== null ? optional_param('enabled', 0, PARAM_BOOL) : (int) $survey->enabled;
-echo html_writer::tag('label',
-    html_writer::empty_tag('input', ['type' => 'checkbox', 'name' => 'enabled', 'value' => '1'] + ($enabledchecked ? ['checked' => 'checked'] : []) + $disabled)
-    . ' ' . get_string('survey_enabled', 'local_tm_course')
-);
-echo html_writer::end_div();
-
-echo html_writer::tag('h3', get_string('survey_courses', 'local_tm_course'));
-echo html_writer::tag('p', get_string('survey_courses_help', 'local_tm_course'), ['class' => 'text-muted']);
-if (!$coursemenu) {
-    echo html_writer::tag('p', get_string('survey_no_courses', 'local_tm_course'));
-}
-$postedcourses = $posted !== null ? optional_param_array('courseids', [], PARAM_INT) : $assigned;
-foreach ($coursemenu as $courseid => $coursename) {
-    $checked = in_array((int) $courseid, array_map('intval', $postedcourses), true) ? ['checked' => 'checked'] : [];
-    echo html_writer::tag('label',
-        html_writer::empty_tag('input', ['type' => 'checkbox', 'name' => 'courseids[]', 'value' => (int) $courseid] + $checked + $disabled)
-        . ' ' . s($coursename),
-        ['class' => 'd-block']
-    );
-}
-
 $types = [
     survey_manager::TYPE_SINGLE => get_string('survey_type_single', 'local_tm_course'),
     survey_manager::TYPE_MULTI => get_string('survey_type_multi', 'local_tm_course'),
     survey_manager::TYPE_SCALE => get_string('survey_type_scale', 'local_tm_course'),
     survey_manager::TYPE_TEXT => get_string('survey_type_text', 'local_tm_course'),
 ];
+$disabled = $iseditable ? [] : ['disabled' => 'disabled'];
+$postedcourses = $posted !== null ? optional_param_array('courseids', [], PARAM_INT) : $assigned;
+$namevalue = $posted !== null ? optional_param('name', '', PARAM_TEXT) : $survey->name;
+$enabledchecked = $posted !== null ? optional_param('enabled', 0, PARAM_BOOL) : (int) $survey->enabled;
 
+echo html_writer::start_tag('form', ['method' => 'post', 'id' => 'survey-editor', 'class' => 'tm-survey-editor']);
+echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'save']);
+echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'id', 'value' => $surveyid]);
+
+// ---- Basics card ----
+echo html_writer::start_div('tm-card tm-survey-basics mt-3');
+echo html_writer::start_div('tm-card-body');
+echo html_writer::tag('h3', get_string('survey_basics', 'local_tm_course'), ['class' => 'tm-survey-panel-title']);
+echo html_writer::start_div('form-group');
+echo html_writer::tag('label', get_string('survey_name', 'local_tm_course'));
+echo html_writer::empty_tag('input', [
+    'type' => 'text', 'name' => 'name', 'class' => 'form-control', 'maxlength' => 255,
+    'value' => $namevalue,
+] + $disabled);
+echo html_writer::end_div();
+echo html_writer::start_div('form-group');
+echo html_writer::tag('label',
+    html_writer::empty_tag('input', [
+        'type' => 'checkbox', 'name' => 'enabled', 'value' => '1',
+    ] + ($enabledchecked ? ['checked' => 'checked'] : []) + $disabled)
+    . ' ' . get_string('survey_enabled', 'local_tm_course')
+);
+echo html_writer::end_div();
+echo html_writer::tag('h4', get_string('survey_courses', 'local_tm_course'), ['class' => 'h6 mt-3']);
+echo html_writer::tag('p', get_string('survey_courses_help', 'local_tm_course'), ['class' => 'text-muted small']);
+if (!$coursemenu) {
+    echo html_writer::tag('p', get_string('survey_no_courses', 'local_tm_course'));
+}
+echo html_writer::start_div('tm-survey-course-list');
+foreach ($coursemenu as $courseid => $coursename) {
+    $checked = in_array((int) $courseid, array_map('intval', $postedcourses), true) ? ['checked' => 'checked'] : [];
+    echo html_writer::tag('label',
+        html_writer::empty_tag('input', [
+            'type' => 'checkbox', 'name' => 'courseids[]', 'value' => (int) $courseid,
+        ] + $checked + $disabled)
+        . ' ' . s($coursename),
+        ['class' => 'd-block']
+    );
+}
+echo html_writer::end_div();
+echo html_writer::end_div();
+echo html_writer::end_div();
+
+// ---- Content ----
+echo html_writer::start_div('tm-survey-content mt-4');
+echo html_writer::tag('h3', get_string('survey_content', 'local_tm_course'), ['class' => 'tm-survey-panel-title']);
 echo html_writer::start_div('', ['id' => 'survey-sections']);
+
+$qnum = 0;
 foreach (array_values($structure) as $sidx => $section) {
-    echo html_writer::start_div('tm-card mt-3 survey-section');
+    $secnum = $sidx + 1;
+    $secname = (string) ($section['name'] ?? '');
+    echo html_writer::start_div('tm-card tm-survey-section-card survey-section mt-3');
     echo html_writer::start_div('tm-card-body');
-    echo html_writer::tag('label', get_string('survey_section', 'local_tm_course'));
+    echo html_writer::start_div('tm-survey-section-head');
+    echo html_writer::tag('span', sprintf('%02d', $secnum), ['class' => 'tm-survey-section-num']);
+    echo html_writer::start_div('tm-survey-section-name-wrap flex-grow-1');
+    echo html_writer::tag('label', get_string('survey_section', 'local_tm_course'), ['class' => 'sr-only']);
     echo html_writer::empty_tag('input', [
-        'type' => 'text', 'name' => "section[$sidx][name]", 'class' => 'form-control mb-3',
-        'value' => (string) ($section['name'] ?? ''),
+        'type' => 'text',
+        'name' => "section[$sidx][name]",
+        'class' => 'form-control survey-section-name',
+        'placeholder' => get_string('survey_section', 'local_tm_course'),
+        'value' => $secname,
     ] + $disabled);
+    echo html_writer::end_div();
+    echo html_writer::end_div();
+
     $items = $section['items'] ?? [];
     if (!$items) {
         $items = survey_admin_blank_section()[0]['items'];
     }
+    echo html_writer::start_div('tm-survey-qlist');
     foreach (array_values($items) as $iidx => $item) {
+        $qnum++;
         $prefix = "section[$sidx][item][$iidx]";
-        echo html_writer::start_div('border rounded p-3 mb-3 survey-item');
-        echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => $prefix . '[stablekey]', 'value' => (string) ($item['stablekey'] ?? '')]);
+        $qtype = (string) ($item['qtype'] ?? survey_manager::TYPE_SCALE);
+        $typelabel = $types[$qtype] ?? $qtype;
+        $title = (string) ($item['title'] ?? '');
+        $required = !empty($item['required']);
+        $reqlabel = $required
+            ? get_string('survey_required_yes', 'local_tm_course')
+            : get_string('survey_required_no', 'local_tm_course');
+
+        echo html_writer::start_div('tm-survey-qcard survey-item', ['data-qnum' => $qnum]);
+        // Summary (collapsed default).
+        echo html_writer::start_div('tm-survey-qcard-summary');
+        echo html_writer::tag('span', get_string('survey_question_n', 'local_tm_course', $qnum), [
+            'class' => 'tm-survey-qnum survey-qnum-label',
+        ]);
+        echo html_writer::start_div('tm-survey-qcard-meta');
+        echo html_writer::tag('div', s($title !== '' ? $title : get_string('survey_question', 'local_tm_course')), [
+            'class' => 'tm-survey-qcard-title survey-summary-title',
+        ]);
+        echo html_writer::tag('div',
+            html_writer::tag('span', s($typelabel), ['class' => 'tm-survey-chip survey-summary-type'])
+            . ' '
+            . html_writer::tag('span', s($reqlabel), [
+                'class' => 'tm-survey-chip ' . ($required ? 'tm-survey-chip-req' : 'tm-survey-chip-opt')
+                    . ' survey-summary-req',
+            ]),
+            ['class' => 'tm-survey-qcard-chips']
+        );
+        echo html_writer::end_div();
+        if ($iseditable) {
+            echo html_writer::start_div('tm-survey-qcard-actions');
+            echo html_writer::tag('button', get_string('survey_edit_question', 'local_tm_course'), [
+                'type' => 'button', 'class' => 'btn btn-sm btn-outline-primary survey-q-edit',
+            ]);
+            echo html_writer::tag('button', get_string('survey_delete_question', 'local_tm_course'), [
+                'type' => 'button', 'class' => 'btn btn-sm btn-outline-danger survey-q-delete',
+            ]);
+            echo html_writer::end_div();
+        }
+        echo html_writer::end_div();
+
+        // Detail (hidden until Edit).
+        echo html_writer::start_div('tm-survey-qcard-detail', ['style' => 'display:none']);
+        echo html_writer::empty_tag('input', [
+            'type' => 'hidden', 'name' => $prefix . '[stablekey]',
+            'value' => (string) ($item['stablekey'] ?? ''),
+        ]);
         echo html_writer::tag('label', get_string('survey_question', 'local_tm_course'));
         echo html_writer::empty_tag('input', [
-            'type' => 'text', 'name' => $prefix . '[title]', 'class' => 'form-control mb-2',
-            'value' => (string) ($item['title'] ?? ''),
+            'type' => 'text', 'name' => $prefix . '[title]',
+            'class' => 'form-control mb-2 survey-title-input',
+            'value' => $title,
         ] + $disabled);
         echo html_writer::tag('label', get_string('survey_help', 'local_tm_course'));
         echo html_writer::empty_tag('input', [
@@ -363,16 +468,21 @@ foreach (array_values($structure) as $sidx => $section) {
             'value' => (string) ($item['help'] ?? ''),
         ] + $disabled);
         echo html_writer::tag('label', get_string('survey_type', 'local_tm_course'));
-        $select = html_writer::start_tag('select', ['name' => $prefix . '[qtype]', 'class' => 'form-control mb-2 survey-qtype'] + $disabled);
-        foreach ($types as $type => $typelabel) {
-            $sel = ((string) ($item['qtype'] ?? '') === $type) ? ['selected' => 'selected'] : [];
-            $select .= html_writer::tag('option', $typelabel, ['value' => $type] + $sel);
+        $select = html_writer::start_tag('select', [
+            'name' => $prefix . '[qtype]', 'class' => 'form-control mb-2 survey-qtype',
+        ] + $disabled);
+        foreach ($types as $type => $typelabelopt) {
+            $sel = ($qtype === $type) ? ['selected' => 'selected'] : [];
+            $select .= html_writer::tag('option', $typelabelopt, ['value' => $type] + $sel);
         }
         $select .= html_writer::end_tag('select');
         echo $select;
-        $req = !empty($item['required']) ? ['checked' => 'checked'] : [];
+        $req = $required ? ['checked' => 'checked'] : [];
         echo html_writer::tag('label',
-            html_writer::empty_tag('input', ['type' => 'checkbox', 'name' => $prefix . '[required]', 'value' => '1'] + $req + $disabled)
+            html_writer::empty_tag('input', [
+                'type' => 'checkbox', 'name' => $prefix . '[required]', 'value' => '1',
+                'class' => 'survey-required-input',
+            ] + $req + $disabled)
             . ' ' . get_string('survey_required', 'local_tm_course'),
             ['class' => 'd-block mb-2 survey-field-required']
         );
@@ -391,7 +501,9 @@ foreach (array_values($structure) as $sidx => $section) {
         $other = !empty($item['allowother']) ? ['checked' => 'checked'] : [];
         echo html_writer::start_div('survey-field-other');
         echo html_writer::tag('label',
-            html_writer::empty_tag('input', ['type' => 'checkbox', 'name' => $prefix . '[allowother]', 'value' => '1'] + $other + $disabled)
+            html_writer::empty_tag('input', [
+                'type' => 'checkbox', 'name' => $prefix . '[allowother]', 'value' => '1',
+            ] + $other + $disabled)
             . ' ' . get_string('survey_allow_other', 'local_tm_course')
         );
         echo html_writer::end_div();
@@ -407,90 +519,232 @@ foreach (array_values($structure) as $sidx => $section) {
             'rows' => 4, 'placeholder' => get_string('survey_options', 'local_tm_course'),
         ] + $disabled);
         echo html_writer::end_div();
+        if ($iseditable) {
+            echo html_writer::tag('button', get_string('survey_collapse_question', 'local_tm_course'), [
+                'type' => 'button', 'class' => 'btn btn-sm btn-secondary survey-q-done',
+            ]);
+        }
         echo html_writer::end_div();
+        echo html_writer::end_div();
+    }
+    echo html_writer::end_div(); // qlist
+
+    if ($iseditable) {
+        echo html_writer::tag('button', get_string('survey_add_question', 'local_tm_course'), [
+            'type' => 'button',
+            'class' => 'btn btn-outline-secondary btn-sm mt-2 survey-add-question-in-section',
+        ]);
     }
     echo html_writer::end_div();
     echo html_writer::end_div();
 }
-echo html_writer::end_div();
+echo html_writer::end_div(); // survey-sections
 
 if ($iseditable) {
+    echo html_writer::start_div('tm-survey-content-actions mt-3');
     echo html_writer::tag('button', get_string('survey_add_section', 'local_tm_course'), [
         'type' => 'button', 'class' => 'btn btn-outline-secondary mr-2', 'id' => 'survey-add-section',
-    ]);
-    echo html_writer::tag('button', get_string('survey_add_question', 'local_tm_course'), [
-        'type' => 'button', 'class' => 'btn btn-outline-secondary mr-2', 'id' => 'survey-add-question',
     ]);
     echo html_writer::empty_tag('input', [
         'type' => 'submit', 'class' => 'btn btn-primary', 'value' => get_string('survey_save', 'local_tm_course'),
     ]);
+    echo html_writer::end_div();
 }
+echo html_writer::end_div(); // content
 echo html_writer::end_tag('form');
 
-$PAGE->requires->js_init_code(<<<'JS'
+$jsstrings = json_encode([
+    'question' => get_string('survey_question', 'local_tm_course'),
+    'questionN' => get_string('survey_question_n', 'local_tm_course', '__N__'),
+    'requiredYes' => get_string('survey_required_yes', 'local_tm_course'),
+    'requiredNo' => get_string('survey_required_no', 'local_tm_course'),
+    'types' => $types,
+], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+
+$PAGE->requires->js_init_code(<<<JS
 (function() {
+    var STR = {$jsstrings};
+
     function applyQtypeVisibility(item) {
         if (!item) { return; }
-        var sel = item.querySelector('select.survey-qtype');
+        var detail = item.querySelector('.tm-survey-qcard-detail') || item;
+        var sel = detail.querySelector('select.survey-qtype');
         var qtype = sel ? sel.value : '';
         var showScale = (qtype === 'scale');
         var showChoice = (qtype === 'single' || qtype === 'multi');
-        item.querySelectorAll('.survey-field-scale').forEach(function(el) {
+        detail.querySelectorAll('.survey-field-scale').forEach(function(el) {
             el.style.display = showScale ? '' : 'none';
         });
-        item.querySelectorAll('.survey-field-options, .survey-field-other').forEach(function(el) {
+        detail.querySelectorAll('.survey-field-options, .survey-field-other').forEach(function(el) {
             el.style.display = showChoice ? '' : 'none';
         });
     }
-    function refreshAll() {
-        document.querySelectorAll('#survey-sections .survey-item').forEach(applyQtypeVisibility);
+
+    function syncSummary(item) {
+        if (!item) { return; }
+        var titleInput = item.querySelector('.survey-title-input');
+        var typeSel = item.querySelector('select.survey-qtype');
+        var reqInput = item.querySelector('.survey-required-input');
+        var titleEl = item.querySelector('.survey-summary-title');
+        var typeEl = item.querySelector('.survey-summary-type');
+        var reqEl = item.querySelector('.survey-summary-req');
+        if (titleEl && titleInput) {
+            var t = (titleInput.value || '').trim();
+            titleEl.textContent = t !== '' ? t : STR.question;
+        }
+        if (typeEl && typeSel) {
+            var opt = typeSel.options[typeSel.selectedIndex];
+            typeEl.textContent = opt ? opt.text : typeSel.value;
+        }
+        if (reqEl && reqInput) {
+            reqEl.textContent = reqInput.checked ? STR.requiredYes : STR.requiredNo;
+            reqEl.classList.toggle('tm-survey-chip-req', !!reqInput.checked);
+            reqEl.classList.toggle('tm-survey-chip-opt', !reqInput.checked);
+        }
     }
+
+    function renumberQuestions() {
+        var n = 0;
+        document.querySelectorAll('#survey-sections .survey-item').forEach(function(item) {
+            n++;
+            item.setAttribute('data-qnum', String(n));
+            var label = item.querySelector('.survey-qnum-label');
+            if (label) {
+                label.textContent = STR.questionN.replace('__N__', String(n));
+            }
+        });
+    }
+
+    function setEditing(item, on) {
+        if (!item) { return; }
+        var summary = item.querySelector('.tm-survey-qcard-summary');
+        var detail = item.querySelector('.tm-survey-qcard-detail');
+        if (!summary || !detail) { return; }
+        if (on) {
+            item.classList.add('is-editing');
+            summary.style.display = 'none';
+            detail.style.display = '';
+            applyQtypeVisibility(item);
+        } else {
+            item.classList.remove('is-editing');
+            syncSummary(item);
+            summary.style.display = '';
+            detail.style.display = 'none';
+        }
+    }
+
+    function clearItemFields(item) {
+        item.querySelectorAll('input, select, textarea').forEach(function(el) {
+            if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; }
+            else if (el.tagName !== 'SELECT') { el.value = ''; }
+        });
+        var sel = item.querySelector('select.survey-qtype');
+        if (sel) { sel.value = 'scale'; }
+        var req = item.querySelector('.survey-required-input');
+        if (req) { req.checked = true; }
+        syncSummary(item);
+        applyQtypeVisibility(item);
+    }
+
+    function reindexSection(section, sidx) {
+        section.querySelectorAll('.survey-item').forEach(function(item, iidx) {
+            item.querySelectorAll('input, select, textarea').forEach(function(el) {
+                if (!el.name) { return; }
+                el.name = el.name
+                    .replace(/section\[\d+\]/, 'section[' + sidx + ']')
+                    .replace(/item\]\[\d+\]/, 'item][' + iidx + ']');
+            });
+        });
+        var nameInput = section.querySelector('.survey-section-name');
+        if (nameInput) {
+            nameInput.name = 'section[' + sidx + '][name]';
+        }
+        var numEl = section.querySelector('.tm-survey-section-num');
+        if (numEl) {
+            numEl.textContent = (sidx + 1 < 10 ? '0' : '') + (sidx + 1);
+        }
+    }
+
+    function reindexAll() {
+        document.querySelectorAll('#survey-sections .survey-section').forEach(function(section, sidx) {
+            reindexSection(section, sidx);
+        });
+        renumberQuestions();
+    }
+
     var root = document.getElementById('survey-sections');
     if (root) {
         root.addEventListener('change', function(e) {
-            if (e.target && e.target.classList && e.target.classList.contains('survey-qtype')) {
-                applyQtypeVisibility(e.target.closest('.survey-item'));
+            var t = e.target;
+            if (!t) { return; }
+            var item = t.closest('.survey-item');
+            if (t.classList && t.classList.contains('survey-qtype')) {
+                applyQtypeVisibility(item);
+                syncSummary(item);
+            }
+            if (t.classList && t.classList.contains('survey-required-input')) {
+                syncSummary(item);
             }
         });
-        refreshAll();
-    }
-    var addQ = document.getElementById('survey-add-question');
-    if (addQ) {
-        addQ.addEventListener('click', function() {
-            var sections = document.querySelectorAll('#survey-sections .survey-section');
-            var section = sections[sections.length - 1];
-            if (!section) { return; }
-            var items = section.querySelectorAll('.survey-item');
-            var clone = items[items.length - 1].cloneNode(true);
-            var iidx = items.length;
-            clone.querySelectorAll('input, select, textarea').forEach(function(el) {
-                if (el.name) {
-                    el.name = el.name.replace(/item\]\[\d+\]/, 'item][' + iidx + ']');
+        root.addEventListener('input', function(e) {
+            var t = e.target;
+            if (t && t.classList && t.classList.contains('survey-title-input')) {
+                syncSummary(t.closest('.survey-item'));
+            }
+        });
+        root.addEventListener('click', function(e) {
+            var t = e.target;
+            if (!t || !t.classList) { return; }
+            var item = t.closest('.survey-item');
+            if (t.classList.contains('survey-q-edit')) {
+                e.preventDefault();
+                setEditing(item, true);
+            } else if (t.classList.contains('survey-q-done')) {
+                e.preventDefault();
+                setEditing(item, false);
+            } else if (t.classList.contains('survey-q-delete')) {
+                e.preventDefault();
+                var section = t.closest('.survey-section');
+                var items = section ? section.querySelectorAll('.survey-item') : [];
+                if (items.length <= 1) {
+                    clearItemFields(item);
+                    setEditing(item, false);
+                } else {
+                    item.remove();
+                    reindexAll();
                 }
-                if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; }
-                else if (el.tagName !== 'SELECT') { el.value = ''; }
-            });
-            items[items.length - 1].after(clone);
-            applyQtypeVisibility(clone);
+            } else if (t.classList.contains('survey-add-question-in-section')) {
+                e.preventDefault();
+                var section = t.closest('.survey-section');
+                if (!section) { return; }
+                var items = section.querySelectorAll('.survey-item');
+                var clone = items[items.length - 1].cloneNode(true);
+                clearItemFields(clone);
+                items[items.length - 1].after(clone);
+                reindexAll();
+                setEditing(clone, true);
+            }
+        });
+        document.querySelectorAll('#survey-sections .survey-item').forEach(function(item) {
+            applyQtypeVisibility(item);
+            syncSummary(item);
+            setEditing(item, false);
         });
     }
+
     var addS = document.getElementById('survey-add-section');
     if (addS) {
         addS.addEventListener('click', function() {
             var sections = document.querySelectorAll('#survey-sections .survey-section');
             var clone = sections[sections.length - 1].cloneNode(true);
-            var sidx = sections.length;
-            clone.querySelectorAll('input, select, textarea').forEach(function(el) {
-                if (!el.name) { return; }
-                el.name = el.name.replace(/section\[\d+\]/, 'section[' + sidx + ']');
-                el.name = el.name.replace(/item\]\[\d+\]/, 'item][0]');
-                if (el.type === 'checkbox' || el.type === 'radio') { el.checked = false; }
-                else if (el.tagName !== 'SELECT') { el.value = ''; }
-            });
+            var nameInput = clone.querySelector('.survey-section-name');
+            if (nameInput) { nameInput.value = ''; }
             var extras = clone.querySelectorAll('.survey-item');
             for (var i = extras.length - 1; i > 0; i--) { extras[i].remove(); }
+            clearItemFields(extras[0]);
             sections[sections.length - 1].after(clone);
-            clone.querySelectorAll('.survey-item').forEach(applyQtypeVisibility);
+            reindexAll();
+            setEditing(clone.querySelector('.survey-item'), true);
         });
     }
 })();

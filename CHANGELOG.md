@@ -3,6 +3,18 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.2] - 2026-10-07 - Survey UX / admin flow
+
+### Changed
+- Course assignment no longer silently steals a course from another survey; save is blocked with a clear error; server-side `assert_courses_assignable` runs before other writes.
+- Survey admin editor: basics card + content sections with collapsed question cards (edit to expand).
+- Survey list: Copy creates an independent survey (structure only; no courses / responses / pins / tokens).
+- Learner survey fill UI hierarchy (sections, numbering, scale / choice layout).
+- Class prep: “Pre-class tasks” (attendance / bento / equipment) + “Post-class survey” card (status, counts, open/close, projection).
+
+### Notes
+- 版號 `2026100702` / release `5.28.2`。無 DB schema 變更；未改 Excel export。待 Owner 驗收。不 merge `main`。
+
 ## [5.28.1] - 2026-10-07 - Fix survey Excel export (Moodle excellib)
 
 ### Fixed

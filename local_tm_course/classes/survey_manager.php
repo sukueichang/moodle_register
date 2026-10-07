@@ -154,7 +154,8 @@ class survey_manager {
     }
 
     /**
-     * One course has at most one assignment row. Assigning moves the course off any other survey.
+     * One course has at most one assignment row.
+     * Refuses to steal a course already assigned to a different survey.
      */
     public static function assign_course(int $surveyid, int $courseid): void {
         global $DB;
@@ -165,12 +166,16 @@ class survey_manager {
         $existing = $DB->get_record('local_tm_course_svcrs', ['courseid' => $courseid]);
         $now = time();
         if ($existing) {
-            $DB->update_record('local_tm_course_svcrs', (object) [
-                'id' => $existing->id,
-                'surveyid' => $surveyid,
-                'timemodified' => $now,
-            ]);
-            return;
+            if ((int) $existing->surveyid === $surveyid) {
+                $DB->set_field('local_tm_course_svcrs', 'timemodified', $now, ['id' => $existing->id]);
+                return;
+            }
+            throw new \moodle_exception(
+                'survey_error_course_assigned',
+                'local_tm_course',
+                '',
+                self::course_assignment_conflict_info($courseid, (int) $existing->surveyid)
+            );
         }
         $DB->insert_record('local_tm_course_svcrs', (object) [
             'courseid' => $courseid,
@@ -186,13 +191,39 @@ class survey_manager {
     }
 
     /**
+     * Throw if any course is already assigned to a different survey.
+     *
+     * @param int[] $courseids
+     */
+    public static function assert_courses_assignable(int $surveyid, array $courseids): void {
+        global $DB;
+        $courseids = array_values(array_unique(array_filter(array_map('intval', $courseids))));
+        foreach ($courseids as $courseid) {
+            $existing = $DB->get_record('local_tm_course_svcrs', ['courseid' => $courseid]);
+            if ($existing && (int) $existing->surveyid !== $surveyid) {
+                throw new \moodle_exception(
+                    'survey_error_course_assigned',
+                    'local_tm_course',
+                    '',
+                    self::course_assignment_conflict_info($courseid, (int) $existing->surveyid)
+                );
+            }
+        }
+    }
+
+    /**
      * Replace this survey's course list. Courses removed here are unassigned.
-     * Courses added here are moved from any other survey.
+     * Courses assigned to another survey are rejected; no partial writes.
      *
      * @param int[] $courseids
      */
     public static function set_course_assignments(int $surveyid, array $courseids): void {
+        global $DB;
         $courseids = array_values(array_unique(array_filter(array_map('intval', $courseids))));
+        self::get_survey($surveyid);
+        self::assert_courses_assignable($surveyid, $courseids);
+
+        $transaction = $DB->start_delegated_transaction();
         $current = self::assigned_courseids($surveyid);
         foreach ($current as $courseid) {
             if (!in_array($courseid, $courseids, true)) {
@@ -202,6 +233,63 @@ class survey_manager {
         foreach ($courseids as $courseid) {
             self::assign_course($surveyid, $courseid);
         }
+        $transaction->allow_commit();
+    }
+
+    /**
+     * @return \stdClass {courename:string,surveyname:string}
+     */
+    private static function course_assignment_conflict_info(int $courseid, int $othersurveyid): \stdClass {
+        global $DB;
+        $course = $DB->get_record('course', ['id' => $courseid], 'id, fullname');
+        $other = $DB->get_record('local_tm_course_svdef', ['id' => $othersurveyid], 'id, name');
+        return (object) [
+            'courename' => $course ? (string) $course->fullname : ('#' . $courseid),
+            'surveyname' => $other ? (string) $other->name : ('#' . $othersurveyid),
+        ];
+    }
+
+    /**
+     * Deep-copy survey content into a new survey. No courses, pins, tokens, or responses.
+     *
+     * @return int new survey id
+     */
+    public static function copy_survey(int $surveyid, int $actorid): int {
+        $source = self::get_survey($surveyid);
+        $newname = self::unique_copy_name((string) $source->name);
+        $newid = self::create_survey($newname, $actorid);
+        self::set_enabled($newid, (bool) (int) $source->enabled);
+        $version = self::current_version($surveyid);
+        if ($version) {
+            $structure = self::get_version_structure((int) $version->id);
+            if ($structure) {
+                self::save_structure($newid, $structure, $actorid);
+            }
+        }
+        return $newid;
+    }
+
+    /**
+     * Name for a copied survey: "Name (副本)", then "Name (副本 2)", …
+     */
+    public static function unique_copy_name(string $basename): string {
+        global $DB;
+        $basename = trim($basename);
+        if ($basename === '') {
+            $basename = get_string('survey_name', 'local_tm_course');
+        }
+        $candidate = $basename . ' (' . get_string('survey_copy_suffix', 'local_tm_course') . ')';
+        $n = 2;
+        while ($DB->record_exists('local_tm_course_svdef', ['name' => $candidate])) {
+            $candidate = $basename . ' (' . get_string('survey_copy_suffix', 'local_tm_course') . ' ' . $n . ')';
+            $n++;
+            if ($n > 500) {
+                $candidate = $basename . ' (' . get_string('survey_copy_suffix', 'local_tm_course')
+                    . ' ' . time() . ')';
+                break;
+            }
+        }
+        return $candidate;
     }
 
     /**

@@ -71,31 +71,54 @@ function local_tm_course_survey_render_form(
 ): void {
     global $OUTPUT, $PAGE;
 
+    echo html_writer::start_div('tm-survey-fill');
+
     if ($savedflag) {
         echo $OUTPUT->notification(get_string('survey_submitted', 'local_tm_course'), 'success');
     }
     if ($error !== '') {
-        echo $OUTPUT->notification($error, 'error');
+        echo html_writer::div($error, 'tm-survey-fill-error alert alert-danger');
     }
 
     if (!$structure) {
         echo $OUTPUT->notification(get_string('survey_error_no_survey', 'local_tm_course'), 'error');
+        echo html_writer::end_div();
         return;
     }
 
     if ($viewonly) {
-        echo html_writer::tag('p', get_string('survey_view_only', 'local_tm_course'), ['class' => 'font-weight-bold']);
-        foreach ($structure as $section) {
-            if (($section['name'] ?? '') !== '') {
-                echo html_writer::tag('h3', s($section['name']), ['class' => 'mt-3']);
+        echo html_writer::tag('p', get_string('survey_view_only', 'local_tm_course'), [
+            'class' => 'tm-survey-fill-readonly-banner',
+        ]);
+        $qnum = 0;
+        foreach ($structure as $sidx => $section) {
+            echo html_writer::start_div('tm-survey-fill-section');
+            $secname = trim((string) ($section['name'] ?? ''));
+            if ($secname !== '') {
+                echo html_writer::tag('h3',
+                    html_writer::tag('span', sprintf('%02d', $sidx + 1), ['class' => 'tm-survey-section-num'])
+                    . ' ' . s($secname),
+                    ['class' => 'tm-survey-fill-section-title']
+                );
             }
             foreach ($section['items'] ?? [] as $item) {
+                $qnum++;
                 $itemid = (int) $item['id'];
                 $ans = $answers[$itemid] ?? null;
-                echo html_writer::start_div('border rounded p-3 mb-3');
-                echo html_writer::tag('div', s($item['title']) . (!empty($item['required']) ? ' *' : ''), ['class' => 'font-weight-bold']);
+                echo html_writer::start_div('tm-survey-fill-qcard');
+                echo html_writer::start_div('tm-survey-fill-qhead');
+                echo html_writer::tag('span', get_string('survey_question_n', 'local_tm_course', $qnum), [
+                    'class' => 'tm-survey-qnum',
+                ]);
+                $req = !empty($item['required'])
+                    ? html_writer::tag('span', get_string('survey_required_yes', 'local_tm_course'), [
+                        'class' => 'tm-survey-chip tm-survey-chip-req',
+                    ])
+                    : '';
+                echo html_writer::tag('div', s($item['title']) . ' ' . $req, ['class' => 'tm-survey-fill-qtitle']);
+                echo html_writer::end_div();
                 if (($item['help'] ?? '') !== '') {
-                    echo html_writer::tag('div', s($item['help']), ['class' => 'text-muted small mb-2']);
+                    echo html_writer::tag('div', s($item['help']), ['class' => 'tm-survey-fill-help']);
                 }
                 $display = '—';
                 if ($ans) {
@@ -129,10 +152,12 @@ function local_tm_course_survey_render_form(
                         }
                     }
                 }
-                echo html_writer::tag('div', s($display));
+                echo html_writer::tag('div', s($display), ['class' => 'tm-survey-fill-answer']);
                 echo html_writer::end_div();
             }
+            echo html_writer::end_div();
         }
+        echo html_writer::end_div();
         return;
     }
 
@@ -140,55 +165,83 @@ function local_tm_course_survey_render_form(
         'method' => 'post',
         'action' => $formurl->out(false),
         'id' => 'survey-fill-form',
+        'class' => 'tm-survey-fill-form',
     ]);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
     echo html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'step', 'value' => 'answers']);
 
-    foreach ($structure as $section) {
-        if (($section['name'] ?? '') !== '') {
-            echo html_writer::tag('h3', s($section['name']), ['class' => 'mt-3']);
+    $qnum = 0;
+    foreach ($structure as $sidx => $section) {
+        echo html_writer::start_div('tm-survey-fill-section');
+        $secname = trim((string) ($section['name'] ?? ''));
+        if ($secname !== '') {
+            echo html_writer::tag('h3',
+                html_writer::tag('span', sprintf('%02d', $sidx + 1), ['class' => 'tm-survey-section-num'])
+                . ' ' . s($secname),
+                ['class' => 'tm-survey-fill-section-title']
+            );
         }
         foreach ($section['items'] ?? [] as $item) {
+            $qnum++;
             $itemid = (int) $item['id'];
             $prefix = 'answer[' . $itemid . ']';
-            echo html_writer::start_div('border rounded p-3 mb-3 survey-fill-item');
-            echo html_writer::tag('div', s($item['title']) . (!empty($item['required']) ? ' *' : ''), ['class' => 'font-weight-bold mb-1']);
+            $required = !empty($item['required']);
+            echo html_writer::start_div('tm-survey-fill-qcard survey-fill-item');
+            echo html_writer::start_div('tm-survey-fill-qhead');
+            echo html_writer::tag('span', get_string('survey_question_n', 'local_tm_course', $qnum), [
+                'class' => 'tm-survey-qnum',
+            ]);
+            $titlehtml = s($item['title']);
+            if ($required) {
+                $titlehtml .= ' ' . html_writer::tag('span', '*', [
+                    'class' => 'tm-survey-req-star',
+                    'aria-label' => get_string('survey_required_yes', 'local_tm_course'),
+                ]);
+            }
+            echo html_writer::tag('div', $titlehtml, ['class' => 'tm-survey-fill-qtitle']);
+            echo html_writer::end_div();
             if (($item['help'] ?? '') !== '') {
-                echo html_writer::tag('div', s($item['help']), ['class' => 'text-muted small mb-2']);
+                echo html_writer::tag('div', s($item['help']), ['class' => 'tm-survey-fill-help']);
             }
             $qtype = (string) $item['qtype'];
             if ($qtype === survey_manager::TYPE_SCALE) {
                 $min = (string) ($item['scalemin'] ?? '');
                 $max = (string) ($item['scalemax'] ?? '');
+                echo html_writer::start_div('tm-survey-scale');
                 if ($min !== '' || $max !== '') {
-                    echo html_writer::tag('div', s($min) . ' ← → ' . s($max), ['class' => 'small text-muted mb-2']);
+                    echo html_writer::start_div('tm-survey-scale-ends');
+                    echo html_writer::tag('span', s($min), ['class' => 'tm-survey-scale-min']);
+                    echo html_writer::tag('span', s($max), ['class' => 'tm-survey-scale-max']);
+                    echo html_writer::end_div();
                 }
-                echo html_writer::start_div('d-flex flex-wrap');
+                echo html_writer::start_div('tm-survey-scale-options');
                 for ($n = 1; $n <= 5; $n++) {
                     echo html_writer::tag('label',
                         html_writer::empty_tag('input', [
                             'type' => 'radio', 'name' => $prefix . '[value]', 'value' => $n,
-                            'class' => 'mr-1',
-                        ]) . ' ' . $n,
-                        ['class' => 'mr-3 mb-1']
+                        ])
+                        . html_writer::tag('span', (string) $n, ['class' => 'tm-survey-scale-n']),
+                        ['class' => 'tm-survey-scale-opt']
                     );
                 }
                 echo html_writer::end_div();
+                echo html_writer::end_div();
             } else if ($qtype === survey_manager::TYPE_TEXT) {
                 echo html_writer::tag('textarea', '', [
-                    'name' => $prefix . '[value]', 'class' => 'form-control', 'rows' => 3,
+                    'name' => $prefix . '[value]', 'class' => 'form-control tm-survey-text', 'rows' => 3,
                 ]);
             } else if ($qtype === survey_manager::TYPE_SINGLE || $qtype === survey_manager::TYPE_MULTI) {
                 $inputtype = $qtype === survey_manager::TYPE_SINGLE ? 'radio' : 'checkbox';
                 $name = $qtype === survey_manager::TYPE_SINGLE ? $prefix . '[option]' : $prefix . '[options][]';
+                echo html_writer::start_div('tm-survey-choices');
                 foreach ($item['options'] as $option) {
                     $oid = (int) $option['id'];
                     $isother = !empty($option['isother']);
-                    echo html_writer::start_div('mb-1');
+                    echo html_writer::start_div('tm-survey-choice' . ($isother ? ' tm-survey-choice-other' : ''));
                     echo html_writer::tag('label',
                         html_writer::empty_tag('input', [
                             'type' => $inputtype, 'name' => $name, 'value' => $oid,
-                            'class' => 'mr-1 survey-opt' . ($isother ? ' survey-opt-other' : ''),
+                            'class' => 'survey-opt' . ($isother ? ' survey-opt-other' : ''),
                             'data-item' => $itemid,
                         ]) . ' ' . s($option['label'])
                     );
@@ -202,18 +255,23 @@ function local_tm_course_survey_render_form(
                     }
                     echo html_writer::end_div();
                 }
+                echo html_writer::end_div();
             }
             echo html_writer::end_div();
         }
+        echo html_writer::end_div();
     }
 
+    echo html_writer::start_div('tm-survey-fill-actions');
     echo html_writer::empty_tag('input', [
         'type' => 'submit',
-        'class' => 'btn btn-primary',
+        'class' => 'btn btn-primary btn-lg',
         'id' => 'survey-submit-btn',
         'value' => get_string('survey_submit', 'local_tm_course'),
     ]);
+    echo html_writer::end_div();
     echo html_writer::end_tag('form');
+    echo html_writer::end_div();
 
     $PAGE->requires->js_init_code(<<<'JS'
 (function() {
@@ -251,8 +309,11 @@ if ($tokenparam === '' && $sessionidparam > 0) {
         $structure = survey_manager::get_version_structure((int) $response->versionid);
         $answers = survey_manager::get_response_answers((int) $response->id);
         echo $OUTPUT->header();
-        echo html_writer::tag('h2', get_string('survey_learner_title', 'local_tm_course'));
-        echo html_writer::tag('p', s($session->name), ['class' => 'text-muted']);
+        echo html_writer::start_div('tm-survey-fill-page');
+        echo html_writer::tag('h2', get_string('survey_learner_title', 'local_tm_course'), [
+            'class' => 'tm-survey-fill-page-title',
+        ]);
+        echo html_writer::tag('p', s($session->name), ['class' => 'tm-survey-fill-page-meta']);
         local_tm_course_survey_render_form(
             $structure,
             $answers,
@@ -261,6 +322,7 @@ if ($tokenparam === '' && $sessionidparam > 0) {
             '',
             (bool) $saved
         );
+        echo html_writer::end_div();
         echo $OUTPUT->footer();
         exit;
     }
@@ -364,15 +426,18 @@ if ($versionid > 0) {
 }
 
 echo $OUTPUT->header();
-echo html_writer::tag('h2', get_string('survey_learner_title', 'local_tm_course'));
-echo html_writer::tag(
-    'p',
-    s($session->name) . ($surveyname !== '' ? ' — ' . s($surveyname) : ''),
-    ['class' => 'text-muted']
-);
+echo html_writer::start_div('tm-survey-fill-page');
+echo html_writer::tag('h2', get_string('survey_learner_title', 'local_tm_course'), [
+    'class' => 'tm-survey-fill-page-title',
+]);
+if ($surveyname !== '') {
+    echo html_writer::tag('h3', s($surveyname), ['class' => 'tm-survey-fill-survey-name']);
+}
+echo html_writer::tag('p', s($session->name), ['class' => 'tm-survey-fill-page-meta']);
 
 if (!survey_manager::is_quick_survey_accepting($sessionid) && $email === '') {
     echo $OUTPUT->notification(get_string('survey_not_open', 'local_tm_course'), 'info');
+    echo html_writer::end_div();
     echo $OUTPUT->footer();
     exit;
 }
@@ -384,6 +449,8 @@ if ($email === '' || ($step !== 'form' && $step !== 'answers' && empty($SESSION-
         if (isloggedin() && !isguestuser() && !empty($USER->email)) {
             $prefill = (string) $USER->email;
         }
+        echo html_writer::start_div('tm-card tm-survey-email-card');
+        echo html_writer::start_div('tm-card-body');
         echo html_writer::tag('p', get_string('survey_quick_email_help', 'local_tm_course'));
         if ($error !== '') {
             echo $OUTPUT->notification($error, 'error');
@@ -407,6 +474,9 @@ if ($email === '' || ($step !== 'form' && $step !== 'answers' && empty($SESSION-
             'value' => get_string('survey_quick_continue', 'local_tm_course'),
         ]);
         echo html_writer::end_tag('form');
+        echo html_writer::end_div();
+        echo html_writer::end_div();
+        echo html_writer::end_div();
         echo $OUTPUT->footer();
         exit;
     }
@@ -423,9 +493,11 @@ $answers = $viewonly ? survey_manager::get_response_answers((int) $response->id)
 
 if (!$viewonly && !survey_manager::is_quick_survey_accepting($sessionid)) {
     echo $OUTPUT->notification(get_string('survey_not_open', 'local_tm_course'), 'info');
+    echo html_writer::end_div();
     echo $OUTPUT->footer();
     exit;
 }
 
 local_tm_course_survey_render_form($structure, $answers, $wanturl, $viewonly, $error, (bool) $saved);
+echo html_writer::end_div();
 echo $OUTPUT->footer();

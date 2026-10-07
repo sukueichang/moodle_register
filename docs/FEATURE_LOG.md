@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-10-07 — Survey UX／管理流程（不 silent 搶課、複製、層級 UI）
+
+- **需求：** (1) 指定課程不得 silent 搶走其他問卷；(2) Admin 編輯器資訊層級（基本設定＋摺疊題卡）；(3) 清單複製問卷（僅結構、不複製課程／回覆／token）；(4) 學員填答 UI；(5) `class_prep` 課前作業／課後問卷分區。
+- **決策：** `assign_course`／`set_course_assignments` 衝突時丟 `survey_error_course_assigned`，儲存前先 `assert_courses_assignable`；`copy_survey`＋`unique_copy_name`（`(副本)`／`(副本 N)`）；不改 DB schema、不碰 Excel／excellib；`class_prep` 開／關呼叫既有 token API。
+- **影響範圍：** `survey_manager`、`admin/surveys.php`、`survey.php`、`admin/class_prep.php`、`styles.css`、lang en/zh_tw、tests、SPEC §59、version **5.28.2／2026100702**。
+- **版本／狀態：** **5.28.2** 待 Owner 人工驗收。PHPUnit 本機未跑（環境無 Moodle PHPUnit）。不 merge `main`。
+
 ## 2026-10-07 — Phase 4 Excel Export FAIL → Moodle excellib
 
 - **Owner 驗收（5.28.0）：** Phase 3 **PASS**；Phase 4 篩選／題型統計 **PASS**；Phase 4 Excel **FAIL**（`Call to undefined function send_file()` at `survey_export.php`）。
