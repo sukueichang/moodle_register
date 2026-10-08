@@ -3,6 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.7] - 2026-10-08 - Fix survey_viz html_writer namespace
+
+### Fixed
+- `survey_viz` calls global `\html_writer` so live results and admin charts no longer throw `local_tm_course\html_writer` not found.
+
+### Notes
+- 版號 `2026100802`。無 DB 變更。不 merge `main`。
+
 ## [5.28.6] - 2026-10-08 - Shared survey result charts
 
 ### Added

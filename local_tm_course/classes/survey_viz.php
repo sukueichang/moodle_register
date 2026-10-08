@@ -18,7 +18,7 @@ class survey_viz {
      */
     public static function html(array $questions): string {
         if (!$questions) {
-            return html_writer::div(get_string('survey_viz_empty', 'local_tm_course'), 'tm-sviz-empty');
+            return \html_writer::div(get_string('survey_viz_empty', 'local_tm_course'), 'tm-sviz-empty');
         }
         $sections = [];
         $index = [];
@@ -38,16 +38,16 @@ class survey_viz {
      */
     public static function html_sections(array $sections): string {
         if (!$sections) {
-            return html_writer::div(get_string('survey_viz_empty', 'local_tm_course'), 'tm-sviz-empty');
+            return \html_writer::div(get_string('survey_viz_empty', 'local_tm_course'), 'tm-sviz-empty');
         }
-        $html = html_writer::start_div('tm-sviz');
+        $html = \html_writer::start_div('tm-sviz');
         $qnum = 0;
         foreach ($sections as $sidx => $section) {
-            $html .= html_writer::start_div('tm-sviz-section');
+            $html .= \html_writer::start_div('tm-sviz-section');
             $name = trim((string) ($section['name'] ?? ''));
             if ($name !== '') {
-                $html .= html_writer::tag('h3',
-                    html_writer::tag('span', sprintf('%02d', $sidx + 1), ['class' => 'tm-survey-section-num'])
+                $html .= \html_writer::tag('h3',
+                    \html_writer::tag('span', sprintf('%02d', $sidx + 1), ['class' => 'tm-survey-section-num'])
                     . ' ' . s($name),
                     ['class' => 'tm-sviz-section-title']
                 );
@@ -56,9 +56,9 @@ class survey_viz {
                 $qnum++;
                 $html .= self::card($qnum, $q);
             }
-            $html .= html_writer::end_div();
+            $html .= \html_writer::end_div();
         }
-        $html .= html_writer::end_div();
+        $html .= \html_writer::end_div();
         return $html;
     }
 
@@ -68,32 +68,32 @@ class survey_viz {
     private static function card(int $qnum, array $q): string {
         $qtype = (string) ($q['qtype'] ?? '');
         $typelabel = self::type_label($qtype);
-        $html = html_writer::start_div('tm-sviz-card', ['data-qtype' => $qtype]);
-        $html .= html_writer::start_div('tm-sviz-head');
-        $html .= html_writer::tag('span', get_string('survey_question_n', 'local_tm_course', $qnum), [
+        $html = \html_writer::start_div('tm-sviz-card', ['data-qtype' => $qtype]);
+        $html .= \html_writer::start_div('tm-sviz-head');
+        $html .= \html_writer::tag('span', get_string('survey_question_n', 'local_tm_course', $qnum), [
             'class' => 'tm-survey-qnum',
         ]);
-        $html .= html_writer::start_div('tm-sviz-head-text');
-        $html .= html_writer::tag('div', s((string) ($q['title'] ?? '')), ['class' => 'tm-sviz-title']);
+        $html .= \html_writer::start_div('tm-sviz-head-text');
+        $html .= \html_writer::tag('div', s((string) ($q['title'] ?? '')), ['class' => 'tm-sviz-title']);
         $help = trim((string) ($q['help'] ?? ''));
         if ($help !== '') {
-            $html .= html_writer::tag('div', s($help), ['class' => 'tm-sviz-help']);
+            $html .= \html_writer::tag('div', s($help), ['class' => 'tm-sviz-help']);
         }
-        $html .= html_writer::tag('div',
-            html_writer::tag('span', s($typelabel), ['class' => 'tm-survey-chip'])
+        $html .= \html_writer::tag('div',
+            \html_writer::tag('span', s($typelabel), ['class' => 'tm-survey-chip'])
             . ' '
-            . html_writer::tag('span', get_string('survey_viz_answered', 'local_tm_course', (int) ($q['answered'] ?? 0)), [
+            . \html_writer::tag('span', get_string('survey_viz_answered', 'local_tm_course', (int) ($q['answered'] ?? 0)), [
                 'class' => 'tm-survey-chip tm-survey-chip-opt',
             ]),
             ['class' => 'tm-sviz-chips']
         );
-        $html .= html_writer::end_div();
-        $html .= html_writer::end_div();
+        $html .= \html_writer::end_div();
+        $html .= \html_writer::end_div();
 
         $answered = (int) ($q['answered'] ?? 0);
         if ($qtype === survey_manager::TYPE_SCALE) {
             $avg = $q['average'];
-            $html .= html_writer::tag('div',
+            $html .= \html_writer::tag('div',
                 get_string('survey_viz_average', 'local_tm_course', $avg !== null ? $avg : '—'),
                 ['class' => 'tm-sviz-average']
             );
@@ -120,7 +120,7 @@ class survey_viz {
             $html .= self::chart_block($default, $series, true);
             $html .= self::legend($series);
             if ($qtype === survey_manager::TYPE_MULTI) {
-                $html .= html_writer::tag('p', get_string('survey_live_multi_note', 'local_tm_course'), [
+                $html .= \html_writer::tag('p', get_string('survey_live_multi_note', 'local_tm_course'), [
                     'class' => 'tm-sviz-note',
                 ]);
             }
@@ -129,20 +129,20 @@ class survey_viz {
             $tokens = self::word_tokens($texts);
             $html .= self::mode_switch('cloud', true);
             $payload = json_encode($tokens, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
-            $html .= html_writer::div('', 'tm-sviz-chart tm-sviz-cloud is-active', [
+            $html .= \html_writer::div('', 'tm-sviz-chart tm-sviz-cloud is-active', [
                 'data-tokens' => $payload,
                 'data-mode' => 'cloud',
             ]);
             $listhtml = '';
             if (!$texts) {
-                $listhtml = html_writer::div(get_string('survey_viz_nodata', 'local_tm_course'), 'text-muted');
+                $listhtml = \html_writer::div(get_string('survey_viz_nodata', 'local_tm_course'), 'text-muted');
             }
             foreach ($texts as $text) {
-                $listhtml .= html_writer::div(s($text), 'tm-sviz-text');
+                $listhtml .= \html_writer::div(s($text), 'tm-sviz-text');
             }
-            $html .= html_writer::div($listhtml, 'tm-sviz-list', ['data-mode' => 'list', 'hidden' => 'hidden']);
+            $html .= \html_writer::div($listhtml, 'tm-sviz-list', ['data-mode' => 'list', 'hidden' => 'hidden']);
         }
-        $html .= html_writer::end_div();
+        $html .= \html_writer::end_div();
         return $html;
     }
 
@@ -151,7 +151,7 @@ class survey_viz {
      */
     private static function chart_block(string $mode, array $series, bool $switchable): string {
         $payload = json_encode($series, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
-        return html_writer::div('', 'tm-sviz-chart', [
+        return \html_writer::div('', 'tm-sviz-chart', [
             'data-series' => $payload,
             'data-mode' => $mode,
             'data-switchable' => $switchable ? '1' : '0',
@@ -170,16 +170,16 @@ class survey_viz {
                 'bar' => get_string('survey_viz_bar', 'local_tm_course'),
             ];
         }
-        $html = html_writer::start_div('tm-sviz-switch', ['role' => 'group']);
+        $html = \html_writer::start_div('tm-sviz-switch', ['role' => 'group']);
         foreach ($modes as $mode => $label) {
             $class = 'tm-sviz-mode' . ($mode === $active ? ' is-active' : '');
-            $html .= html_writer::tag('button', $label, [
+            $html .= \html_writer::tag('button', $label, [
                 'type' => 'button',
                 'class' => $class,
                 'data-mode' => $mode,
             ]);
         }
-        $html .= html_writer::end_div();
+        $html .= \html_writer::end_div();
         return $html;
     }
 
@@ -188,19 +188,19 @@ class survey_viz {
      */
     private static function legend(array $series): string {
         if (!$series) {
-            return html_writer::div(get_string('survey_viz_nodata', 'local_tm_course'), 'text-muted');
+            return \html_writer::div(get_string('survey_viz_nodata', 'local_tm_course'), 'text-muted');
         }
-        $html = html_writer::start_tag('ul', ['class' => 'tm-sviz-legend']);
+        $html = \html_writer::start_tag('ul', ['class' => 'tm-sviz-legend']);
         foreach ($series as $i => $row) {
-            $html .= html_writer::tag('li',
-                html_writer::tag('span', '', ['class' => 'tm-sviz-swatch', 'data-i' => $i])
+            $html .= \html_writer::tag('li',
+                \html_writer::tag('span', '', ['class' => 'tm-sviz-swatch', 'data-i' => $i])
                 . s($row['label'])
-                . html_writer::tag('span', (int) $row['count'] . ' (' . s((string) $row['pct']) . '%)', [
+                . \html_writer::tag('span', (int) $row['count'] . ' (' . s((string) $row['pct']) . '%)', [
                     'class' => 'tm-sviz-legend-num',
                 ])
             );
         }
-        $html .= html_writer::end_tag('ul');
+        $html .= \html_writer::end_tag('ul');
         return $html;
     }
 

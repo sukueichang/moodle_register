@@ -2080,6 +2080,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100801, 'local', 'tm_course');
     }
 
+    // 2026100802 — survey_viz uses global \html_writer (no DB).
+    if ($oldversion < 2026100802) {
+        upgrade_plugin_savepoint(true, 2026100802, 'local', 'tm_course');
+    }
+
     return true;
 }
 

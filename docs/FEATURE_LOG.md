@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-10-08 — survey_viz html_writer namespace
+
+- **現象：** 5.28.6 即時結果頁 `Class 'local_tm_course\html_writer' not found`。
+- **根因：** `survey_viz.php` 在 `namespace local_tm_course` 內未加 `\`，PHP 把全域 `html_writer` 解析成外掛類別。
+- **修正：** 全部改 `\html_writer::`。無 DB。
+- **版本／狀態：** **5.28.7／2026100802**。不 merge `main`。
+
 ## 2026-10-08 — 問卷結果圖表共用模組
 
 - **需求：** Admin 結果頁與本場次即時結果共用圖表：單選／複選可切圓餅與長條；量表直條＋平均；自由文字雲與完整清單。不靠 CDN。
