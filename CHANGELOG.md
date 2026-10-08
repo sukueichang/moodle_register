@@ -3,6 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.8] - 2026-10-08 - Word cloud uses whole answers
+
+### Fixed
+- Free-text word cloud counts each full response as one item. Repeated identical text grows in size. Chinese and English are not split into words.
+
+### Notes
+- 版號 `2026100803`。無 DB 變更。不 merge `main`。
+
 ## [5.28.7] - 2026-10-08 - Fix survey_viz html_writer namespace
 
 ### Fixed

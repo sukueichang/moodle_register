@@ -17,20 +17,24 @@ require_once($CFG->dirroot . '/local/tm_course/classes/survey_viz.php');
  */
 class survey_viz_test extends \advanced_testcase {
 
-    public function test_word_tokens_drop_email_and_keep_cjk(): void {
+    public function test_word_tokens_keep_each_answer_whole(): void {
         $this->resetAfterTest(true);
         $tokens = survey_viz::word_tokens([
-            '課程很好 課程很好 contact me at learner@example.com',
-            'The course was clear',
+            '我想要吃大麥克',
+            "Hi I'm watlon",
+            '我想要吃大麥克',
+            '   ',
         ]);
-        $texts = [];
+        $map = [];
         foreach ($tokens as $row) {
-            $texts[] = $row['text'];
-            $this->assertStringNotContainsString('@', $row['text']);
+            $map[$row['text']] = $row['count'];
         }
-        $this->assertNotContains('learner@example.com', $texts);
-        $this->assertContains('課程', $texts);
-        $this->assertContains('course', $texts);
+        $this->assertCount(2, $map);
+        $this->assertSame(2, $map['我想要吃大麥克']);
+        $this->assertSame(1, $map["Hi I'm watlon"]);
+        $this->assertSame('我想要吃大麥克', $tokens[0]['text']);
+        $this->assertArrayNotHasKey('我想', $map);
+        $this->assertArrayNotHasKey('Hi', $map);
     }
 
     public function test_html_includes_chart_payload_without_identity(): void {

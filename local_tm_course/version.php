@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.28.7
+ * Version: 5.28.8
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026100802;   // Fix survey_viz html_writer global class reference
-$plugin->release   = '5.28.7';
+$plugin->version   = 2026100803;   // Word cloud uses each full free-text answer
+$plugin->release   = '5.28.8';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

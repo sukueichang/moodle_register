@@ -221,70 +221,30 @@ class survey_viz {
     }
 
     /**
-     * Lightweight tokens for a word cloud. Latin words plus CJK runs and 2-char grams.
-     * Drops emails and a small stopword list. Safe to extend later.
+     * One cloud item per full response text. Identical trimmed strings share a count.
+     * Does not split Chinese or English into words.
      *
      * @param string[] $texts
      * @return array<int,array{text:string,count:int}>
      */
     public static function word_tokens(array $texts): array {
-        $stop = [
-            'a' => 1, 'an' => 1, 'the' => 1, 'of' => 1, 'to' => 1, 'and' => 1, 'or' => 1,
-            'for' => 1, 'in' => 1, 'on' => 1, 'is' => 1, 'it' => 1, 'this' => 1, 'that' => 1,
-            '的' => 1, '了' => 1, '是' => 1, '在' => 1, '我' => 1, '有' => 1, '和' => 1,
-            '就' => 1, '不' => 1, '也' => 1, '與' => 1, '及' => 1, '很' => 1, '都' => 1,
-        ];
         $counts = [];
         foreach ($texts as $text) {
             $text = trim((string) $text);
             if ($text === '') {
                 continue;
             }
-            if (preg_match_all('/[A-Za-z][A-Za-z0-9_\-]{1,}/u', $text, $latin)) {
-                foreach ($latin[0] as $word) {
-                    self::add_token($counts, $stop, strtolower($word));
-                }
+            if (!isset($counts[$text])) {
+                $counts[$text] = 0;
             }
-            if (preg_match_all('/[\x{4e00}-\x{9fff}]{2,12}/u', $text, $cjk)) {
-                foreach ($cjk[0] as $run) {
-                    $chars = preg_split('//u', $run, -1, PREG_SPLIT_NO_EMPTY);
-                    $len = count($chars);
-                    if ($len >= 2 && $len <= 6) {
-                        self::add_token($counts, $stop, $run);
-                    }
-                    for ($i = 0; $i < $len - 1; $i++) {
-                        self::add_token($counts, $stop, $chars[$i] . $chars[$i + 1]);
-                    }
-                }
-            }
+            $counts[$text]++;
         }
         arsort($counts);
         $out = [];
         foreach ($counts as $token => $count) {
             $out[] = ['text' => (string) $token, 'count' => (int) $count];
-            if (count($out) >= 40) {
-                break;
-            }
         }
         return $out;
-    }
-
-    /**
-     * @param array<string,int> $counts
-     * @param array<string,int> $stop
-     */
-    private static function add_token(array &$counts, array $stop, string $token): void {
-        $token = trim($token);
-        if ($token === '' || isset($stop[$token])) {
-            return;
-        }
-        if (strpos($token, '@') !== false) {
-            return;
-        }
-        if (!isset($counts[$token])) {
-            $counts[$token] = 0;
-        }
-        $counts[$token]++;
     }
 
     public static function require_assets(): void {

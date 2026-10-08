@@ -22,6 +22,12 @@
 
 ---
 
+## 2026-10-08 — 文字雲改為整筆回答
+
+- **現象：** 5.28.6 把中文切成二字，英文拆成單字。
+- **決策：** `survey_viz::word_tokens()` 每筆去空白後的全文算一次；空白略過。Admin 與即時頁共用。不拆詞。
+- **版本／狀態：** **5.28.8／2026100803**。PHPUnit 本機未跑。不 merge `main`。
+
 ## 2026-10-08 — survey_viz html_writer namespace
 
 - **現象：** 5.28.6 即時結果頁 `Class 'local_tm_course\html_writer' not found`。
