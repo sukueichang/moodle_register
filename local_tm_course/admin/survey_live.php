@@ -51,7 +51,7 @@ if ($surveydef) {
 }
 
 $html = local_tm_course_survey_live_html($snapshot);
-$countshtml = local_tm_course_survey_live_counts($snapshot);
+$countshtml = local_tm_course_survey_live_counts($snapshot, $sessionid);
 
 if ($ajax) {
     header('Content-Type: application/json; charset=utf-8');
@@ -130,22 +130,25 @@ echo $OUTPUT->footer();
 /**
  * @param array $snapshot
  */
-function local_tm_course_survey_live_counts(array $snapshot): string {
+function local_tm_course_survey_live_counts(array $snapshot, int $sessionid): string {
     $eligible = (int) ($snapshot['expected_headcount'] ?? 0);
     $html = html_writer::tag('div',
+        get_string('class_prep_survey_responses', 'local_tm_course') . '：'
+        . (int) $snapshot['response_count']
+    );
+    $html .= html_writer::tag('div',
         get_string('class_prep_survey_mapped', 'local_tm_course') . '：'
-        . (int) $snapshot['mapped_count'] . ' / ' . $eligible
+        . (int) $snapshot['mapped_count']
     );
     $html .= html_writer::tag('div',
         get_string('class_prep_survey_unmatched', 'local_tm_course') . '：'
         . (int) $snapshot['unmatched_count']
     );
     $html .= html_writer::tag('div',
-        get_string('class_prep_survey_responses', 'local_tm_course') . '：'
-        . (int) $snapshot['response_count']
-        . ' · ' . get_string('class_prep_survey_eligible', 'local_tm_course') . '：' . $eligible,
+        get_string('class_prep_survey_eligible', 'local_tm_course') . '：' . $eligible,
         ['class' => 'text-muted small']
     );
+    $html .= survey_stats::session_respondent_html($sessionid);
     return $html;
 }
 

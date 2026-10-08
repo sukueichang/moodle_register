@@ -3,6 +3,15 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.11] - 2026-10-08 - Survey respondent names and quiz finished-attempt grades
+
+### Changed
+- Class prep and live survey results list signed-in learner names and guest emails for that session only. Counts are total responses, signed-in learners, guests, and eligible learners separately.
+- Quiz grading uses only finished attempts. A null `sumgrades` on the highest finished attempt stays ungraded and does not fall back to an older score or the gradebook.
+
+### Notes
+- 版號 `2026100806`。無 DB 變更。`mod_assign` 仍走 gradebook。不 merge `main`。
+
 ## [5.28.10] - 2026-10-08 - Survey stats share one filter dataset
 
 ### Fixed

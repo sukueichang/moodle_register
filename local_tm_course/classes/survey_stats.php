@@ -511,6 +511,67 @@ class survey_stats {
      *   sections:array<int,array{name:string,questions:array}>
      * }
      */
+    /**
+     * Names and guest emails for one session only.
+     *
+     * @return array{learners:string[],guests:string[]}
+     */
+    public static function session_respondents(int $sessionid): array {
+        global $DB;
+        $learners = [];
+        $guests = [];
+        if ($sessionid <= 0) {
+            return ['learners' => $learners, 'guests' => $guests];
+        }
+        $namefields = get_all_user_name_fields(true, 'u');
+        $sql = "SELECT r.id, r.mapped, r.userid, r.email, {$namefields}
+                  FROM {local_tm_course_svresp} r
+             LEFT JOIN {user} u ON u.id = r.userid
+                 WHERE r.sessionid = :sessionid
+              ORDER BY r.timecreated ASC, r.id ASC";
+        $rows = $DB->get_records_sql($sql, ['sessionid' => $sessionid]);
+        foreach ($rows as $row) {
+            $mapped = (int) $row->mapped === survey_manager::MAPPED && (int) $row->userid > 0 && !empty($row->firstname);
+            if ($mapped) {
+                $learners[] = fullname($row);
+                continue;
+            }
+            $email = trim((string) $row->email);
+            if ($email !== '') {
+                $guests[] = $email;
+            }
+        }
+        return ['learners' => $learners, 'guests' => $guests];
+    }
+
+    /**
+     * HTML lists for the class-prep card and the live results page.
+     */
+    public static function session_respondent_html(int $sessionid): string {
+        $people = self::session_respondents($sessionid);
+        $html = self::respondent_list_html('class_prep_survey_mapped', $people['learners']);
+        $html .= self::respondent_list_html('class_prep_survey_unmatched', $people['guests']);
+        return $html;
+    }
+
+    /**
+     * @param string[] $items
+     */
+    private static function respondent_list_html(string $stringid, array $items): string {
+        $title = get_string($stringid, 'local_tm_course') . '（' . count($items) . '）';
+        $html = \html_writer::tag('div', s($title), ['class' => 'small font-weight-bold mt-2']);
+        if (!$items) {
+            $html .= \html_writer::tag('div', '—', ['class' => 'text-muted small']);
+            return $html;
+        }
+        $lis = '';
+        foreach ($items as $item) {
+            $lis .= \html_writer::tag('li', s($item));
+        }
+        $html .= \html_writer::tag('ul', $lis, ['class' => 'mb-2']);
+        return $html;
+    }
+
     public static function session_live_snapshot(int $sessionid): array {
         $filters = self::filters_from_params(['sessionid' => $sessionid]);
         $summary = self::summary($filters);

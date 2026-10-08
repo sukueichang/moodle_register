@@ -22,6 +22,12 @@
 
 ---
 
+## 2026-10-08 — 課後問卷回覆者名單與 quiz 待評分
+
+- **問卷：** 上課準備事項與本場次即時結果，對有點名權限者顯示該場次已登入學員姓名與訪客 Email。名詞由「已對應學員回覆／其他回覆」改為「已登入學員／訪客」。總回覆數、已登入學員、訪客、已核准學員分開，不再寫成 `2 / 1`。
+- **Quiz：** 只考慮 `state = finished`。最大 attempt 的 `sumgrades` 為空就是待評分，不採用較早分數或 gradebook，也不再用 `requires_manual_grading()`。開始批改開啟同一筆。assign 不變。
+- **版本／狀態：** **5.28.11／2026100806**。無 DB。PHPUnit 本機未跑。不 merge `main`。
+
 ## 2026-10-08 — 結果頁各區塊共用同一份 filter dataset
 
 - **現象：** 已選問卷與課程時摘要有 2 筆，題目統計卻是 0；再選場次才出現。
@@ -297,7 +303,7 @@
 ## 2026-09-23 — 批改申請：測驗「已評分」改看最新 attempt
 
 - **問題：** 學員有較新、尚未人工評分的 quiz attempt 時，外掛仍讀成績簿舊分／繳交時間，誤顯示已評分（例如 90/90 + 繳交時間）。
-- **決策：** quiz 以最新 finished attempt 的 `sumgrades` 為準（空＝待評；有值＝已評）；不沿用 gradebook 舊分。`requires_manual_grading()` 僅作輔助（明確 true 才壓成待評）；載入 attempt 失敗時不可整排待評。assign 仍用 gradebook。排程同步含已完成單據。
+- **決策（已由 2026-10-08 最終規則取代）：** quiz 只看 finished attempt。attempt 數字最大且 `sumgrades` 為空 → 待評分，不回看較早分數、不用 gradebook、不用 `requires_manual_grading()`。最大 finished attempt 有 `sumgrades` 才顯示該筆換算分數與 `timefinish`，連結同一筆。assign 仍用 gradebook。
 - **影響：** `grading_request_manager`、`request.php` 顯示、搜尋預覽、取消檢查、完成通知；SPEC §58.5。
 - **版本：** 5.24.8。
 

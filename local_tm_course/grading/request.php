@@ -192,9 +192,9 @@ foreach ($items as $item) {
         $g = grading_request_manager::submission_grade((int)$req->cmid, (int)$item->userid);
         if (!empty($g['has'])) {
             $gradecell = s($g['str']);
-            if (!empty($g['time'])) {
-                $gradecell .= html_writer::div(userdate((int)$g['time'], get_string('strftimedatetimeshort')), 'text-muted');
-            }
+        }
+        if (!empty($g['time'])) {
+            $gradecell .= html_writer::div(userdate((int)$g['time'], get_string('strftimedatetimeshort')), 'text-muted');
         }
         // Per-learner Moodle link: show whether pending or already graded, even after the ticket closes.
         if ($canstart && (int)$item->itemstatus !== grading_request_manager::ITEM_MISSING) {

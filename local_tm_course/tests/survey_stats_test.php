@@ -192,6 +192,24 @@ class survey_stats_test extends \advanced_testcase {
 
         $empty = survey_stats::session_live_snapshot($othersession);
         $this->assertSame(0, $empty['response_count']);
+
+        $user = $this->getDataGenerator()->create_user([
+            'firstname' => 'Xiaoming',
+            'lastname' => 'Wang',
+        ]);
+        $DB->set_field('local_tm_course_svresp', 'userid', $user->id, ['email' => 'a@example.com']);
+        $DB->set_field('local_tm_course_svresp', 'mapped', survey_manager::MAPPED, ['email' => 'a@example.com']);
+        $people = survey_stats::session_respondents($seed['sessionid']);
+        $this->assertContains(fullname($user), $people['learners']);
+        $this->assertNotContains('a@example.com', $people['guests']);
+        $this->assertContains('b@example.com', $people['guests']);
+        $elsewhere = survey_stats::session_respondents($othersession);
+        $this->assertSame([], $elsewhere['learners']);
+        $this->assertSame([], $elsewhere['guests']);
+        $html = survey_stats::session_respondent_html($seed['sessionid']);
+        $this->assertStringContainsString(fullname($user), $html);
+        $this->assertStringContainsString('b@example.com', $html);
+        $this->assertStringNotContainsString('a@example.com', $html);
     }
 
     public function test_results_page_requires_survey_and_drops_raw_filters(): void {

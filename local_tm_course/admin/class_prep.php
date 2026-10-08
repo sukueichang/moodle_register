@@ -682,25 +682,28 @@ echo $OUTPUT->header();
         <?php else: ?>
             <h4 class="tm-prep-section-title mb-3"><?php echo s($surveydef->name); ?></h4>
             <div class="row mb-3">
-                <div class="col-md-4 mb-2">
+                <div class="col-md-3 mb-2">
                     <div class="text-muted small"><?php echo get_string('class_prep_survey_status', 'local_tm_course'); ?></div>
                     <span class="<?php echo s($surveystatusclass); ?>"><?php echo s($surveystatuslabel); ?></span>
                 </div>
-                <div class="col-md-4 mb-2">
+                <div class="col-md-3 mb-2">
+                    <div class="text-muted small"><?php echo get_string('class_prep_survey_responses', 'local_tm_course'); ?></div>
+                    <strong style="font-size:1.4rem"><?php echo (int) $surveyresponsecount; ?></strong>
+                </div>
+                <div class="col-md-3 mb-2">
                     <div class="text-muted small"><?php echo get_string('class_prep_survey_mapped', 'local_tm_course'); ?></div>
                     <strong style="font-size:1.4rem"><?php echo (int) $surveysummary['mapped_count']; ?></strong>
-                    <span class="text-muted"> / <?php echo (int) $surveyeligible; ?></span>
                 </div>
-                <div class="col-md-4 mb-2">
+                <div class="col-md-3 mb-2">
                     <div class="text-muted small"><?php echo get_string('class_prep_survey_unmatched', 'local_tm_course'); ?></div>
-                    <strong><?php echo (int) $surveysummary['unmatched_count']; ?></strong>
-                    <div class="text-muted small"><?php echo get_string('class_prep_survey_responses', 'local_tm_course'); ?>
-                        <?php echo (int) $surveyresponsecount; ?>
-                        · <?php echo get_string('class_prep_survey_eligible', 'local_tm_course'); ?>
-                        <?php echo (int) $surveyeligible; ?>
-                    </div>
+                    <strong style="font-size:1.4rem"><?php echo (int) $surveysummary['unmatched_count']; ?></strong>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <div class="text-muted small"><?php echo get_string('class_prep_survey_eligible', 'local_tm_course'); ?></div>
+                    <strong style="font-size:1.4rem"><?php echo (int) $surveyeligible; ?></strong>
                 </div>
             </div>
+            <?php echo survey_stats::session_respondent_html($sessionid); ?>
             <div class="d-flex flex-wrap gap-2 align-items-center">
                 <?php if (!$surveytok || !(int) $surveytok->enabled): ?>
                 <form method="post" action="<?php echo $back_url->out(false); ?>" class="d-inline">

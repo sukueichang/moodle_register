@@ -2100,6 +2100,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100805, 'local', 'tm_course');
     }
 
+    // 2026100806 — Survey respondent lists and quiz finished-attempt grade (no DB).
+    if ($oldversion < 2026100806) {
+        upgrade_plugin_savepoint(true, 2026100806, 'local', 'tm_course');
+    }
+
     return true;
 }
 
