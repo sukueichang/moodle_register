@@ -3,6 +3,15 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.6] - 2026-10-08 - Shared survey result charts
+
+### Added
+- Shared result cards (`survey_viz` + local `survey_viz.js`): pie/bar for choice questions, vertical bars for 1–5 scales, word cloud and full list for free text.
+- Used by admin `survey_results.php` (existing filters) and session live results.
+
+### Notes
+- 版號 `2026100801`。無 DB、無外部 CDN。不 merge `main`。
+
 ## [5.28.5] - 2026-10-08 - Session live survey results
 
 ### Added

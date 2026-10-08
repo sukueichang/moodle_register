@@ -9,11 +9,13 @@
 require_once(__DIR__ . '/../../../config.php');
 require_once(__DIR__ . '/../classes/survey_manager.php');
 require_once(__DIR__ . '/../classes/survey_stats.php');
+require_once(__DIR__ . '/../classes/survey_viz.php');
 require_once(__DIR__ . '/../classes/enabled_course_manager.php');
 
 use local_tm_course\enabled_course_manager;
 use local_tm_course\survey_manager;
 use local_tm_course\survey_stats;
+use local_tm_course\survey_viz;
 
 require_login();
 require_capability('local/tm_course:manage', context_system::instance());
@@ -75,7 +77,7 @@ foreach ($paramsui as $k => $v) {
 }
 $PAGE->set_url(new moodle_url('/local/tm_course/admin/survey_results.php', $pageurlparams));
 $PAGE->set_title(get_string('survey_stats_title', 'local_tm_course'));
-$PAGE->requires->css('/local/tm_course/styles.css');
+survey_viz::require_assets();
 
 $surveys = survey_manager::list_surveys();
 $coursemenu = enabled_course_manager::get_course_menu();
@@ -212,49 +214,15 @@ echo html_writer::link(
     ['class' => 'btn btn-secondary mb-4']
 );
 
-// Question stats.
+// Question stats (shared visualization).
 echo html_writer::tag('h3', get_string('survey_stats_questions', 'local_tm_course'));
 if ($qstats['message'] !== '') {
     echo $OUTPUT->notification($qstats['message'], 'info');
 }
-foreach ($qstats['questions'] as $q) {
-    echo html_writer::start_div('border rounded p-3 mb-3');
-    echo html_writer::tag('div', s($q['title']) . ' (' . s($q['qtype']) . ')', ['class' => 'font-weight-bold']);
-    echo html_writer::tag('div', get_string('survey_stats_answered', 'local_tm_course', $q['answered']), ['class' => 'text-muted small mb-2']);
-    if ($q['qtype'] === survey_manager::TYPE_SCALE) {
-        echo html_writer::tag('div', get_string('survey_stats_average', 'local_tm_course', $q['average'] !== null ? $q['average'] : '—'));
-        $table = new html_table();
-        $table->head = ['1', '2', '3', '4', '5'];
-        $table->data = [[
-            $q['scale_counts'][1] ?? 0,
-            $q['scale_counts'][2] ?? 0,
-            $q['scale_counts'][3] ?? 0,
-            $q['scale_counts'][4] ?? 0,
-            $q['scale_counts'][5] ?? 0,
-        ]];
-        echo html_writer::table($table);
-    } else if ($q['qtype'] === survey_manager::TYPE_SINGLE || $q['qtype'] === survey_manager::TYPE_MULTI) {
-        $table = new html_table();
-        $table->head = [
-            get_string('survey_options', 'local_tm_course'),
-            get_string('survey_stats_count', 'local_tm_course'),
-            '%',
-        ];
-        foreach ($q['options'] as $opt) {
-            $table->data[] = [s($opt['label']), $opt['count'], $opt['pct'] . '%'];
-        }
-        echo html_writer::table($table);
-        if ($q['qtype'] === survey_manager::TYPE_MULTI) {
-            echo html_writer::tag('p', get_string('survey_stats_multi_note', 'local_tm_course'), ['class' => 'small text-muted']);
-        }
-    } else if ($q['qtype'] === survey_manager::TYPE_TEXT) {
-        echo html_writer::start_tag('ul');
-        foreach ($q['texts'] as $text) {
-            echo html_writer::tag('li', s($text));
-        }
-        echo html_writer::end_tag('ul');
-    }
-    echo html_writer::end_div();
+if (!$qstats['questions']) {
+    echo html_writer::div(get_string('survey_viz_empty', 'local_tm_course'), 'tm-sviz-empty');
+} else {
+    echo survey_viz::html($qstats['questions']);
 }
 
 // Response list.

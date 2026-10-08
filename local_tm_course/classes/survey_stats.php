@@ -217,6 +217,7 @@ class survey_stats {
                 $entry = [
                     'itemid' => $itemid,
                     'title' => (string) $item['title'],
+                    'help' => (string) ($item['help'] ?? ''),
                     'qtype' => $qtype,
                     'section' => (string) ($section['name'] ?? ''),
                     'answered' => 0,
@@ -341,6 +342,7 @@ class survey_stats {
             }
             $safe = [
                 'title' => (string) $q['title'],
+                'help' => (string) ($q['help'] ?? ''),
                 'qtype' => (string) $q['qtype'],
                 'answered' => (int) $q['answered'],
                 'average' => $q['average'],

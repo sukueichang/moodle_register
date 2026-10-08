@@ -10,6 +10,7 @@
 require_once(__DIR__ . '/../../../config.php');
 require_once(__DIR__ . '/../classes/survey_manager.php');
 require_once(__DIR__ . '/../classes/survey_stats.php');
+require_once(__DIR__ . '/../classes/survey_viz.php');
 require_once(__DIR__ . '/../classes/session_manager.php');
 require_once(__DIR__ . '/../classes/permissions_manager.php');
 
@@ -17,6 +18,7 @@ use local_tm_course\permissions_manager;
 use local_tm_course\session_manager;
 use local_tm_course\survey_manager;
 use local_tm_course\survey_stats;
+use local_tm_course\survey_viz;
 
 require_login();
 $ctx = context_system::instance();
@@ -69,7 +71,7 @@ $PAGE->set_context($ctx);
 $PAGE->set_pagelayout('admin');
 $PAGE->set_url(new moodle_url('/local/tm_course/admin/survey_live.php', ['sessionid' => $sessionid]));
 $PAGE->set_title(get_string('survey_live_title', 'local_tm_course'));
-$PAGE->requires->css('/local/tm_course/styles.css');
+survey_viz::require_assets();
 
 $back = new moodle_url('/local/tm_course/admin/class_prep.php', ['sessionid' => $sessionid]);
 $pollurl = (new moodle_url('/local/tm_course/admin/survey_live.php', [
@@ -111,7 +113,10 @@ $PAGE->requires->js_init_code(<<<JS
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 if (!data || !data.ok) { return; }
-                if (typeof data.html === 'string') { body.innerHTML = data.html; }
+                if (typeof data.html === 'string') {
+                    body.innerHTML = data.html;
+                    if (window.tmSurveyViz) { window.tmSurveyViz.scan(body); }
+                }
                 if (counts && data.countsHtml) { counts.innerHTML = data.countsHtml; }
             })
             .catch(function() {});
@@ -148,79 +153,8 @@ function local_tm_course_survey_live_counts(array $snapshot): string {
  * @param array $snapshot
  */
 function local_tm_course_survey_live_html(array $snapshot): string {
-    if ((int) $snapshot['response_count'] === 0 && empty($snapshot['sections'])) {
-        return html_writer::div(get_string('survey_live_empty', 'local_tm_course'), 'text-muted');
+    if (empty($snapshot['sections'])) {
+        return html_writer::div(get_string('survey_viz_empty', 'local_tm_course'), 'tm-sviz-empty');
     }
-    $html = '';
-    $qnum = 0;
-    foreach ($snapshot['sections'] as $sidx => $section) {
-        $html .= html_writer::start_div('tm-survey-fill-section');
-        $name = trim((string) $section['name']);
-        if ($name !== '') {
-            $html .= html_writer::tag('h3',
-                html_writer::tag('span', sprintf('%02d', $sidx + 1), ['class' => 'tm-survey-section-num'])
-                . ' ' . s($name),
-                ['class' => 'tm-survey-fill-section-title']
-            );
-        }
-        foreach ($section['questions'] as $q) {
-            $qnum++;
-            $html .= html_writer::start_div('tm-survey-fill-qcard');
-            $html .= html_writer::start_div('tm-survey-fill-qhead');
-            $html .= html_writer::tag('span', get_string('survey_question_n', 'local_tm_course', $qnum), [
-                'class' => 'tm-survey-qnum',
-            ]);
-            $html .= html_writer::tag('div', s($q['title']), ['class' => 'tm-survey-fill-qtitle']);
-            $html .= html_writer::end_div();
-            $html .= html_writer::tag('div',
-                get_string('survey_live_answered', 'local_tm_course') . '：' . (int) $q['answered'],
-                ['class' => 'text-muted small mb-2']
-            );
-            $qtype = (string) $q['qtype'];
-            if ($qtype === survey_manager::TYPE_SCALE) {
-                if ($q['average'] !== null) {
-                    $html .= html_writer::tag('div',
-                        get_string('survey_live_average', 'local_tm_course') . '：' . s((string) $q['average']),
-                        ['class' => 'mb-2 font-weight-bold']
-                    );
-                }
-                $answered = max(0, (int) $q['answered']);
-                foreach ($q['scale_counts'] as $score => $cnt) {
-                    $pct = $answered > 0 ? round(((int) $cnt) / $answered * 100, 1) : 0;
-                    $html .= html_writer::div(
-                        s((string) $score) . ' — ' . (int) $cnt . ' (' . s((string) $pct) . '%)',
-                        'tm-survey-live-row'
-                    );
-                }
-            } else if ($qtype === survey_manager::TYPE_SINGLE || $qtype === survey_manager::TYPE_MULTI) {
-                if ($qtype === survey_manager::TYPE_MULTI) {
-                    $html .= html_writer::tag('div', get_string('survey_live_multi_note', 'local_tm_course'), [
-                        'class' => 'text-muted small mb-2',
-                    ]);
-                }
-                foreach ($q['options'] as $opt) {
-                    $html .= html_writer::div(
-                        s($opt['label']) . ' — ' . (int) $opt['count'] . ' (' . s((string) $opt['pct']) . '%)',
-                        'tm-survey-live-row'
-                    );
-                }
-            } else if ($qtype === survey_manager::TYPE_TEXT) {
-                $html .= html_writer::tag('div', get_string('survey_live_texts', 'local_tm_course'), [
-                    'class' => 'small text-muted mb-1',
-                ]);
-                if (!$q['texts']) {
-                    $html .= html_writer::div('—', 'text-muted');
-                }
-                foreach ($q['texts'] as $text) {
-                    $html .= html_writer::div(s($text), 'tm-survey-live-text');
-                }
-            }
-            $html .= html_writer::end_div();
-        }
-        $html .= html_writer::end_div();
-    }
-    if ($html === '') {
-        return html_writer::div(get_string('survey_live_empty', 'local_tm_course'), 'text-muted');
-    }
-    return $html;
+    return survey_viz::html_sections($snapshot['sections']);
 }
