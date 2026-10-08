@@ -1564,6 +1564,7 @@ $string['survey_stats_sessionid'] = 'Session ID';
 $string['survey_stats_session_filter'] = 'Session';
 $string['survey_stats_pick_survey'] = 'Select a survey to view results.';
 $string['survey_stats_export_need_survey'] = 'Select a survey before exporting.';
+$string['survey_stats_q_incompatible'] = 'This question cannot be combined across versions because the question type or choices do not match.';
 $string['survey_stats_responses'] = 'Responses';
 $string['survey_stats_expected'] = 'Expected';
 $string['survey_stats_rate'] = 'Rate';

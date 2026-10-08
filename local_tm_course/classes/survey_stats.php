@@ -189,124 +189,38 @@ class survey_stats {
     }
 
     /**
+     * Question stats for the same response rows as summary / list / Excel.
+     *
+     * Does not add a version or session condition. Versions inside that set are
+     * merged by item stable key when qtype and choice keys are compatible.
+     *
      * @param \stdClass $filters
      * @return array{versionid:int,message:string,questions:array}
      */
     public static function question_stats($filters): array {
-        global $DB;
-        $resolved = self::resolve_stats_versionid($filters);
-        $versionid = (int) $resolved['versionid'];
-        if ($versionid <= 0) {
+        $versions = self::dataset_versions($filters);
+        if (!$versions && !empty($filters->sessionid)) {
+            // Live page with no replies yet still shows the pinned questionnaire.
+            $pin = survey_manager::get_pin((int) $filters->sessionid);
+            if ($pin) {
+                $versions = [(int) $pin->versionid => 0];
+            }
+        }
+        if (!$versions) {
             return [
                 'versionid' => 0,
-                'message' => $resolved['message'],
+                'message' => '',
                 'questions' => [],
             ];
         }
 
-        $f2 = clone $filters;
-        $f2->versionid = $versionid;
-        list($where, $params) = self::build_sql_where($f2);
-
-        $structure = survey_manager::get_version_structure($versionid);
+        $versionid = 0;
+        if (count($versions) === 1) {
+            $versionid = (int) key($versions);
+        }
         $questions = [];
-        foreach ($structure as $section) {
-            foreach ($section['items'] ?? [] as $item) {
-                $itemid = (int) $item['id'];
-                $qtype = (string) $item['qtype'];
-                $entry = [
-                    'itemid' => $itemid,
-                    'title' => (string) $item['title'],
-                    'help' => (string) ($item['help'] ?? ''),
-                    'qtype' => $qtype,
-                    'section' => (string) ($section['name'] ?? ''),
-                    'answered' => 0,
-                    'average' => null,
-                    'scale_counts' => [],
-                    'options' => [],
-                    'texts' => [],
-                ];
-
-                if ($qtype === survey_manager::TYPE_SCALE) {
-                    $sql = "SELECT a.valueint, COUNT(1) AS cnt
-                              FROM {local_tm_course_svans} a
-                              JOIN {local_tm_course_svresp} r ON r.id = a.responseid
-                              JOIN {local_tm_course_svver} v ON v.id = r.versionid
-                              JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
-                             WHERE a.itemid = :itemid AND a.valueint IS NOT NULL AND {$where}
-                          GROUP BY a.valueint";
-                    $p = $params + ['itemid' => $itemid];
-                    $rows = $DB->get_records_sql($sql, $p);
-                    $counts = [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0];
-                    $sum = 0;
-                    $n = 0;
-                    foreach ($rows as $row) {
-                        $val = (int) $row->valueint;
-                        $cnt = (int) $row->cnt;
-                        if ($val >= 1 && $val <= 5) {
-                            $counts[$val] = $cnt;
-                            $sum += $val * $cnt;
-                            $n += $cnt;
-                        }
-                    }
-                    $entry['scale_counts'] = $counts;
-                    $entry['answered'] = $n;
-                    $entry['average'] = $n > 0 ? round($sum / $n, 2) : null;
-                } else if ($qtype === survey_manager::TYPE_SINGLE || $qtype === survey_manager::TYPE_MULTI) {
-                    $sql = "SELECT COUNT(DISTINCT a.responseid)
-                              FROM {local_tm_course_svans} a
-                              JOIN {local_tm_course_svresp} r ON r.id = a.responseid
-                              JOIN {local_tm_course_svver} v ON v.id = r.versionid
-                              JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
-                             WHERE a.itemid = :itemid AND {$where}";
-                    $answered = (int) $DB->count_records_sql($sql, $params + ['itemid' => $itemid]);
-                    $entry['answered'] = $answered;
-                    $opts = [];
-                    foreach ($item['options'] ?? [] as $option) {
-                        $oid = (int) $option['id'];
-                        if ($qtype === survey_manager::TYPE_SINGLE) {
-                            $csql = "SELECT COUNT(1)
-                                       FROM {local_tm_course_svans} a
-                                       JOIN {local_tm_course_svresp} r ON r.id = a.responseid
-                                       JOIN {local_tm_course_svver} v ON v.id = r.versionid
-                                       JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
-                                      WHERE a.itemid = :itemid AND a.valueint = :oid AND {$where}";
-                            $cnt = (int) $DB->count_records_sql($csql, $params + ['itemid' => $itemid, 'oid' => $oid]);
-                        } else {
-                            $csql = "SELECT COUNT(1)
-                                       FROM {local_tm_course_svpick} p
-                                       JOIN {local_tm_course_svans} a ON a.id = p.answerid
-                                       JOIN {local_tm_course_svresp} r ON r.id = a.responseid
-                                       JOIN {local_tm_course_svver} v ON v.id = r.versionid
-                                       JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
-                                      WHERE a.itemid = :itemid AND p.optionid = :oid AND {$where}";
-                            $cnt = (int) $DB->count_records_sql($csql, $params + ['itemid' => $itemid, 'oid' => $oid]);
-                        }
-                        $pct = $answered > 0 ? round($cnt / $answered * 100, 1) : 0.0;
-                        $opts[] = [
-                            'optionid' => $oid,
-                            'label' => (string) $option['label'],
-                            'count' => $cnt,
-                            'pct' => $pct,
-                        ];
-                    }
-                    $entry['options'] = $opts;
-                } else if ($qtype === survey_manager::TYPE_TEXT) {
-                    $sql = "SELECT a.valuetext
-                              FROM {local_tm_course_svans} a
-                              JOIN {local_tm_course_svresp} r ON r.id = a.responseid
-                              JOIN {local_tm_course_svver} v ON v.id = r.versionid
-                              JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
-                             WHERE a.itemid = :itemid AND a.valuetext IS NOT NULL AND a.valuetext <> '' AND {$where}
-                          ORDER BY a.id ASC";
-                    $texts = $DB->get_fieldset_sql($sql, $params + ['itemid' => $itemid]);
-                    $texts = array_values(array_slice($texts, 0, 500));
-                    $entry['answered'] = count($texts);
-                    $entry['texts'] = $texts;
-                }
-
-                $questions[] = $entry;
-            }
+        foreach (self::question_groups($versions) as $group) {
+            $questions[] = self::aggregate_question_group($filters, $group);
         }
 
         return [
@@ -314,6 +228,275 @@ class survey_stats {
             'message' => '',
             'questions' => $questions,
         ];
+    }
+
+    /**
+     * Versions that actually appear in the filtered responses. Highest versionno first.
+     *
+     * @param \stdClass $filters
+     * @return array<int,int> versionid => versionno
+     */
+    private static function dataset_versions($filters): array {
+        global $DB;
+        list($where, $params) = self::build_sql_where($filters);
+        $sql = "SELECT DISTINCT r.versionid, v.versionno
+                  FROM {local_tm_course_svresp} r
+                  JOIN {local_tm_course_svver} v ON v.id = r.versionid
+                  JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
+                 WHERE {$where}";
+        $rows = $DB->get_records_sql($sql, $params);
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(int) $row->versionid] = (int) $row->versionno;
+        }
+        arsort($out);
+        return $out;
+    }
+
+    /**
+     * @param array<int,int> $versions versionid => versionno, newest first
+     * @return array<int,array>
+     */
+    private static function question_groups(array $versions): array {
+        $groups = [];
+        $order = [];
+        foreach ($versions as $versionid => $versionno) {
+            unset($versionno);
+            $structure = survey_manager::get_version_structure((int) $versionid);
+            foreach ($structure as $section) {
+                foreach ($section['items'] ?? [] as $item) {
+                    $key = (string) ($item['stablekey'] ?? '');
+                    if ($key === '') {
+                        $key = 'item-' . (int) $item['id'];
+                    }
+                    if (!isset($groups[$key])) {
+                        $groups[$key] = [
+                            'itemid' => (int) $item['id'],
+                            'title' => (string) $item['title'],
+                            'help' => (string) ($item['help'] ?? ''),
+                            'section' => (string) ($section['name'] ?? ''),
+                            'copies' => [],
+                        ];
+                        $order[] = $key;
+                    }
+                    $groups[$key]['copies'][] = $item;
+                }
+            }
+        }
+        $list = [];
+        foreach ($order as $key) {
+            $list[] = $groups[$key];
+        }
+        return $list;
+    }
+
+    /**
+     * @param \stdClass $filters
+     * @param array $group
+     * @return array
+     */
+    private static function aggregate_question_group($filters, array $group): array {
+        global $DB;
+        $copies = $group['copies'];
+        $qtypes = [];
+        foreach ($copies as $item) {
+            $qtypes[(string) $item['qtype']] = true;
+        }
+        $qtype = (string) key($qtypes);
+        $entry = [
+            'itemid' => (int) $group['itemid'],
+            'title' => (string) $group['title'],
+            'help' => (string) $group['help'],
+            'qtype' => $qtype,
+            'section' => (string) $group['section'],
+            'answered' => 0,
+            'average' => null,
+            'scale_counts' => [],
+            'options' => [],
+            'texts' => [],
+            'note' => '',
+        ];
+        $conflict = self::question_group_conflict($copies, $qtypes);
+        if ($conflict !== '') {
+            $entry['qtype'] = '';
+            $entry['note'] = get_string('survey_stats_q_incompatible', 'local_tm_course');
+            $entry['help'] = $entry['note'];
+            return $entry;
+        }
+
+        $itemids = [];
+        foreach ($copies as $item) {
+            $itemids[] = (int) $item['id'];
+        }
+        list($where, $params) = self::build_sql_where($filters);
+        list($itemsql, $itemparams) = $DB->get_in_or_equal($itemids, SQL_PARAMS_NAMED, 'stitem');
+        $params = $params + $itemparams;
+
+        if ($qtype === survey_manager::TYPE_SCALE) {
+            $sql = "SELECT a.valueint, COUNT(1) AS cnt
+                      FROM {local_tm_course_svans} a
+                      JOIN {local_tm_course_svresp} r ON r.id = a.responseid
+                      JOIN {local_tm_course_svver} v ON v.id = r.versionid
+                      JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
+                     WHERE a.itemid {$itemsql} AND a.valueint IS NOT NULL AND {$where}
+                  GROUP BY a.valueint";
+            $rows = $DB->get_records_sql($sql, $params);
+            $counts = [1 => 0, 2 => 0, 3 => 0, 4 => 0, 5 => 0];
+            $sum = 0;
+            $n = 0;
+            foreach ($rows as $row) {
+                $val = (int) $row->valueint;
+                $cnt = (int) $row->cnt;
+                if ($val >= 1 && $val <= 5) {
+                    $counts[$val] += $cnt;
+                    $sum += $val * $cnt;
+                    $n += $cnt;
+                }
+            }
+            $entry['scale_counts'] = $counts;
+            $entry['answered'] = $n;
+            $entry['average'] = $n > 0 ? round($sum / $n, 2) : null;
+            return $entry;
+        }
+
+        if ($qtype === survey_manager::TYPE_SINGLE || $qtype === survey_manager::TYPE_MULTI) {
+            $sql = "SELECT COUNT(DISTINCT a.responseid)
+                      FROM {local_tm_course_svans} a
+                      JOIN {local_tm_course_svresp} r ON r.id = a.responseid
+                      JOIN {local_tm_course_svver} v ON v.id = r.versionid
+                      JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
+                     WHERE a.itemid {$itemsql} AND {$where}";
+            $answered = (int) $DB->count_records_sql($sql, $params);
+            $entry['answered'] = $answered;
+            $options = self::merged_option_labels($copies);
+            $opts = [];
+            foreach ($options as $optkey => $label) {
+                $optionids = self::option_ids_for_key($copies, (string) $optkey);
+                $cnt = 0;
+                if ($optionids) {
+                    list($osql, $oparams) = $DB->get_in_or_equal($optionids, SQL_PARAMS_NAMED, 'stopt');
+                    if ($qtype === survey_manager::TYPE_SINGLE) {
+                        $csql = "SELECT COUNT(1)
+                                   FROM {local_tm_course_svans} a
+                                   JOIN {local_tm_course_svresp} r ON r.id = a.responseid
+                                   JOIN {local_tm_course_svver} v ON v.id = r.versionid
+                                   JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
+                                  WHERE a.itemid {$itemsql} AND a.valueint {$osql} AND {$where}";
+                    } else {
+                        $csql = "SELECT COUNT(1)
+                                   FROM {local_tm_course_svpick} p
+                                   JOIN {local_tm_course_svans} a ON a.id = p.answerid
+                                   JOIN {local_tm_course_svresp} r ON r.id = a.responseid
+                                   JOIN {local_tm_course_svver} v ON v.id = r.versionid
+                                   JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
+                                  WHERE a.itemid {$itemsql} AND p.optionid {$osql} AND {$where}";
+                    }
+                    $cnt = (int) $DB->count_records_sql($csql, $params + $oparams);
+                }
+                $pct = $answered > 0 ? round($cnt / $answered * 100, 1) : 0.0;
+                $opts[] = [
+                    'optionid' => $optionids ? (int) $optionids[0] : 0,
+                    'label' => $label,
+                    'count' => $cnt,
+                    'pct' => $pct,
+                ];
+            }
+            $entry['options'] = $opts;
+            return $entry;
+        }
+
+        if ($qtype === survey_manager::TYPE_TEXT) {
+            $sql = "SELECT a.valuetext
+                      FROM {local_tm_course_svans} a
+                      JOIN {local_tm_course_svresp} r ON r.id = a.responseid
+                      JOIN {local_tm_course_svver} v ON v.id = r.versionid
+                      JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
+                     WHERE a.itemid {$itemsql} AND a.valuetext IS NOT NULL AND a.valuetext <> '' AND {$where}
+                  ORDER BY a.id ASC";
+            $texts = $DB->get_fieldset_sql($sql, $params);
+            $texts = array_values(array_slice($texts, 0, 500));
+            $entry['answered'] = count($texts);
+            $entry['texts'] = $texts;
+        }
+        return $entry;
+    }
+
+    /**
+     * @param array $copies
+     * @param array<string,bool> $qtypes
+     */
+    private static function question_group_conflict(array $copies, array $qtypes): string {
+        if (count($qtypes) > 1) {
+            return 'qtype';
+        }
+        $qtype = (string) key($qtypes);
+        if ($qtype !== survey_manager::TYPE_SINGLE && $qtype !== survey_manager::TYPE_MULTI) {
+            return '';
+        }
+        $sets = [];
+        foreach ($copies as $item) {
+            $set = [];
+            foreach ($item['options'] ?? [] as $option) {
+                $key = (string) ($option['stablekey'] ?? '');
+                if ($key !== '') {
+                    $set[$key] = true;
+                }
+            }
+            if ($set) {
+                $sets[] = $set;
+            }
+        }
+        $n = count($sets);
+        for ($i = 0; $i < $n; $i++) {
+            for ($j = $i + 1; $j < $n; $j++) {
+                if (!array_intersect_key($sets[$i], $sets[$j])) {
+                    return 'options';
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Option labels from the newest copy, then keys that exist only on older copies.
+     *
+     * @param array $copies
+     * @return array<string,string>
+     */
+    private static function merged_option_labels(array $copies): array {
+        $labels = [];
+        foreach ($copies as $item) {
+            foreach ($item['options'] ?? [] as $option) {
+                $key = (string) ($option['stablekey'] ?? '');
+                if ($key === '') {
+                    $key = 'opt-' . (int) $option['id'];
+                }
+                if (!isset($labels[$key])) {
+                    $labels[$key] = (string) $option['label'];
+                }
+            }
+        }
+        return $labels;
+    }
+
+    /**
+     * @param array $copies
+     * @return int[]
+     */
+    private static function option_ids_for_key(array $copies, string $optkey): array {
+        $ids = [];
+        foreach ($copies as $item) {
+            foreach ($item['options'] ?? [] as $option) {
+                $key = (string) ($option['stablekey'] ?? '');
+                if ($key === '') {
+                    $key = 'opt-' . (int) $option['id'];
+                }
+                if ($key === $optkey) {
+                    $ids[] = (int) $option['id'];
+                }
+            }
+        }
+        return $ids;
     }
 
     /**
@@ -423,6 +606,9 @@ class survey_stats {
         }
         foreach ($stats['questions'] as $q) {
             $title = (string) $q['title'];
+            if (!empty($q['note'])) {
+                $statistics[] = [$title, 'note', (string) $q['note'], ''];
+            }
             $statistics[] = [$title, 'type', (string) $q['qtype'], 'answered=' . $q['answered']];
             if ($q['qtype'] === survey_manager::TYPE_SCALE) {
                 $statistics[] = [$title, 'average', (string) ($q['average'] ?? ''), ''];

@@ -3,6 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.10] - 2026-10-08 - Survey stats share one filter dataset
+
+### Fixed
+- Question charts use the same survey, course, session, date, and mapped filters as the summary and Excel export. A newer questionnaire version no longer hides answers that were submitted on an older version.
+
+### Notes
+- 版號 `2026100805`。無 DB 變更。不 merge `main`。
+
 ## [5.28.9] - 2026-10-08 - Survey results require a selected survey
 
 ### Changed

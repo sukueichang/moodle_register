@@ -208,4 +208,104 @@ class survey_stats_test extends \advanced_testcase {
         $this->assertStringContainsString("'email' => ''", $export);
         $this->assertStringContainsString("'versionid' => 0", $export);
     }
+
+    public function test_question_stats_use_the_same_filter_dataset_as_summary(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $seed = $this->seed_with_responses();
+        $structure = survey_manager::get_version_structure($seed['versionid']);
+        $scalekey = (string) $structure[0]['items'][0]['stablekey'];
+        $single = $structure[0]['items'][1];
+
+        // Current version moves forward with no new replies. Stats must still see the old replies.
+        survey_manager::save_structure($seed['surveyid'], [[
+            'name' => '',
+            'items' => [
+                [
+                    'qtype' => survey_manager::TYPE_SCALE,
+                    'title' => 'Scale Q',
+                    'stablekey' => $scalekey,
+                    'required' => 1,
+                    'scalemin' => 'L',
+                    'scalemax' => 'H',
+                ],
+                [
+                    'qtype' => survey_manager::TYPE_SINGLE,
+                    'title' => 'Single Q',
+                    'stablekey' => $single['stablekey'],
+                    'required' => 1,
+                    'options' => [
+                        ['label' => 'Yes', 'stablekey' => $single['options'][0]['stablekey']],
+                        ['label' => 'No', 'stablekey' => $single['options'][1]['stablekey']],
+                    ],
+                ],
+            ],
+        ]], 2);
+
+        $surveyonly = survey_stats::filters_from_params(['surveyid' => $seed['surveyid']]);
+        $summary = survey_stats::summary($surveyonly);
+        $stats = survey_stats::question_stats($surveyonly);
+        $this->assertSame(2, $summary['response_count']);
+        $scale = $this->question_by_title($stats['questions'], 'Scale Q');
+        $this->assertSame(2, $scale['answered']);
+        $this->assertSame(3.0, $scale['average']);
+        list($rows, $sheet) = survey_stats::export_rows($surveyonly);
+        $this->assertCount(3, $rows);
+        $this->assertStringContainsString('answered=2', json_encode($sheet));
+
+        $session = $DB->get_record('local_tm_course_sessions', ['id' => $seed['sessionid']], '*', MUST_EXIST);
+        $bycourse = survey_stats::filters_from_params([
+            'surveyid' => $seed['surveyid'],
+            'courseid' => (int) $session->courseid,
+        ]);
+        $this->assertSame(2, survey_stats::summary($bycourse)['response_count']);
+        $this->assertSame(2, $this->question_by_title(survey_stats::question_stats($bycourse)['questions'], 'Scale Q')['answered']);
+
+        $none = survey_stats::filters_from_params([
+            'surveyid' => $seed['surveyid'],
+            'courseid' => 999999,
+        ]);
+        $this->assertSame(0, survey_stats::summary($none)['response_count']);
+        $this->assertSame([], survey_stats::question_stats($none)['questions']);
+        list($emptyrows, ) = survey_stats::export_rows($none);
+        $this->assertCount(1, $emptyrows);
+
+        $DB->set_field('local_tm_course_svresp', 'timecreated', 1000, ['email' => 'b@example.com']);
+        $dated = survey_stats::filters_from_params([
+            'surveyid' => $seed['surveyid'],
+            'datefrom' => 2000,
+        ]);
+        $this->assertSame(1, survey_stats::summary($dated)['response_count']);
+        $this->assertSame(1, $this->question_by_title(survey_stats::question_stats($dated)['questions'], 'Scale Q')['answered']);
+        $this->assertSame(4.0, $this->question_by_title(survey_stats::question_stats($dated)['questions'], 'Scale Q')['average']);
+
+        $DB->set_field('local_tm_course_svresp', 'mapped', 1, ['email' => 'a@example.com']);
+        $mapped = survey_stats::filters_from_params([
+            'surveyid' => $seed['surveyid'],
+            'mapped' => 1,
+        ]);
+        $this->assertSame(1, survey_stats::summary($mapped)['response_count']);
+        $this->assertSame(1, $this->question_by_title(survey_stats::question_stats($mapped)['questions'], 'Scale Q')['answered']);
+
+        $onesession = survey_stats::filters_from_params([
+            'surveyid' => $seed['surveyid'],
+            'sessionid' => $seed['sessionid'],
+        ]);
+        $this->assertSame(2, survey_stats::summary($onesession)['response_count']);
+        $this->assertSame(2, $this->question_by_title(survey_stats::question_stats($onesession)['questions'], 'Scale Q')['answered']);
+    }
+
+    /**
+     * @param array $questions
+     * @return array
+     */
+    private function question_by_title(array $questions, string $title): array {
+        foreach ($questions as $question) {
+            if ((string) $question['title'] === $title) {
+                return $question;
+            }
+        }
+        $this->fail('Missing question ' . $title);
+        return [];
+    }
 }

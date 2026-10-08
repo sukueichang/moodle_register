@@ -1564,6 +1564,7 @@ $string['survey_stats_sessionid'] = '場次 ID';
 $string['survey_stats_session_filter'] = '場次';
 $string['survey_stats_pick_survey'] = '請先選擇問卷以查看結果。';
 $string['survey_stats_export_need_survey'] = '請先選擇問卷後再匯出。';
+$string['survey_stats_q_incompatible'] = '此題在不同版本的題型或選項無法安全合併，因此不併入統計。';
 $string['survey_stats_responses'] = '回覆數';
 $string['survey_stats_expected'] = '應到人數';
 $string['survey_stats_rate'] = '填寫率';
