@@ -20,6 +20,7 @@ require_once(__DIR__ . '/../classes/bento_notification_manager.php');
 require_once(__DIR__ . '/../classes/notification_editor_helper.php');
 require_once(__DIR__ . '/../classes/equipment_check_manager.php');
 require_once(__DIR__ . '/../classes/survey_manager.php');
+require_once(__DIR__ . '/../classes/survey_stats.php');
 
 use local_tm_course\session_manager;
 use local_tm_course\attendance_manager;
@@ -29,6 +30,7 @@ use local_tm_course\bento_notification_manager;
 use local_tm_course\notification_editor_helper;
 use local_tm_course\equipment_check_manager;
 use local_tm_course\survey_manager;
+use local_tm_course\survey_stats;
 
 require_login();
 $ctx = context_system::instance();
@@ -429,7 +431,9 @@ $surveydef = $surveycrs ? survey_manager::get_survey((int) $surveycrs->surveyid)
 $surveytok = survey_manager::get_token_for_session($sessionid);
 $surveyresponsecount = survey_manager::count_session_responses($sessionid);
 $surveyeligible = survey_manager::expected_headcount($sessionid);
+$surveysummary = survey_stats::session_live_snapshot($sessionid);
 $surveyboardurl = new moodle_url('/local/tm_course/admin/survey_board.php', ['sessionid' => $sessionid]);
+$surveyliveurl = new moodle_url('/local/tm_course/admin/survey_live.php', ['sessionid' => $sessionid]);
 if ($surveydef) {
     if ($surveytok && (int) $surveytok->enabled) {
         $surveystatuslabel = get_string('class_prep_survey_open', 'local_tm_course');
@@ -683,15 +687,18 @@ echo $OUTPUT->header();
                     <span class="<?php echo s($surveystatusclass); ?>"><?php echo s($surveystatuslabel); ?></span>
                 </div>
                 <div class="col-md-4 mb-2">
-                    <div class="text-muted small"><?php echo get_string('class_prep_survey_responses', 'local_tm_course'); ?></div>
-                    <strong style="font-size:1.4rem"><?php echo (int) $surveyresponsecount; ?></strong>
-                    <?php if ($surveyeligible > 0): ?>
-                        <span class="text-muted"> / <?php echo (int) $surveyeligible; ?></span>
-                    <?php endif; ?>
+                    <div class="text-muted small"><?php echo get_string('class_prep_survey_mapped', 'local_tm_course'); ?></div>
+                    <strong style="font-size:1.4rem"><?php echo (int) $surveysummary['mapped_count']; ?></strong>
+                    <span class="text-muted"> / <?php echo (int) $surveyeligible; ?></span>
                 </div>
                 <div class="col-md-4 mb-2">
-                    <div class="text-muted small"><?php echo get_string('class_prep_survey_eligible', 'local_tm_course'); ?></div>
-                    <strong><?php echo (int) $surveyeligible; ?></strong>
+                    <div class="text-muted small"><?php echo get_string('class_prep_survey_unmatched', 'local_tm_course'); ?></div>
+                    <strong><?php echo (int) $surveysummary['unmatched_count']; ?></strong>
+                    <div class="text-muted small"><?php echo get_string('class_prep_survey_responses', 'local_tm_course'); ?>
+                        <?php echo (int) $surveyresponsecount; ?>
+                        · <?php echo get_string('class_prep_survey_eligible', 'local_tm_course'); ?>
+                        <?php echo (int) $surveyeligible; ?>
+                    </div>
                 </div>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
@@ -715,6 +722,9 @@ echo $OUTPUT->header();
                 <a href="<?php echo $surveyboardurl->out(); ?>"
                    class="btn btn-outline-primary" target="_blank" rel="noopener">
                     <?php echo get_string('class_prep_survey_project', 'local_tm_course'); ?>
+                </a>
+                <a href="<?php echo $surveyliveurl->out(); ?>" class="btn btn-outline-secondary">
+                    <?php echo get_string('class_prep_survey_live', 'local_tm_course'); ?>
                 </a>
             </div>
         <?php endif; ?>

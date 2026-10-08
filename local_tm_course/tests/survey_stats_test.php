@@ -165,4 +165,32 @@ class survey_stats_test extends \advanced_testcase {
         $this->assertStringContainsString('Statistics', $wb);
         $zip->close();
     }
+
+    public function test_session_live_snapshot_is_scoped_and_has_no_identity_fields(): void {
+        global $DB;
+        $this->resetAfterTest(true);
+        $seed = $this->seed_with_responses();
+        $other = $this->getDataGenerator()->create_course();
+        $start = time() - 30;
+        $othersession = (int) $DB->insert_record('local_tm_course_sessions', (object) [
+            'courseid' => $other->id,
+            'name' => 'Other',
+            'starttime' => $start,
+            'endtime' => $start + 3600,
+            'timecreated' => time(),
+            'timemodified' => time(),
+        ]);
+
+        $snap = survey_stats::session_live_snapshot($seed['sessionid']);
+        $this->assertSame(2, $snap['response_count']);
+        $this->assertSame(0, $snap['mapped_count']);
+        $this->assertSame(2, $snap['unmatched_count']);
+        $encoded = json_encode($snap);
+        $this->assertStringNotContainsString('a@example.com', $encoded);
+        $this->assertStringNotContainsString('email', $encoded);
+        $this->assertStringNotContainsString('userid', $encoded);
+
+        $empty = survey_stats::session_live_snapshot($othersession);
+        $this->assertSame(0, $empty['response_count']);
+    }
 }

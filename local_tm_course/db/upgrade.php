@@ -2070,6 +2070,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100704, 'local', 'tm_course');
     }
 
+    // 2026100800 — Session live survey results (no DB).
+    if ($oldversion < 2026100800) {
+        upgrade_plugin_savepoint(true, 2026100800, 'local', 'tm_course');
+    }
+
     return true;
 }
 

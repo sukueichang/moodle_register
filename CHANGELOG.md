@@ -3,6 +3,18 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.5] - 2026-10-08 - Session live survey results
+
+### Added
+- Class prep post-class card: “View live results” for the current session only (attendance permission).
+- Live page polls aggregates about every 9 seconds. No filters, Excel, names, or emails.
+
+### Changed
+- Class prep response counts show mapped learner responses versus approved headcount, plus other (unmatched) responses, instead of total/eligible.
+
+### Notes
+- 版號 `2026100800`。無 DB schema 變更。不 merge `main`。
+
 ## [5.28.4] - 2026-10-07 - Fix bento history fullname() warning
 
 ### Fixed

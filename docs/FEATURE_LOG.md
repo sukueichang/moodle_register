@@ -22,6 +22,12 @@
 
 ---
 
+## 2026-10-08 — 本場次即時問卷結果
+
+- **需求：** class_prep 課後問卷可看「目前 session」即時統計（四題型）；約 9 秒輪詢；回覆數不再用總回覆／應填當完成率。
+- **決策：** 權限沿用 `user_can_attendance()`；`survey_live.php` 只接受 sessionid，聚合走 `survey_stats::session_live_snapshot()`（不含 email／userid／個別 response）。Admin `survey_results` 不改。無 DB。
+- **版本／狀態：** **5.28.5／2026100800**。PHPUnit 本機未跑。不 merge `main`。
+
 ## 2026-10-07 — Bento history fullname() debug warning
 
 - **現象：** 5.28.3 驗收時歷史顯示正常，但 `fullname()` 因 user 缺姓名欄位噴 debug warning。

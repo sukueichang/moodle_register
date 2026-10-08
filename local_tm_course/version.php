@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.28.4
+ * Version: 5.28.5
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026100704;   // Fix fullname() name fields in bento send history
-$plugin->release   = '5.28.4';
+$plugin->version   = 2026100800;   // Session-scoped live survey results on class prep
+$plugin->release   = '5.28.5';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

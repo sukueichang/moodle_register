@@ -316,6 +316,61 @@ class survey_stats {
     }
 
     /**
+     * Aggregate stats for one session only. No emails, user ids, or response rows.
+     *
+     * @return array{
+     *   response_count:int,
+     *   mapped_count:int,
+     *   unmatched_count:int,
+     *   expected_headcount:?int,
+     *   message:string,
+     *   sections:array<int,array{name:string,questions:array}>
+     * }
+     */
+    public static function session_live_snapshot(int $sessionid): array {
+        $filters = self::filters_from_params(['sessionid' => $sessionid]);
+        $summary = self::summary($filters);
+        $stats = self::question_stats($filters);
+        $sections = [];
+        $index = [];
+        foreach ($stats['questions'] as $q) {
+            $name = (string) ($q['section'] ?? '');
+            if (!isset($index[$name])) {
+                $index[$name] = count($sections);
+                $sections[] = ['name' => $name, 'questions' => []];
+            }
+            $safe = [
+                'title' => (string) $q['title'],
+                'qtype' => (string) $q['qtype'],
+                'answered' => (int) $q['answered'],
+                'average' => $q['average'],
+                'scale_counts' => $q['scale_counts'],
+                'options' => [],
+                'texts' => [],
+            ];
+            foreach ($q['options'] as $opt) {
+                $safe['options'][] = [
+                    'label' => (string) $opt['label'],
+                    'count' => (int) $opt['count'],
+                    'pct' => (float) $opt['pct'],
+                ];
+            }
+            foreach ($q['texts'] as $text) {
+                $safe['texts'][] = (string) $text;
+            }
+            $sections[$index[$name]]['questions'][] = $safe;
+        }
+        return [
+            'response_count' => (int) $summary['response_count'],
+            'mapped_count' => (int) $summary['mapped_count'],
+            'unmatched_count' => (int) $summary['unmatched_count'],
+            'expected_headcount' => $summary['expected_headcount'],
+            'message' => (string) $stats['message'],
+            'sections' => $sections,
+        ];
+    }
+
+    /**
      * Sheet 1 (Responses) and sheet 2 (Statistics) row arrays for xlsx export.
      *
      * @param \stdClass $filters

@@ -2409,3 +2409,16 @@ body.tm-equip-modal-open {
 .tm-prep-section-survey .tm-prep-section-title {
     color: var(--tm-green, #2e7d32);
 }
+.tm-survey-live-page {
+    max-width: 48rem;
+}
+.tm-survey-live-row {
+    padding: .25rem 0;
+}
+.tm-survey-live-text {
+    border-left: 3px solid #e2e8f0;
+    padding: .35rem .6rem;
+    margin: .35rem 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
