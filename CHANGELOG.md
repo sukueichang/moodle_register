@@ -3,6 +3,15 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.9] - 2026-10-08 - Survey results require a selected survey
+
+### Changed
+- Admin survey results stay empty until a survey is selected. Excel export refuses to download without a survey.
+- Version ID, raw session ID, and email filters are removed from the results page. Session filter shows date, time, and course name for that survey.
+
+### Notes
+- 版號 `2026100804`。無 DB 變更。Excel Responses 仍含 Email 欄。不 merge `main`。
+
 ## [5.28.8] - 2026-10-08 - Word cloud uses whole answers
 
 ### Fixed

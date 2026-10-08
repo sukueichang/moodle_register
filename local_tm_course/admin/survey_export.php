@@ -31,14 +31,24 @@ if ($datetoraw !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $datetoraw)) {
     $dateto = (int) $datetoraw;
 }
 
+$surveyid = optional_param('surveyid', 0, PARAM_INT);
+if ($surveyid <= 0) {
+    redirect(
+        new moodle_url('/local/tm_course/admin/survey_results.php'),
+        get_string('survey_stats_export_need_survey', 'local_tm_course'),
+        null,
+        \core\output\notification::NOTIFY_ERROR
+    );
+}
+
 $params = [
-    'surveyid' => optional_param('surveyid', 0, PARAM_INT),
-    'versionid' => optional_param('versionid', 0, PARAM_INT),
+    'surveyid' => $surveyid,
+    'versionid' => 0,
     'courseid' => optional_param('courseid', 0, PARAM_INT),
     'sessionid' => optional_param('sessionid', 0, PARAM_INT),
     'datefrom' => $datefrom,
     'dateto' => $dateto,
-    'email' => optional_param('email', '', PARAM_RAW_TRIMMED),
+    'email' => '',
     'mapped' => optional_param('mapped', -1, PARAM_INT),
 ];
 $filters = survey_stats::filters_from_params($params);

@@ -193,4 +193,19 @@ class survey_stats_test extends \advanced_testcase {
         $empty = survey_stats::session_live_snapshot($othersession);
         $this->assertSame(0, $empty['response_count']);
     }
+
+    public function test_results_page_requires_survey_and_drops_raw_filters(): void {
+        $results = file_get_contents(__DIR__ . '/../admin/survey_results.php');
+        $export = file_get_contents(__DIR__ . '/../admin/survey_export.php');
+        $this->assertStringContainsString('survey_stats_pick_survey', $results);
+        $this->assertStringContainsString('survey_stats_export_need_survey', $export);
+        $this->assertStringContainsString("if (\$surveyid <= 0)", $results);
+        $this->assertStringContainsString("if (\$surveyid <= 0)", $export);
+        $this->assertStringNotContainsString("name' => 'email'", $results);
+        $this->assertStringNotContainsString("name' => 'versionid'", $results);
+        $this->assertStringNotContainsString('survey_stats_sessionid', $results);
+        $this->assertStringContainsString('survey_stats_session_filter', $results);
+        $this->assertStringContainsString("'email' => ''", $export);
+        $this->assertStringContainsString("'versionid' => 0", $export);
+    }
 }

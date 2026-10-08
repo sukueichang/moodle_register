@@ -32,29 +32,57 @@ if ($datetostr !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $datetostr)) {
     $dateto = (int) make_timestamp((int) substr($datetostr, 0, 4), (int) substr($datetostr, 5, 2), (int) substr($datetostr, 8, 2), 23, 59, 59);
 }
 
+$surveyid = optional_param('surveyid', 0, PARAM_INT);
+// Version id and email are not admin filters. Ignore them if present on the URL.
 $params = [
-    'surveyid' => optional_param('surveyid', 0, PARAM_INT),
-    'versionid' => optional_param('versionid', 0, PARAM_INT),
+    'surveyid' => $surveyid,
+    'versionid' => 0,
     'courseid' => optional_param('courseid', 0, PARAM_INT),
     'sessionid' => optional_param('sessionid', 0, PARAM_INT),
     'datefrom' => $datefrom,
     'dateto' => $dateto,
-    'email' => optional_param('email', '', PARAM_RAW_TRIMMED),
+    'email' => '',
     'mapped' => optional_param('mapped', -1, PARAM_INT),
 ];
-// Keep ISO date strings in the form / export query so filters round-trip.
-$paramsui = $params;
-$paramsui['datefrom'] = $datefromstr;
-$paramsui['dateto'] = $datetostr;
+$paramsui = [
+    'surveyid' => $surveyid,
+    'courseid' => $params['courseid'],
+    'sessionid' => $params['sessionid'],
+    'datefrom' => $datefromstr,
+    'dateto' => $datetostr,
+    'mapped' => $params['mapped'],
+];
 
 $page = max(0, optional_param('page', 0, PARAM_INT));
 $perpage = 50;
 
-$filters = survey_stats::filters_from_params($params);
-$summary = survey_stats::summary($filters);
-$qstats = survey_stats::question_stats($filters);
-$total = survey_stats::count_responses($filters);
-$rows = survey_stats::list_responses($filters, $page, $perpage);
+$coursemenu = [];
+$sessionmenu = [];
+if ($surveyid > 0) {
+    $coursemenu = survey_results_course_options($surveyid);
+    $sessionmenu = survey_results_session_options($surveyid);
+    if (!isset($coursemenu[(int) $params['courseid']])) {
+        $params['courseid'] = 0;
+    }
+    if (!isset($sessionmenu[(int) $params['sessionid']])) {
+        $params['sessionid'] = 0;
+    }
+    $paramsui['courseid'] = $params['courseid'];
+    $paramsui['sessionid'] = $params['sessionid'];
+}
+
+$filters = null;
+$summary = null;
+$qstats = null;
+$total = 0;
+$rows = [];
+if ($surveyid > 0) {
+    $filters = survey_stats::filters_from_params($params);
+    $summary = survey_stats::summary($filters);
+    $qstats = survey_stats::question_stats($filters);
+    $total = survey_stats::count_responses($filters);
+    $rows = survey_stats::list_responses($filters, $page, $perpage);
+}
 
 $PAGE->set_context(context_system::instance());
 $PAGE->set_pagelayout('admin');
@@ -80,7 +108,6 @@ $PAGE->set_title(get_string('survey_stats_title', 'local_tm_course'));
 survey_viz::require_assets();
 
 $surveys = survey_manager::list_surveys();
-$coursemenu = enabled_course_manager::get_course_menu();
 
 echo $OUTPUT->header();
 echo html_writer::tag('h2', get_string('survey_stats_title', 'local_tm_course'));
@@ -93,13 +120,17 @@ echo html_writer::link(
 echo html_writer::start_tag('form', ['method' => 'get', 'action' => (new moodle_url('/local/tm_course/admin/survey_results.php'))->out(false), 'class' => 'mb-4']);
 echo html_writer::start_div('form-row');
 
-echo html_writer::start_div('form-group col-md-3');
+$selectedcourse = (int) $params['courseid'];
+$selectedsession = (int) $params['sessionid'];
+$selectedmapped = (int) $params['mapped'];
+
+echo html_writer::start_div('form-group col-md-4');
 echo html_writer::tag('label', get_string('survey_column', 'local_tm_course'));
-echo html_writer::start_tag('select', ['name' => 'surveyid', 'class' => 'form-control']);
+echo html_writer::start_tag('select', ['name' => 'surveyid', 'class' => 'form-control', 'onchange' => 'this.form.submit()']);
 echo html_writer::tag('option', '—', ['value' => 0]);
 foreach ($surveys as $s) {
     $attrs = ['value' => (int) $s->id];
-    if ((int) $s->id === (int) $filters->surveyid) {
+    if ((int) $s->id === $surveyid) {
         $attrs['selected'] = 'selected';
     }
     echo html_writer::tag('option', s($s->name), $attrs);
@@ -107,21 +138,13 @@ foreach ($surveys as $s) {
 echo html_writer::end_tag('select');
 echo html_writer::end_div();
 
-echo html_writer::start_div('form-group col-md-2');
-echo html_writer::tag('label', get_string('survey_stats_versionid', 'local_tm_course'));
-echo html_writer::empty_tag('input', [
-    'type' => 'number', 'name' => 'versionid', 'class' => 'form-control',
-    'value' => (int) $filters->versionid, 'min' => 0,
-]);
-echo html_writer::end_div();
-
-echo html_writer::start_div('form-group col-md-3');
+echo html_writer::start_div('form-group col-md-4');
 echo html_writer::tag('label', get_string('course'));
 echo html_writer::start_tag('select', ['name' => 'courseid', 'class' => 'form-control']);
 echo html_writer::tag('option', '—', ['value' => 0]);
 foreach ($coursemenu as $cid => $cname) {
     $attrs = ['value' => (int) $cid];
-    if ((int) $cid === (int) $filters->courseid) {
+    if ((int) $cid === $selectedcourse) {
         $attrs['selected'] = 'selected';
     }
     echo html_writer::tag('option', s($cname), $attrs);
@@ -129,21 +152,30 @@ foreach ($coursemenu as $cid => $cname) {
 echo html_writer::end_tag('select');
 echo html_writer::end_div();
 
-echo html_writer::start_div('form-group col-md-2');
-echo html_writer::tag('label', get_string('survey_stats_sessionid', 'local_tm_course'));
-echo html_writer::empty_tag('input', [
-    'type' => 'number', 'name' => 'sessionid', 'class' => 'form-control',
-    'value' => (int) $filters->sessionid, 'min' => 0,
-]);
+echo html_writer::start_div('form-group col-md-4');
+echo html_writer::tag('label', get_string('survey_stats_session_filter', 'local_tm_course'));
+echo html_writer::start_tag('select', ['name' => 'sessionid', 'class' => 'form-control']);
+echo html_writer::tag('option', '—', ['value' => 0]);
+foreach ($sessionmenu as $sid => $slabel) {
+    $attrs = ['value' => (int) $sid];
+    if ((int) $sid === $selectedsession) {
+        $attrs['selected'] = 'selected';
+    }
+    echo html_writer::tag('option', s($slabel), $attrs);
+}
+echo html_writer::end_tag('select');
 echo html_writer::end_div();
 
-echo html_writer::start_div('form-group col-md-2');
+echo html_writer::end_div();
+echo html_writer::start_div('form-row');
+
+echo html_writer::start_div('form-group col-md-3');
 echo html_writer::tag('label', get_string('survey_mapped', 'local_tm_course'));
 echo html_writer::start_tag('select', ['name' => 'mapped', 'class' => 'form-control']);
 $mappedopts = [-1 => get_string('all'), 1 => get_string('survey_mapped', 'local_tm_course'), 0 => get_string('survey_unmapped', 'local_tm_course')];
 foreach ($mappedopts as $val => $label) {
     $attrs = ['value' => $val];
-    if ((int) $filters->mapped === (int) $val) {
+    if ($selectedmapped === (int) $val) {
         $attrs['selected'] = 'selected';
     }
     echo html_writer::tag('option', $label, $attrs);
@@ -151,9 +183,6 @@ foreach ($mappedopts as $val => $label) {
 echo html_writer::end_tag('select');
 echo html_writer::end_div();
 
-echo html_writer::end_div();
-
-echo html_writer::start_div('form-row');
 echo html_writer::start_div('form-group col-md-3');
 echo html_writer::tag('label', get_string('survey_stats_datefrom', 'local_tm_course'));
 echo html_writer::empty_tag('input', [
@@ -168,13 +197,6 @@ echo html_writer::empty_tag('input', [
     'value' => s($datetostr),
 ]);
 echo html_writer::end_div();
-echo html_writer::start_div('form-group col-md-4');
-echo html_writer::tag('label', get_string('survey_quick_email', 'local_tm_course'));
-echo html_writer::empty_tag('input', [
-    'type' => 'text', 'name' => 'email', 'class' => 'form-control',
-    'value' => s($filters->email),
-]);
-echo html_writer::end_div();
 echo html_writer::start_div('form-group col-md-2 align-self-end');
 echo html_writer::empty_tag('input', [
     'type' => 'submit', 'class' => 'btn btn-primary',
@@ -183,6 +205,12 @@ echo html_writer::empty_tag('input', [
 echo html_writer::end_div();
 echo html_writer::end_div();
 echo html_writer::end_tag('form');
+
+if ($surveyid <= 0) {
+    echo $OUTPUT->notification(get_string('survey_stats_pick_survey', 'local_tm_course'), 'info');
+    echo $OUTPUT->footer();
+    exit;
+}
 
 // Summary cards.
 echo html_writer::start_div('row mb-4');
@@ -250,7 +278,72 @@ foreach ($rows as $row) {
 }
 echo html_writer::table($table);
 
-$baseurl = new moodle_url('/local/tm_course/admin/survey_results.php', $params);
+$baseurl = new moodle_url('/local/tm_course/admin/survey_results.php', $pageurlparams);
 echo $OUTPUT->paging_bar($total, $page, $perpage, $baseurl);
 
 echo $OUTPUT->footer();
+
+/**
+ * Courses tied to this survey: current assignment, plus any course that already has responses.
+ *
+ * @return array<int,string>
+ */
+function survey_results_course_options(int $surveyid): array {
+    global $DB;
+    $labels = enabled_course_manager::get_course_menu();
+    $ids = survey_manager::assigned_courseids($surveyid);
+    $answered = $DB->get_fieldset_sql(
+        "SELECT DISTINCT s.courseid
+           FROM {local_tm_course_svresp} r
+           JOIN {local_tm_course_svver} v ON v.id = r.versionid
+           JOIN {local_tm_course_sessions} s ON s.id = r.sessionid
+          WHERE v.surveyid = :surveyid",
+        ['surveyid' => $surveyid]
+    );
+    foreach ($answered as $courseid) {
+        $ids[] = (int) $courseid;
+    }
+    $ids = array_values(array_unique(array_filter($ids)));
+    $out = [];
+    foreach ($ids as $courseid) {
+        if (isset($labels[$courseid])) {
+            $out[$courseid] = $labels[$courseid];
+            continue;
+        }
+        $name = $DB->get_field('course', 'fullname', ['id' => $courseid]);
+        $out[$courseid] = $name ? (string) $name : ('#' . $courseid);
+    }
+    asort($out);
+    return $out;
+}
+
+/**
+ * Sessions for this survey. Label is date/time and course name, not the raw id.
+ *
+ * @return array<int,string>
+ */
+function survey_results_session_options(int $surveyid): array {
+    global $DB;
+    $rows = $DB->get_records_sql(
+        "SELECT DISTINCT s.id, s.name, s.starttime, c.fullname
+           FROM {local_tm_course_sessions} s
+           JOIN {course} c ON c.id = s.courseid
+          WHERE s.courseid IN (
+                    SELECT courseid FROM {local_tm_course_svcrs} WHERE surveyid = :surveyid1
+                )
+             OR s.id IN (
+                    SELECT r.sessionid
+                      FROM {local_tm_course_svresp} r
+                      JOIN {local_tm_course_svver} v ON v.id = r.versionid
+                     WHERE v.surveyid = :surveyid2
+                )
+       ORDER BY s.starttime DESC, s.id DESC",
+        ['surveyid1' => $surveyid, 'surveyid2' => $surveyid]
+    );
+    $out = [];
+    foreach ($rows as $row) {
+        $when = userdate((int) $row->starttime, '%Y/%m/%d %H:%M');
+        $out[(int) $row->id] = $when . '－' . (string) $row->fullname;
+    }
+    return $out;
+}

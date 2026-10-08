@@ -2370,7 +2370,7 @@ Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只�
 
 ### 59.9 管理端報表
 
-階段 4。`admin/survey_results.php`／`survey_export.php`：`local/tm_course:manage`。篩選 survey／version／course／session／email／mapped；摘要卡、題目統計、Excel（Responses + Statistics）。
+階段 4。`admin/survey_results.php`／`survey_export.php`：`local/tm_course:manage`。必須先選問卷才查詢摘要、題目統計、圖表、回覆列表與 Excel。未選問卷時匯出不產生檔案。篩選為 survey、course、場次（日期時間與課程名稱，value 仍為 session id）、提交日、mapped。結果頁不再提供 version id、raw session id、email 篩選；URL 上的 versionid／email 不影響結果或匯出。回覆列表與 Excel Responses 仍保留 Email 欄。題目統計仍走既有 `survey_stats`（選定問卷後用目前版本繪圖）。Excel（Responses + Statistics）結構不變。
 
 ### 59.10 驗收案例（不得寫死）
 
