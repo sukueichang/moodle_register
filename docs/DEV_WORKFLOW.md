@@ -24,8 +24,9 @@
 | 2 | 確認決策（規格 OK） | 寫入 FEATURE_LOG；必要時更新 SPEC |
 | 3 | 說 **「開始開發」** | 見 §3a：先開／更新 **Draft PR** 記錄本輪規格 |
 | 4 | — | 實作（本機）；遵守 BUGFIX_LOG 預防準則。過程中規格變更 → **同步更新同一支 PR 描述**與 FEATURE_LOG／SPEC |
-| 5 | 在 Moodle 環境自行測試 | 依回報修正；問題寫入 BUGFIX_LOG |
-| 6 | 回覆 **ok／測試無誤** | 見 §3b：commit 實作 → **push** 到該 PR 分支 → 更新 PR 描述 → **問是否 merge** |
+| 4b | — | **交付驗收前（必做）**：執行可用自動化測試 → 確認 `version.php`／upgrade → commit／push 功能分支 → **§4 打包 ZIP** → 驗證 ZIP → 用 §4.1 格式回報路徑。規格盤點／純文件階段可跳過 ZIP；Owner 明確說不要 ZIP 時可省略 |
+| 5 | 用 ZIP 安裝至測試站並自行測試 | 依回報修正；問題寫入 BUGFIX_LOG；再次交付時重新打包 ZIP |
+| 6 | 回覆 **ok／測試無誤** | 見 §3b：若尚有未 push 變更則 commit → push → 更新 PR 描述 → **問是否 merge** |
 | 7 | 明確回覆要不要 merge | 見 §3c：要 → merge 進 `main`；不要 → 維持 PR 開啟 |
 
 ---
@@ -36,8 +37,8 @@
 |------|------|--------|
 | 1 | 現象、重現步驟、期望行為 | 定位根因；對照 BUGFIX_LOG 是否舊疾 |
 | 2 | 確認修復方向後說 **「開始開發」**（若尚未開 PR） | 見 §3a：Draft PR 記錄本輪修復範圍；再實作。**先**在 BUGFIX_LOG 記一條 |
-| 3 | 回歸測試（含清單相關項） | 依回報再修；規格／範圍變更則更新同一 PR |
-| 4 | 回覆 **ok／測試無誤** | 見 §3b → **問是否 merge**（§3c） |
+| 3 | 回歸測試（含清單相關項） | 依回報再修；規格／範圍變更則更新同一 PR；可安裝程式碼交付時同 §1 步驟 4b（含 ZIP） |
+| 4 | 用 ZIP 測過後回覆 **ok／測試無誤** | 見 §3b → **問是否 merge**（§3c） |
 
 ---
 
@@ -104,17 +105,29 @@
 
 ## 4. 打包外掛 ZIP（Windows／上傳 Moodle）
 
-交付或上傳 Moodle「安裝外掛」前，必須依此流程打包。細節背景見 [`BUGFIX_LOG.md`](BUGFIX_LOG.md)「Windows 打包 zip」。
+**何時必做：** 功能／修 bug 實作完成、準備交給 Owner 在 Moodle 測試站人工驗收時。  
+**何時可省略：** 純規格盤點、僅改文件、或 Owner 明確說「不需要 ZIP」。  
+**不得省略：** 已完成可安裝的外掛程式碼交付，卻未打包、也未詢問 Owner 是否需要 ZIP。
+
+細節背景見 [`BUGFIX_LOG.md`](BUGFIX_LOG.md)「Windows 打包 zip」。
 
 ### 正確做法（唯一允許）
 
-在專案根目錄（含 `local_tm_course` 資料夾的那一層）執行：
+優先使用已驗證腳本（內部改用 `tar.exe`，並自動做結構／反斜線檢查）：
+
+```powershell
+powershell -File tools/package_local_tm_course.ps1
+```
+
+產出：`<專案根>/local_tm_course.zip`（與 `local_tm_course/` 同層）。
+
+等價手動指令：
 
 ```powershell
 tar.exe -a -c -f local_tm_course.zip -C "<專案根目錄>" local_tm_course
 ```
 
-例（本機路徑依實際調整）：
+例：
 
 ```powershell
 tar.exe -a -c -f local_tm_course.zip -C "C:\Users\waylon.su\Desktop\tm_course_registration\Moodle plugin v2" local_tm_course
@@ -124,17 +137,19 @@ tar.exe -a -c -f local_tm_course.zip -C "C:\Users\waylon.su\Desktop\tm_course_re
 
 - zip **最外層必須是單一資料夾** `local_tm_course/`（內含 `version.php`、`db/` 等）
 - 內部路徑必須使用正斜線 `/`（`tar.exe` 會自動做到）
+- ZIP 內 `version.php` 的 `$plugin->release`／`$plugin->version` 必須對應本次交付的 Git Commit
 
-### 上傳前必做：反斜線檢查
+### 上傳前必做：反斜線與結構檢查
 
 ```powershell
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [System.IO.Compression.ZipFile]::OpenRead("local_tm_course.zip")
 ($zip.Entries | Where-Object { $_.FullName -match '\\' }).Count   # 必須是 0
+($zip.Entries | Where-Object { $_.FullName -replace '\\','/' -eq 'local_tm_course/version.php' }).Count  # 必須 >= 1
 $zip.Dispose()
 ```
 
-同時抽查：應能看到 `local_tm_course/version.php`、`local_tm_course/db/install.xml` 這類路徑。
+同時抽查：`local_tm_course/db/install.xml`、本輪新增的主要 PHP 檔存在。
 
 ### 禁止
 
@@ -142,6 +157,20 @@ $zip.Dispose()
 - **禁止** `[System.IO.Compression.ZipFile]::CreateFromDirectory(...)`
 
 上述兩種在 Windows PowerShell 5.1 會把內部路徑寫成 `\`，Moodle 會回報「無法偵測到外掛類型」。
+
+### 4.1 交付回報格式（功能完成時）
+
+每次準備人工驗收時，回報至少包含：
+
+- 功能名稱及開發階段
+- Branch
+- Commit Hash
+- 外掛版本（`$plugin->release` / `$plugin->version`）
+- 自動化測試結果（未跑不得宣稱通過）
+- ZIP 檔名及**完整路徑**
+- ZIP 結構驗證結果（根目錄、`version.php`、反斜線 = 0、entries 數）
+- 人工驗收項目
+- 尚未完成或存在風險的事項
 
 ### 安裝
 
@@ -171,7 +200,8 @@ Moodle：Site administration → Plugins → Install plugins → 上傳 ZIP → 
 - [ ] 未在使用者 ok 前 push **實作**  
 - [ ] 使用者 ok 後：commit 實作 → push → 更新 PR → 回報 URL  
 - [ ] push／驗收後：**已問**是否 merge 進 `main`（未授權不 merge）  
-- [ ] 交付 zip 時：用 `tar.exe` 打包，且反斜線檢查為 0  
+- [ ] 交付人工驗收前：已跑 `tools/package_local_tm_course.ps1`（或等價 `tar.exe`），反斜線檢查為 0，並回報 ZIP 完整路徑（純文件／Owner 免 ZIP 除外）  
+
 
 ---
 

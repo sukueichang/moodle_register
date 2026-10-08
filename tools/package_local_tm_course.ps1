@@ -4,9 +4,10 @@
   Package local_tm_course as a Moodle-installable ZIP.
 
 .DESCRIPTION
-  Creates <repo>/local_tm_course.zip beside the plugin folder — same place as
-  Windows Explorer "Compress to ZIP" on the local_tm_course directory.
+  Creates <repo>/local_tm_course.zip beside the plugin folder.
   ZIP root is local_tm_course/ (Moodle install plugin format).
+  Uses tar.exe so ZIP entry paths use forward slashes (required by Moodle).
+  Do NOT use Compress-Archive on Windows PowerShell 5.1 — it writes backslashes.
   Does not commit the ZIP (*.zip is gitignored). Excludes VCS / IDE / OS junk.
 
 .EXAMPLE
@@ -15,7 +16,6 @@
 [CmdletBinding()]
 param(
     [string]$RepoRoot = '',
-    # Default: repo root (same as right-click pack → local_tm_course.zip next to the folder)
     [string]$OutDir = ''
 )
 
@@ -24,7 +24,6 @@ $ErrorActionPreference = 'Stop'
 if ([string]::IsNullOrWhiteSpace($RepoRoot)) {
     $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 }
-# Match manual workflow: ZIP sits next to the local_tm_course folder.
 if ([string]::IsNullOrWhiteSpace($OutDir)) {
     $OutDir = $RepoRoot
 }
@@ -32,6 +31,11 @@ if ([string]::IsNullOrWhiteSpace($OutDir)) {
 $pluginDir = Join-Path $RepoRoot 'local_tm_course'
 if (-not (Test-Path (Join-Path $pluginDir 'version.php'))) {
     throw "Plugin not found: $pluginDir (missing version.php)"
+}
+
+$tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+if (-not $tar) {
+    throw 'tar.exe not found. Moodle plugin ZIPs must be built with tar.exe (see docs/DEV_WORKFLOW.md §4).'
 }
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -44,7 +48,6 @@ $stagingPlugin = Join-Path $stagingRoot 'local_tm_course'
 try {
     New-Item -ItemType Directory -Force -Path $stagingPlugin | Out-Null
 
-    # Copy plugin tree; skip VCS / IDE / OS noise. Keep Moodle runtime + tests/fixtures.
     $excludeDirNames = @(
         '.git', '.github', '.idea', '.vscode', '.cursor',
         '__pycache__', 'node_modules', '.phpunit.cache'
@@ -68,7 +71,6 @@ try {
         }
     }
 
-    # Remove nested junk that may have been copied inside subfolders.
     Get-ChildItem -LiteralPath $stagingPlugin -Recurse -Force -ErrorAction SilentlyContinue |
         Where-Object {
             ($_.PSIsContainer -and ($excludeDirNames -contains $_.Name)) -or
@@ -84,35 +86,51 @@ try {
     if (-not (Test-Path (Join-Path $stagingPlugin 'version.php'))) {
         throw 'Staging copy missing version.php'
     }
+    if (-not (Test-Path (Join-Path $stagingPlugin 'db\install.xml'))) {
+        throw 'Staging copy missing db/install.xml'
+    }
+    $requiredLogos = @(
+        'pix\email\tm_robot_logo.png',
+        'pix\email\training_center_logo.jpg'
+    )
+    foreach ($rel in $requiredLogos) {
+        $logoPath = Join-Path $stagingPlugin $rel
+        if (-not (Test-Path -LiteralPath $logoPath)) {
+            throw "Staging copy missing required email logo: $rel"
+        }
+    }
 
     if (Test-Path $zipPath) {
         Remove-Item -LiteralPath $zipPath -Force
     }
 
-    # Compress-Archive with the folder path puts that folder name at ZIP root.
-    Compress-Archive -Path $stagingPlugin -DestinationPath $zipPath -CompressionLevel Optimal -Force
+    # Verified Moodle-safe packer (forward-slash entry names). See DEV_WORKFLOW §4 / BUGFIX_LOG.
+    & tar.exe -a -c -f $zipPath -C $stagingRoot local_tm_course
+    if ($LASTEXITCODE -ne 0) {
+        throw "tar.exe failed with exit code $LASTEXITCODE"
+    }
 
-    # --- Verify ZIP structure ---
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
     try {
-        $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
-        $hasVersion = $entries | Where-Object { $_ -eq 'local_tm_course/version.php' -or $_ -eq 'local_tm_course\version.php' }
-        if (-not $hasVersion) {
-            # Normalize check
-            $hasVersion = $entries | Where-Object { $_ -match '^local_tm_course/version\.php$' }
+        $entries = @($zip.Entries | ForEach-Object { $_.FullName })
+        $backslashCount = @($entries | Where-Object { $_ -match '\\' }).Count
+        if ($backslashCount -ne 0) {
+            throw "ZIP verification failed: $backslashCount entries use backslash separators"
         }
-        if (-not $hasVersion) {
-            throw "ZIP verification failed: local_tm_course/version.php not found. Sample entries: $(($entries | Select-Object -First 8) -join ', ')"
+
+        $normalized = @($entries | ForEach-Object { $_.Replace('\', '/') })
+        if (-not ($normalized | Where-Object { $_ -eq 'local_tm_course/version.php' })) {
+            throw "ZIP verification failed: local_tm_course/version.php not found. Sample: $(($normalized | Select-Object -First 8) -join ', ')"
         }
-        $badRoot = $entries | Where-Object {
-            $_ -and ($_ -notmatch '^local_tm_course(/|$)')
+        if (-not ($normalized | Where-Object { $_ -eq 'local_tm_course/db/install.xml' })) {
+            throw 'ZIP verification failed: local_tm_course/db/install.xml not found'
         }
+        $badRoot = $normalized | Where-Object { $_ -and ($_ -notmatch '^local_tm_course(/|$)') }
         if ($badRoot) {
             throw "ZIP verification failed: unexpected root entries: $($badRoot | Select-Object -First 5)"
         }
-        $hasGit = $entries | Where-Object { $_ -match '(^|/)\.git(/|$)' }
-        if ($hasGit) {
+        if ($normalized | Where-Object { $_ -match '(^|/)\.git(/|$)' }) {
             throw 'ZIP verification failed: .git paths found inside archive'
         }
 
@@ -122,11 +140,13 @@ try {
 
         Write-Host "OK packaged: $zipPath"
         Write-Host "  size_bytes=$((Get-Item -LiteralPath $zipPath).Length)"
-        Write-Host "  entries=$($entries.Count)"
+        Write-Host "  entries=$($normalized.Count)"
         Write-Host "  plugin_release=$release"
         Write-Host "  plugin_version=$pluginVersion"
+        Write-Host "  backslash_entries=0"
         Write-Host "  root=local_tm_course/"
         Write-Host "  version.php=present"
+        Write-Host "  db/install.xml=present"
         Write-Output $zipPath
     } finally {
         $zip.Dispose()

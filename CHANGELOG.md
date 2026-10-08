@@ -3,6 +3,189 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.28.11] - 2026-10-08 - Survey respondent names and quiz finished-attempt grades
+
+### Changed
+- Class prep and live survey results list signed-in learner names and guest emails for that session only. Counts are total responses, signed-in learners, guests, and eligible learners separately.
+- Quiz grading uses only finished attempts. A null `sumgrades` on the highest finished attempt stays ungraded and does not fall back to an older score or the gradebook.
+
+### Notes
+- 版號 `2026100806`。無 DB 變更。`mod_assign` 仍走 gradebook。不 merge `main`。
+
+## [5.28.10] - 2026-10-08 - Survey stats share one filter dataset
+
+### Fixed
+- Question charts use the same survey, course, session, date, and mapped filters as the summary and Excel export. A newer questionnaire version no longer hides answers that were submitted on an older version.
+
+### Notes
+- 版號 `2026100805`。無 DB 變更。不 merge `main`。
+
+## [5.28.9] - 2026-10-08 - Survey results require a selected survey
+
+### Changed
+- Admin survey results stay empty until a survey is selected. Excel export refuses to download without a survey.
+- Version ID, raw session ID, and email filters are removed from the results page. Session filter shows date, time, and course name for that survey.
+
+### Notes
+- 版號 `2026100804`。無 DB 變更。Excel Responses 仍含 Email 欄。不 merge `main`。
+
+## [5.28.8] - 2026-10-08 - Word cloud uses whole answers
+
+### Fixed
+- Free-text word cloud counts each full response as one item. Repeated identical text grows in size. Chinese and English are not split into words.
+
+### Notes
+- 版號 `2026100803`。無 DB 變更。不 merge `main`。
+
+## [5.28.7] - 2026-10-08 - Fix survey_viz html_writer namespace
+
+### Fixed
+- `survey_viz` calls global `\html_writer` so live results and admin charts no longer throw `local_tm_course\html_writer` not found.
+
+### Notes
+- 版號 `2026100802`。無 DB 變更。不 merge `main`。
+
+## [5.28.6] - 2026-10-08 - Shared survey result charts
+
+### Added
+- Shared result cards (`survey_viz` + local `survey_viz.js`): pie/bar for choice questions, vertical bars for 1–5 scales, word cloud and full list for free text.
+- Used by admin `survey_results.php` (existing filters) and session live results.
+
+### Notes
+- 版號 `2026100801`。無 DB、無外部 CDN。不 merge `main`。
+
+## [5.28.5] - 2026-10-08 - Session live survey results
+
+### Added
+- Class prep post-class card: “View live results” for the current session only (attendance permission).
+- Live page polls aggregates about every 9 seconds. No filters, Excel, names, or emails.
+
+### Changed
+- Class prep response counts show mapped learner responses versus approved headcount, plus other (unmatched) responses, instead of total/eligible.
+
+### Notes
+- 版號 `2026100800`。無 DB schema 變更。不 merge `main`。
+
+## [5.28.4] - 2026-10-07 - Fix bento history fullname() warning
+
+### Fixed
+- `get_send_history()` loads all Moodle name fields via `get_all_user_name_fields()` so `fullname()` no longer triggers a debug warning.
+
+### Notes
+- 版號 `2026100704`。無 DB schema 變更。不 merge `main`。
+
+## [5.28.3] - 2026-10-07 - Bento send history + safe survey delete
+
+### Added
+- Table `local_tm_course_bento_log`: append-only successful lunch-request send history per session; shown next to the class_prep send button.
+- Survey list Delete: allowed only when unused (no session pin / response); otherwise blocked with disable guidance.
+
+### Notes
+- Upgrade savepoint `2026100703` / release `5.28.3`。不 merge `main`。
+
+## [5.28.2] - 2026-10-07 - Survey UX / admin flow
+
+### Changed
+- Course assignment no longer silently steals a course from another survey; save is blocked with a clear error; server-side `assert_courses_assignable` runs before other writes.
+- Survey admin editor: basics card + content sections with collapsed question cards (edit to expand).
+- Survey list: Copy creates an independent survey (structure only; no courses / responses / pins / tokens).
+- Learner survey fill UI hierarchy (sections, numbering, scale / choice layout).
+- Class prep: “Pre-class tasks” (attendance / bento / equipment) + “Post-class survey” card (status, counts, open/close, projection).
+
+### Notes
+- 版號 `2026100702` / release `5.28.2`。無 DB schema 變更；未改 Excel export。Owner UX 驗收 OK。不 merge `main`。
+
+## [5.28.1] - 2026-10-07 - Fix survey Excel export (Moodle excellib)
+
+### Fixed
+- Phase 4 Excel download used `send_file()` without loading `filelib.php`, and bypassed Moodle `excellib`. Export now uses `MoodleExcelWorkbook` from `lib/excellib.class.php` (two sheets: Responses, Statistics; same filters as results UI).
+
+### Notes
+- 版號 `2026100701`。Phase 3／Phase 4 篩選與題型統計未改。Excel 待 Owner 重新下載驗收（不自行標 PASS）。
+
+## [5.28.0] - 2026-10-07 - Survey Phase 3+4 (Email Quick Access, board, stats)
+
+### Added
+- Email quick-access survey (`survey.php?t=TOKEN`) without login; email step then questionnaire.
+- Session survey tokens (`local_tm_course_svtok`); open / close / regenerate on projection board.
+- Projection board (`admin/survey_board.php`) + progress JSON; class prep link.
+- Results / filters / question stats (`admin/survey_results.php`) and Excel export.
+- Scheduled task `pin_session_surveys` (every 15 minutes).
+
+### Changed
+- `svresp`: add `email` + `mapped`; drop unique `enrolid`; unique `(sessionid, versionid, email)`.
+- `submit_response` delegates to `submit_response_by_email`; FILL requires token enabled.
+
+### Notes
+- 版號 `2026100700` / release `5.28.0`。不 merge `main`。Batch-account email / force-password untouched.
+
+## [5.27.6] - 2026-10-06 - Email logos via Moodle theme/image.php
+
+### Changed
+- Batch-account HTML email logos now use Moodle `$OUTPUT->image_url(..., 'local_tm_course')` → `/theme/image.php/...` (no hand-built URL).
+- Training Center logo renamed to `pix/email/training_center_logo.jpg` to match JPEG magic bytes (bytes unchanged).
+- Removed unused logo workarounds: `email_logo.php`, `email_logo_assets.php`, `emaillogo` pluginfile branch, data-URI / CID logo paths.
+- Outbound mail remains Moodle `email_to_user()`; force-password preference / Survey / email copy layout unchanged.
+
+### Notes
+- 版號 `2026100606`。不 merge `main`。
+
+## [5.27.5] - 2026-10-06 - Restore email delivery + data-URI logos
+
+### Fixed
+- Reverted batch-account outbound mail to Moodle `email_to_user()` after 5.27.4 custom PHPMailer/CID path failed to deliver (`send()` false with no fallback).
+- Logos embedded as `data:image/...;base64,...` in HTML (no pluginfile HTTP, no custom mailer).
+
+### Notes
+- 版號 `2026100605`。強制改密碼／Survey 未改。不 merge `main`。
+
+## [5.27.4] - 2026-10-06 - CID-embedded email logos
+
+### Fixed
+- Batch account HTML email embeds logos as CID attachments (no public HTTP fetch). Addresses live `pluginfile` `filenotfound` when opening img URLs.
+- Hardened `emaillogo` pluginfile handler (runs before login/context gates; flexible args; base64 fallback if disk image invalid).
+
+### Notes
+- 版號 `2026100604`。強制改密碼／Survey／文案 layout 未改。不 merge `main`。
+
+## [5.27.3] - 2026-10-06 - Email logos via public pluginfile
+
+### Fixed
+- Logo URLs now use Moodle core `pluginfile.php` + `local_tm_course/emaillogo` (no login). Live site returned HTTP 404 for `/local/tm_course/email_logo.php` (file not on disk, same as missing PHP).
+- Logo bytes embedded in `email_logo_assets.php` as fallback; correct Content-Type from magic bytes (Training Center file is JPEG despite `.png` name).
+
+### Notes
+- 版號 `2026100603`。不改 Survey／強制改密碼／Email 文案 layout。不 merge `main`。
+
+## [5.27.2] - 2026-10-06 - Email logo public endpoint + force password preference
+
+### Fixed
+- Batch account HTML email logos: serve via public `email_logo.php` (no login) after direct `/pix/email/*.png` returned HTTP 404 on the test site.
+- New batch learners: set Moodle preference `auth_forcepasswordchange=1` so first login forces password change (replacing incorrect `user.forcepasswordchange` column write).
+
+### Notes
+- 版號 `2026100602`。原始 Logo 檔未改動。不 merge `main`。
+
+## [5.27.1] - 2026-10-06 - 整合問卷 + 批次建帳 HTML Email
+
+### Added
+- 同一釋出版同時包含課程問卷 V1 Phase 1／Phase 2 與 `batch_account_created` 品牌化 HTML Email。
+
+### Notes
+- 版號 `2026100601`（高於 survey `2026100600` 與 email `2026100152`）。
+- `upgrade.php` 依序保留 email savepoint `2026100152` 與問卷 `2026100200`／`2026100600`。
+- 分支：`feature/course-survey-admin-integrated`。不 merge `main`。
+
+## [5.25.1] - 2026-10-06 - 批次建帳通知 HTML Email
+
+### Changed
+- `batch_account_created` 改為品牌化 HTML Email（雙 Logo、帳號／密碼醒目區、Sign in／Forgot password 按鈕），並保留 plain-text fallback。
+- 管理員仍可編輯主旨與收件對象；內文版面改為系統固定，既有 body 設定保留但不參與寄信。
+
+### Notes
+- 版號 `2026100152`（高於 `main` 5.25.0 / `2026100151`，低於問卷分支 `2026100200`）。無資料表變更。
+- 建帳、隨機初始密碼、`forcepasswordchange`、learner／submitter 收件邏輯不變。
+
 ## [5.25.0] - 2026-10-02 - 授課語言同步合進 main
 
 ### Notes

@@ -32,6 +32,15 @@
 *.jpg
 *.jpeg
 *.pptx
+# Official plugin email logos (brand assets shipped with the plugin)
+!/local_tm_course/pix/
+!/local_tm_course/pix/**/
+!/local_tm_course/pix/email/*.png
+!/local_tm_course/pix/email/*.PNG
+!/local_tm_course/pix/email/*.jpg
+!/local_tm_course/pix/email/*.jpeg
+!/local_tm_course/pix/email/*.JPG
+!/local_tm_course/pix/email/*.JPEG
 
 # 建置產物 / 舊版打包 zip（改用 GitHub Releases 或重新建置）
 /_zip_staging/

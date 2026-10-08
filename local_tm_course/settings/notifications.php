@@ -135,6 +135,12 @@ if (optional_param('action', '', PARAM_ALPHANUMEXT) === 'save' && confirm_sesske
         $selectedtargets = optional_param_array($targetskey, [], PARAM_ALPHANUMEXT);
         $selectedroles = optional_param_array($roleskey, [], PARAM_INT);
 
+        // Batch account HTML layout is system-owned: keep existing body configs untouched.
+        if ($eventkey === 'batch_account_created') {
+            $bodyzhtw = (string) get_config('local_tm_course', 'notifytpl_batch_account_created_body_zh_tw');
+            $bodyen = (string) get_config('local_tm_course', 'notifytpl_batch_account_created_body_en');
+        }
+
         notification_helper::save_event_settings(
             $eventkey,
             $subjectzhtw,
@@ -473,6 +479,12 @@ if ($preclasspreviewrequested) {
                     </div>
                 </div>
                 <div style="padding:14px;">
+                    <?php if ($eventkey === 'batch_account_created'): ?>
+                        <p class="tm-session-muted mb-2"><?php echo s(get_string('notify_batch_account_bilingual_admin_hint', 'local_tm_course')); ?></p>
+                        <p class="alert alert-info mb-3" style="font-size:13px;">
+                            <?php echo s(get_string('notify_batch_account_html_layout_hint', 'local_tm_course')); ?>
+                        </p>
+                    <?php endif; ?>
                     <details class="tm-notify-template-fold">
                         <summary><?php echo s($str('notifications_fold_zh_tw', '繁體中文：主旨與內文模板（按此展開）')); ?></summary>
                         <div class="tm-notify-template-inner">
@@ -486,7 +498,12 @@ if ($preclasspreviewrequested) {
                             </div>
                             <div class="mb-0">
                                 <label class="font-weight-bold"><?php echo s($str('notifications_body_label_zh_tw', '通知內文模板（繁中）')); ?></label>
-                                <textarea name="<?php echo s('body_' . $eventkey . '_zh_tw'); ?>" class="form-control" rows="4"><?php echo s($templatezhtw['body']); ?></textarea>
+                                <?php if ($eventkey === 'batch_account_created'): ?>
+                                    <textarea name="<?php echo s('body_' . $eventkey . '_zh_tw'); ?>" class="form-control" rows="4" readonly><?php echo s($templatezhtw['body']); ?></textarea>
+                                    <div class="tm-session-muted mt-1"><?php echo s(get_string('notify_batch_account_body_readonly_hint', 'local_tm_course')); ?></div>
+                                <?php else: ?>
+                                    <textarea name="<?php echo s('body_' . $eventkey . '_zh_tw'); ?>" class="form-control" rows="4"><?php echo s($templatezhtw['body']); ?></textarea>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </details>
@@ -503,7 +520,12 @@ if ($preclasspreviewrequested) {
                             </div>
                             <div class="mb-0">
                                 <label class="font-weight-bold"><?php echo s($str('notifications_body_label_en', 'Notification body template (English)')); ?></label>
-                                <textarea name="<?php echo s('body_' . $eventkey . '_en'); ?>" class="form-control" rows="4"><?php echo s($templateen['body']); ?></textarea>
+                                <?php if ($eventkey === 'batch_account_created'): ?>
+                                    <textarea name="<?php echo s('body_' . $eventkey . '_en'); ?>" class="form-control" rows="4" readonly><?php echo s($templateen['body']); ?></textarea>
+                                    <div class="tm-session-muted mt-1"><?php echo s(get_string('notify_batch_account_body_readonly_hint', 'local_tm_course')); ?></div>
+                                <?php else: ?>
+                                    <textarea name="<?php echo s('body_' . $eventkey . '_en'); ?>" class="form-control" rows="4"><?php echo s($templateen['body']); ?></textarea>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </details>
@@ -511,9 +533,6 @@ if ($preclasspreviewrequested) {
                         <div class="font-weight-bold"><?php echo s(get_string('notifications_supported_vars', 'local_tm_course')); ?></div>
                         <div class="tm-session-muted"><?php echo s(implode(', ', $eventmeta['tokens'])); ?></div>
                     </div>
-                    <?php if ($eventkey === 'batch_account_created'): ?>
-                        <p class="tm-session-muted mb-2"><?php echo s(get_string('notify_batch_account_bilingual_admin_hint', 'local_tm_course')); ?></p>
-                    <?php endif; ?>
                     <div class="mb-2">
                         <div class="font-weight-bold"><?php echo s(get_string('notifications_targets_label', 'local_tm_course')); ?></div>
                         <div class="d-flex flex-wrap" style="gap:1rem;">

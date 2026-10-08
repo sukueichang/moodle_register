@@ -1912,7 +1912,389 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100100, 'local', 'tm_course');
     }
 
+    // 2026100151 was main 5.25.0 TCMS teachingLanguage (no DB savepoint). Sites already on that
+    // release skip straight to the next block below.
+
+    // 2026100152 — batch_account_created branded HTML email (no DB).
+    if ($oldversion < 2026100152) {
+        upgrade_plugin_savepoint(true, 2026100152, 'local', 'tm_course');
+    }
+
+    // 2026100200 — Course survey tables (SPEC §59). No seeded questions.
+    if ($oldversion < 2026100200) {
+        local_tm_course_upgrade_create_survey_tables($dbman);
+        upgrade_plugin_savepoint(true, 2026100200, 'local', 'tm_course');
+    }
+
+    // 2026100600 — Survey stage 2 learner fill-in (code only; tables already exist).
+    if ($oldversion < 2026100600) {
+        upgrade_plugin_savepoint(true, 2026100600, 'local', 'tm_course');
+    }
+
+    // 2026100601 — Integrate survey + batch account HTML email (no DB).
+    if ($oldversion < 2026100601) {
+        upgrade_plugin_savepoint(true, 2026100601, 'local', 'tm_course');
+    }
+
+    // 2026100602 — Public email_logo.php + auth_forcepasswordchange preference (no DB).
+    if ($oldversion < 2026100602) {
+        upgrade_plugin_savepoint(true, 2026100602, 'local', 'tm_course');
+    }
+
+    // 2026100603 — pluginfile emaillogo (public) + embedded logo asset fallback (no DB).
+    if ($oldversion < 2026100603) {
+        upgrade_plugin_savepoint(true, 2026100603, 'local', 'tm_course');
+    }
+
+    // 2026100604 — CID-embedded logos in batch account email + hardened pluginfile (no DB).
+    if ($oldversion < 2026100604) {
+        upgrade_plugin_savepoint(true, 2026100604, 'local', 'tm_course');
+    }
+
+    // 2026100605 — Restore email_to_user delivery + data-URI logos (no DB).
+    if ($oldversion < 2026100605) {
+        upgrade_plugin_savepoint(true, 2026100605, 'local', 'tm_course');
+    }
+
+    // 2026100606 — Email logos via Moodle $OUTPUT->image_url / theme/image.php (no DB).
+    if ($oldversion < 2026100606) {
+        upgrade_plugin_savepoint(true, 2026100606, 'local', 'tm_course');
+    }
+
+    // 2026100700 — Survey Phase 3+4: email/mapped on svresp, svtok, drop enrol unique.
+    if ($oldversion < 2026100700) {
+        local_tm_course_upgrade_create_survey_tables($dbman);
+
+        $table = new xmldb_table('local_tm_course_svresp');
+
+        // Drop unique enrolid so multiple unmatched rows may share enrolid=0.
+        $ukey = new xmldb_key('uq_svresp_enrol', XMLDB_KEY_UNIQUE, ['enrolid']);
+        try {
+            $keyname = $dbman->find_key_name($table, $ukey);
+            if ($keyname) {
+                $dbman->drop_key($table, $ukey);
+            }
+        } catch (\Throwable $e) {
+            // Already dropped or named differently on this site.
+        }
+        // Some installs store the unique constraint as an index.
+        $uindexlegacy = new xmldb_index('uq_svresp_enrol', XMLDB_INDEX_UNIQUE, ['enrolid']);
+        try {
+            if ($dbman->index_exists($table, $uindexlegacy)) {
+                $dbman->drop_index($table, $uindexlegacy);
+            }
+        } catch (\Throwable $e) {
+            // Ignore.
+        }
+
+        $field = new xmldb_field('email', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, '');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        $field = new xmldb_field('mapped', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $index = new xmldb_index('idx_svresp_enrol', XMLDB_INDEX_NOTUNIQUE, ['enrolid']);
+        if (!$dbman->index_exists($table, $index)) {
+            $dbman->add_index($table, $index);
+        }
+
+        // Backfill email / mapped before unique (sessionid, versionid, email).
+        $resps = $DB->get_records_select('local_tm_course_svresp', "email = '' OR email IS NULL", null, 'id ASC');
+        foreach ($resps as $resp) {
+            $email = '';
+            $userid = (int) $resp->userid;
+            if ($userid > 0) {
+                $uemail = $DB->get_field('user', 'email', ['id' => $userid]);
+                if (is_string($uemail)) {
+                    $candidate = strtolower(trim($uemail));
+                    if ($candidate !== '' && filter_var($candidate, FILTER_VALIDATE_EMAIL)) {
+                        $email = $candidate;
+                    }
+                }
+            }
+            if ($email === '') {
+                $email = 'legacy-resp-' . ((int) $resp->id) . '@tm-course.invalid';
+            }
+            $mapped = ((int) $resp->enrolid > 0) ? 1 : 0;
+            $DB->update_record('local_tm_course_svresp', (object) [
+                'id' => (int) $resp->id,
+                'email' => $email,
+                'mapped' => $mapped,
+            ]);
+        }
+
+        $uindex = new xmldb_index('uq_svresp_sess_ver_email', XMLDB_INDEX_UNIQUE, ['sessionid', 'versionid', 'email']);
+        if (!$dbman->index_exists($table, $uindex)) {
+            $dbman->add_index($table, $uindex);
+        }
+
+        // Ensure svtok exists (also created in helper for fresh paths).
+        if (!$dbman->table_exists('local_tm_course_svtok')) {
+            $tok = new xmldb_table('local_tm_course_svtok');
+            $tok->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+            $tok->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $tok->add_field('token', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, '');
+            $tok->add_field('enabled', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+            $tok->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $tok->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+            $tok->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $tok->add_key('uq_svtok_session', XMLDB_KEY_UNIQUE, ['sessionid']);
+            $tok->add_key('uq_svtok_token', XMLDB_KEY_UNIQUE, ['token']);
+            $dbman->create_table($tok);
+        }
+
+        upgrade_plugin_savepoint(true, 2026100700, 'local', 'tm_course');
+    }
+
+    // 2026100701 — Survey Excel export via Moodle excellib (no DB).
+    if ($oldversion < 2026100701) {
+        upgrade_plugin_savepoint(true, 2026100701, 'local', 'tm_course');
+    }
+
+    // 2026100702 — Survey UX hierarchy / copy / no silent reassignment (no DB).
+    if ($oldversion < 2026100702) {
+        upgrade_plugin_savepoint(true, 2026100702, 'local', 'tm_course');
+    }
+
+    // 2026100703 — Bento send history log + survey delete (safe hard-delete).
+    if ($oldversion < 2026100703) {
+        local_tm_course_upgrade_create_bento_log_table($dbman);
+        upgrade_plugin_savepoint(true, 2026100703, 'local', 'tm_course');
+    }
+
+    // 2026100704 — Bento history fullname() name fields (no DB).
+    if ($oldversion < 2026100704) {
+        upgrade_plugin_savepoint(true, 2026100704, 'local', 'tm_course');
+    }
+
+    // 2026100800 — Session live survey results (no DB).
+    if ($oldversion < 2026100800) {
+        upgrade_plugin_savepoint(true, 2026100800, 'local', 'tm_course');
+    }
+
+    // 2026100801 — Shared survey result charts (no DB).
+    if ($oldversion < 2026100801) {
+        upgrade_plugin_savepoint(true, 2026100801, 'local', 'tm_course');
+    }
+
+    // 2026100802 — survey_viz uses global \html_writer (no DB).
+    if ($oldversion < 2026100802) {
+        upgrade_plugin_savepoint(true, 2026100802, 'local', 'tm_course');
+    }
+
+    // 2026100803 — Word cloud keeps each free-text answer whole (no DB).
+    if ($oldversion < 2026100803) {
+        upgrade_plugin_savepoint(true, 2026100803, 'local', 'tm_course');
+    }
+
+    // 2026100804 — Admin results require a selected survey (no DB).
+    if ($oldversion < 2026100804) {
+        upgrade_plugin_savepoint(true, 2026100804, 'local', 'tm_course');
+    }
+
+    // 2026100805 — Admin question stats share the results filter dataset (no DB).
+    if ($oldversion < 2026100805) {
+        upgrade_plugin_savepoint(true, 2026100805, 'local', 'tm_course');
+    }
+
+    // 2026100806 — Survey respondent lists and quiz finished-attempt grade (no DB).
+    if ($oldversion < 2026100806) {
+        upgrade_plugin_savepoint(true, 2026100806, 'local', 'tm_course');
+    }
+
     return true;
+}
+
+/**
+ * Create bento send-history table when missing.
+ *
+ * @param \database_manager $dbman
+ */
+function local_tm_course_upgrade_create_bento_log_table(\database_manager $dbman): void {
+    if ($dbman->table_exists('local_tm_course_bento_log')) {
+        return;
+    }
+    $table = new xmldb_table('local_tm_course_bento_log');
+    $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+    $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+    $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+    $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+    $table->add_field('recipientcount', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+    $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+    $table->add_index('idx_bento_log_sess', XMLDB_INDEX_NOTUNIQUE, ['sessionid']);
+    $dbman->create_table($table);
+}
+
+/**
+ * Create course-survey tables when missing. Fresh installs use install.xml.
+ *
+ * @param \database_manager $dbman
+ */
+function local_tm_course_upgrade_create_survey_tables(\database_manager $dbman): void {
+    if (!$dbman->table_exists('local_tm_course_svdef')) {
+        $table = new xmldb_table('local_tm_course_svdef');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('name', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+        $table->add_field('enabled', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('createdby', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svver')) {
+        $table = new xmldb_table('local_tm_course_svver');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('surveyid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('versionno', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '1');
+        $table->add_field('frozen', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('createdby', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('uq_svver', XMLDB_KEY_UNIQUE, ['surveyid', 'versionno']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svsec')) {
+        $table = new xmldb_table('local_tm_course_svsec');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('versionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('name', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+        $table->add_field('sortorder', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('idx_svsec_ver', XMLDB_INDEX_NOTUNIQUE, ['versionid']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svitem')) {
+        $table = new xmldb_table('local_tm_course_svitem');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('versionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('sectionid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('stablekey', XMLDB_TYPE_CHAR, '40', null, null, null, null);
+        $table->add_field('qtype', XMLDB_TYPE_CHAR, '10', null, XMLDB_NOTNULL, null, 'text');
+        $table->add_field('title', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+        $table->add_field('helptext', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('required', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('sortorder', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('scalemin', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+        $table->add_field('scalemax', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+        $table->add_field('allowother', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('idx_svitem_ver', XMLDB_INDEX_NOTUNIQUE, ['versionid']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svopt')) {
+        $table = new xmldb_table('local_tm_course_svopt');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('itemid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('stablekey', XMLDB_TYPE_CHAR, '40', null, null, null, null);
+        $table->add_field('label', XMLDB_TYPE_CHAR, '255', null, null, null, null);
+        $table->add_field('sortorder', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('isother', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('idx_svopt_item', XMLDB_INDEX_NOTUNIQUE, ['itemid']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svcrs')) {
+        $table = new xmldb_table('local_tm_course_svcrs');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('courseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('surveyid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('uq_svcrs_course', XMLDB_KEY_UNIQUE, ['courseid']);
+        $table->add_index('idx_svcrs_survey', XMLDB_INDEX_NOTUNIQUE, ['surveyid']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svpin')) {
+        $table = new xmldb_table('local_tm_course_svpin');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('versionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('opens_at', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('uq_svpin_session', XMLDB_KEY_UNIQUE, ['sessionid']);
+        $table->add_index('idx_svpin_ver', XMLDB_INDEX_NOTUNIQUE, ['versionid']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svresp')) {
+        $table = new xmldb_table('local_tm_course_svresp');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('enrolid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('versionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('userid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('email', XMLDB_TYPE_CHAR, '255', null, XMLDB_NOTNULL, null, '');
+        $table->add_field('mapped', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('idx_svresp_enrol', XMLDB_INDEX_NOTUNIQUE, ['enrolid']);
+        $table->add_index('idx_svresp_ver', XMLDB_INDEX_NOTUNIQUE, ['versionid']);
+        $table->add_index('idx_svresp_sess', XMLDB_INDEX_NOTUNIQUE, ['sessionid']);
+        $table->add_index('uq_svresp_sess_ver_email', XMLDB_INDEX_UNIQUE, ['sessionid', 'versionid', 'email']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svtok')) {
+        $table = new xmldb_table('local_tm_course_svtok');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('token', XMLDB_TYPE_CHAR, '64', null, XMLDB_NOTNULL, null, '');
+        $table->add_field('enabled', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '1');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timemodified', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('uq_svtok_session', XMLDB_KEY_UNIQUE, ['sessionid']);
+        $table->add_key('uq_svtok_token', XMLDB_KEY_UNIQUE, ['token']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svans')) {
+        $table = new xmldb_table('local_tm_course_svans');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('responseid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('itemid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('valueint', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+        $table->add_field('valuetext', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_field('othertext', XMLDB_TYPE_TEXT, null, null, null, null, null);
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('uq_svans_pair', XMLDB_KEY_UNIQUE, ['responseid', 'itemid']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svpick')) {
+        $table = new xmldb_table('local_tm_course_svpick');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('answerid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('optionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_key('uq_svpick_pair', XMLDB_KEY_UNIQUE, ['answerid', 'optionid']);
+        $dbman->create_table($table);
+    }
+
+    if (!$dbman->table_exists('local_tm_course_svaud')) {
+        $table = new xmldb_table('local_tm_course_svaud');
+        $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE);
+        $table->add_field('sessionid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('oldstart', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('newstart', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('actorid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0');
+        $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+        $table->add_index('idx_svaud_sess', XMLDB_INDEX_NOTUNIQUE, ['sessionid']);
+        $dbman->create_table($table);
+    }
 }
 
 

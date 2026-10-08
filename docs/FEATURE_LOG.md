@@ -22,6 +22,174 @@
 
 ---
 
+## 2026-10-08 — 課後問卷回覆者名單與 quiz 待評分
+
+- **問卷：** 上課準備事項與本場次即時結果，對有點名權限者顯示該場次已登入學員姓名與訪客 Email。名詞由「已對應學員回覆／其他回覆」改為「已登入學員／訪客」。總回覆數、已登入學員、訪客、已核准學員分開，不再寫成 `2 / 1`。
+- **Quiz：** 只考慮 `state = finished`。最大 attempt 的 `sumgrades` 為空就是待評分，不採用較早分數或 gradebook，也不再用 `requires_manual_grading()`。開始批改開啟同一筆。assign 不變。
+- **版本／狀態：** **5.28.11／2026100806**。無 DB。PHPUnit 本機未跑。不 merge `main`。
+
+## 2026-10-08 — 結果頁各區塊共用同一份 filter dataset
+
+- **現象：** 已選問卷與課程時摘要有 2 筆，題目統計卻是 0；再選場次才出現。
+- **根因：** `question_stats()` 在沒有 session／version 時改綁問卷的目前版本，並把該 version id 加進 SQL。回覆若在較舊的釘選版本，摘要仍算得到、題目統計被濾成 0。
+- **決策：** 題目統計不再另加版本條件。與摘要、列表、Excel 共用 `build_sql_where`。資料集內多版本依 `stablekey` 合併；題型或選項無法對上的題單獨提示。
+- **版本／狀態：** **5.28.10／2026100805**。無 DB。PHPUnit 本機未跑。不 merge `main`。
+
+## 2026-10-08 — Admin 結果頁必須先選問卷
+
+- **需求：** 未選問卷不得顯示全系統回覆或自動猜版本。Excel 未選問卷不得下載。拿掉 Version ID、raw Session ID、Email 篩選。場次改為日期時間與課程名稱，範圍限該問卷。
+- **決策：** 只改 `survey_results.php` 與 `survey_export.php`。統計演算法、圖表、即時場次頁、Excel 欄位結構不變。Email 仍存在回覆與 Responses sheet。
+- **版本／狀態：** **5.28.9／2026100804**。無 DB。PHPUnit 本機未跑。不 merge `main`。
+
+## 2026-10-08 — 文字雲改為整筆回答
+
+- **現象：** 5.28.6 把中文切成二字，英文拆成單字。
+- **決策：** `survey_viz::word_tokens()` 每筆去空白後的全文算一次；空白略過。Admin 與即時頁共用。不拆詞。
+- **版本／狀態：** **5.28.8／2026100803**。PHPUnit 本機未跑。不 merge `main`。
+
+## 2026-10-08 — survey_viz html_writer namespace
+
+- **現象：** 5.28.6 即時結果頁 `Class 'local_tm_course\html_writer' not found`。
+- **根因：** `survey_viz.php` 在 `namespace local_tm_course` 內未加 `\`，PHP 把全域 `html_writer` 解析成外掛類別。
+- **修正：** 全部改 `\html_writer::`。無 DB。
+- **版本／狀態：** **5.28.7／2026100802**。不 merge `main`。
+
+## 2026-10-08 — 問卷結果圖表共用模組
+
+- **需求：** Admin 結果頁與本場次即時結果共用圖表：單選／複選可切圓餅與長條；量表直條＋平均；自由文字雲與完整清單。不靠 CDN。
+- **決策：** `survey_viz` 出卡片 HTML；`survey_viz.js` 畫本機 SVG／CSS。詞頻：英文單字＋中文詞組／二字。即時頁仍只吃 session snapshot。Excel／filter 流程不改。
+- **版本／狀態：** **5.28.6／2026100801**。PHPUnit 本機未跑。不 merge `main`。
+
+## 2026-10-08 — 本場次即時問卷結果
+
+- **需求：** class_prep 課後問卷可看「目前 session」即時統計（四題型）；約 9 秒輪詢；回覆數不再用總回覆／應填當完成率。
+- **決策：** 權限沿用 `user_can_attendance()`；`survey_live.php` 只接受 sessionid，聚合走 `survey_stats::session_live_snapshot()`（不含 email／userid／個別 response）。Admin `survey_results` 不改。無 DB。
+- **版本／狀態：** **5.28.5／2026100800**。PHPUnit 本機未跑。不 merge `main`。
+
+## 2026-10-07 — Bento history fullname() debug warning
+
+- **現象：** 5.28.3 驗收時歷史顯示正常，但 `fullname()` 因 user 缺姓名欄位噴 debug warning。
+- **修正：** `get_send_history()` 改用 `get_all_user_name_fields(true)` 選取欄位。無 DB schema 變更。
+- **版本／狀態：** **5.28.4／2026100704**。不 merge `main`。
+
+## 2026-10-07 — 便當發送歷史＋問卷安全刪除
+
+- **需求：** (1) 便當需求成功發送後在 `class_prep` 顯示多筆歷史（時間／發送者）；(2) Survey List 可刪未使用問卷，有 pin／response 則阻擋並提示停用。
+- **決策：** 新增表 `local_tm_course_bento_log`（sessionid／userid／timecreated／recipientcount）；僅 `sent > 0` 寫入。刪除：`can_delete_survey`／`delete_survey` 級聯清 structure＋`svcrs`，有 `svpin`／`svresp` 拒絕。
+- **影響範圍：** `db/install.xml`／`upgrade.php`、`bento_notification_manager`、`survey_manager`、`class_prep`、`admin/surveys.php`、lang、tests、SPEC、version **5.28.3／2026100703**。
+- **版本／狀態：** **5.28.3** 功能 OK；fullname warning 見上則 5.28.4。不 merge `main`。
+
+## 2026-10-07 — Survey UX／管理流程（不 silent 搶課、複製、層級 UI）
+
+- **需求：** (1) 指定課程不得 silent 搶走其他問卷；(2) Admin 編輯器資訊層級（基本設定＋摺疊題卡）；(3) 清單複製問卷（僅結構、不複製課程／回覆／token）；(4) 學員填答 UI；(5) `class_prep` 課前作業／課後問卷分區。
+- **決策：** `assign_course`／`set_course_assignments` 衝突時丟 `survey_error_course_assigned`，儲存前先 `assert_courses_assignable`；`copy_survey`＋`unique_copy_name`（`(副本)`／`(副本 N)`）；不改 DB schema、不碰 Excel／excellib；`class_prep` 開／關呼叫既有 token API。
+- **影響範圍：** `survey_manager`、`admin/surveys.php`、`survey.php`、`admin/class_prep.php`、`styles.css`、lang en/zh_tw、tests、SPEC §59、version **5.28.2／2026100702**。
+- **版本／狀態：** **5.28.2** Owner UX 驗收 OK；後續見上則 5.28.3。不 merge `main`。
+
+## 2026-10-07 — Phase 4 Excel Export FAIL → Moodle excellib
+
+- **Owner 驗收（5.28.0）：** Phase 3 **PASS**；Phase 4 篩選／題型統計 **PASS**；Phase 4 Excel **FAIL**（`Call to undefined function send_file()` at `survey_export.php`）。
+- **根因：** 匯出腳本呼叫 `send_file()` 但未載入 Moodle `filelib.php`；且未使用規格要求的 `lib/excellib.class.php`。
+- **修正：** `survey_export.php` 改 `MoodleExcelWorkbook` + `survey_stats::fill_moodle_excel_workbook()`；兩 sheet、同 filter；無頁面輸出以免損壞 xlsx。
+- **版本／狀態：** **5.28.1／2026100701**；Excel 待 Owner 重新下載實測（不標 Owner PASS）。不 merge `main`。
+
+## 2026-10-07 — 課程問卷 Phase 3+4（Email Quick Access／投影／統計）
+
+- **需求：** QR 免登入以 email 填答；投影板與即時人數；管理端篩選／題目統計／Excel；補釘排程。
+- **決策：** `svresp` 改 `(sessionid,versionid,email)` 唯一，`enrolid` 可 0＋`mapped`；新表 `svtok`（一場次一 token，regenerate 換字串）；`survey.php?t=` 免登入；FILL 需 token 啟用；QR 用 qrserver 圖（無 Composer）；xlsx 自寫 ZipArchive。不改 batch-account email／force-password。
+- **影響範圍：** `survey_manager`、`survey.php`、`survey_stats`／`survey_xlsx_writer`／`qrcode_svg`、admin board／progress／results／export、`class_prep`、`lib` nav、`db/*`、`version` **5.28.0／2026100700**、tests、SPEC §59。
+- **版本／狀態：** **5.28.0** — Owner：Phase 3 PASS；Phase 4 filter/stats PASS；Excel FAIL（見上則 5.28.1）。不 merge `main`。
+
+## 2026-10-06 — Email Logo 改 Moodle 原生 theme/image.php
+
+- **需求：** 多輪 Logo 破圖；停止 pix 直連／email_logo.php／pluginfile emaillogo／CID／data-URI；改用 Moodle `$OUTPUT->image_url`。
+- **根因：** 先前 `<img src>` 指向非 Moodle 原生公開圖路徑，或站上 `pix/email` 未實際落地；data-URI 則被 Gmail 等客戶端擋掉／破圖。
+- **決策：** Logo 走 `$OUTPUT->image_url('email/…', 'local_tm_course')` → `/theme/image.php/...`；TC 檔名改 `.jpg`（內容未重壓）；清掉上述 workaround；寄信維持 `email_to_user`。
+- **版本／狀態：** **5.27.6（`2026100606`）；theme image URL 需站上檔案落地後 HTTP 實測 PASS，再請實寄。**
+
+## 2026-10-06 — 5.27.4 信發不出去 → 恢復 email_to_user + data-URI Logo
+
+- **需求：** 5.27.4 實寄後信件未送達。
+- **根因：** 自訂 `get_mailer()` CID 路徑中 `$mail->send()` 失敗時多為回傳 false、不丟例外，未觸發 fallback。
+- **決策：** 寄信改回 `email_to_user()`；Logo 用 HTML data-URI（內嵌原始圖 bytes），不依賴公開 URL／CID mailer。
+- **版本／狀態：** **5.27.5（`2026100605`）；待實寄複測。**
+
+## 2026-10-06 — Email Logo pluginfile filenotfound → CID 內嵌
+
+- **需求：** 點開 pluginfile Logo URL 仍 `filenotfound`（stack：`lib.php` → `send_file_not_found`）。
+- **決策：** 實寄改 **CID embed**（`get_mailer` + `AddStringEmbeddedImage`），信件不依賴公開 HTTP；並加固 `emaillogo` pluginfile（先於 login／context 檢查）。
+- **版本／狀態：** **5.27.4（`2026100604`）；待實寄複測。**
+
+## 2026-10-06 — Email Logo 第二輪 FAIL（endpoint 404）
+
+- **需求：** 實寄仍破圖；強制改密碼已 PASS、勿動。
+- **實測：**  
+  `…/email_logo.php?name=tm_robot_logo` → **HTTP 404**、`Content-Type: text/html`、body 同不存在的 PHP（無 MoodleSession）→ **檔案未部署到站台磁碟**。  
+  `styles.css`／`batch_enrol.php` 為 200。
+- **決策：** Logo 改走核心 `pluginfile.php` + `lib.php` `emaillogo`（免登入）；`email_logo_assets` 內嵌原始圖 bytes 作後備；依 magic 回傳 `image/png` 或 `image/jpeg`（Training Center 檔名 png、內容 JPEG）。
+- **版本／狀態：** **5.27.3（`2026100603`）；待實寄複測。**
+
+## 2026-10-06 — Email 驗收 FAIL 修正（Logo 404 + 強制改密碼）
+
+- **需求：** 整合 ZIP 人工驗收：兩 Logo 破圖；初始密碼可登入但未強制改密碼。
+- **決策／根因：**
+  1. 實測 `https://…/mymoodle/local/tm_course/pix/email/*.png` → **HTTP 404**（非 redirect login）；`styles.css`／`batch_enrol.js` 可 200。改以無登入的 `email_logo.php?name=…` 白名單讀取原始 `pix/email` PNG。
+  2. Moodle 3.10 強制改密碼用 preference `auth_forcepasswordchange`，非 `mdl_user.forcepasswordchange`。新建帳呼叫 `set_user_preference(..., 1)`；link 既有帳不設。
+- **影響範圍：** `email_logo.php`、`batch_account_created_email.php`、`enrolment_manager.php`、tests、verify script；version **5.27.2**。不改 Survey。
+- **版本／狀態：** **5.27.2（`2026100602`）；待 Email 複測。**
+
+## 2026-10-06 — 整合問卷 + 批次建帳 HTML Email
+
+- **需求：** `feature/course-survey-admin`（5.27.0）與 `feature/batch-account-html-email`（5.25.1）平行 diverged；需單一 ZIP 同時含問卷 Phase 1/2 與品牌 HTML 建帳信。
+- **決策：** 以 survey tip 建 `feature/course-survey-admin-integrated`，merge email 分支；`version` 升至 **5.27.1 / 2026100601**；`upgrade.php` 依序保留 `2026100152`（email）→ survey `2026100200`／`2026100600` → 整合 savepoint。
+- **影響範圍：** merge 衝突解於 `version.php`、`upgrade.php`、`FEATURE_LOG.md`；lang／功能檔並存。
+- **版本／狀態：** **5.27.1 整合完成，待 Owner 用 ZIP 人工驗收。** 不 merge `main`。
+
+## 2026-10-06 — 課程問卷 V1 階段 2（學員填答）
+
+- **需求：** Phase 1 Owner 驗收 PASS 後，依 SPEC §59 實作學員填答：`my_records` 入口（含 `linked_userid`）、`survey.php`、開放／釘選、`enrolid` 唯一提交、送出後唯讀。
+- **決策：** 不以出席為條件；開放看 `svpin.opens_at`／`starttime`；`ensure_session_survey_pin` 掛在問卷頁與 `my_records`；`lock_pin_before_starttime_edit` 接到 `edit_session` 存檔前。不做 QR／投影／統計／Excel。
+- **影響範圍：** `survey_manager`、`survey.php`、`my_records.php`、`enrolment_manager::get_user_records`、`edit_session.php`、tests、語系、`version.php`。無新資料表。
+- **版本／狀態：** **5.27.0（`2026100600`）交付待 Owner Phase 2 人工驗收。** PHPUnit 本機無 Moodle 環境則不得記 PASS。不合併 `main`。
+
+## 2026-10-06 — 批次建帳通知 HTML Email
+
+- **需求：** `batch_account_created` 純文字信要求「先登入再改密碼」卻未顯示初始密碼；改為品牌化 HTML（雙 Logo、帳號／密碼醒目、按鈕），並保留 plain-text。
+- **決策：**
+  1. 固定系統 HTML layout + plain fallback；主旨／收件仍可由 Admin 設定；既有 body config 不刪、寄信不再用。
+  2. Logo 放 `pix/email/`，以 `/local/tm_course/pix/email/...` 公開 URL 載入（不需登入）。
+  3. 不改建帳、隨機密碼、`forcepasswordchange`、learner＋submitter 同信含密碼。
+- **影響範圍：** `batch_account_created_email.php`、`notification_helper.php`、`settings/notifications.php`、語系、`pix/email/*`、測試、version **5.25.1**。
+- **版本／狀態：** **5.25.1（`2026100152`）；進行中（待 Email 實寄驗收）**
+
+## 2026-10-06 — 問卷階段 1 Owner 驗收 PASS
+
+- **需求：** Phase 1 管理端人工驗收（含選項多行、題型動態欄位、「其他」不重複）。
+- **決策：** 記錄為 **PASS**。已知：本機未跑 PHPUnit；版本凍結／場次釘選完整整合驗收留待 Phase 2 有真實開放與提交流程後一併做。
+- **影響範圍：** 僅文件（FEATURE_LOG／SPEC 狀態）。
+- **版本／狀態：** **Phase 1 已驗收（5.26.0）。** 進入 Phase 2。
+
+## 2026-10-05 — 問卷階段 1 驗收 UI 修正（選項多行／依題型顯示）
+
+- **需求：** Phase 1 人工驗收：選項「一行一個」實為單行 input；所有題型同時顯示量表／其他／選項欄位。
+- **決策：** 選項改 textarea（後端按行解析；「其他」仍只靠 allowother，不寫進選項列）。管理 UI 依題型即時顯示／隱藏欄位（隱藏不 disabled，避免誤清值）。單選與複選皆可允許「其他」（同步更新 SPEC §59）。
+- **影響範圍：** `admin/surveys.php`、`survey_manager`、tests、SPEC／FEATURE_LOG。無 DB／version 變更。
+- **版本／狀態：** **5.26.0；Owner 複測後於 2026-10-06 記 PASS。**
+
+## 2026-10-05 — 問卷分支整合 main 5.25.0
+
+- **需求：** `feature/course-survey-admin` 落後 `main` 21 commits；測試部署前必須帶入設備檢查／午休／TCMS 授課語言等既有功能，並保留問卷階段 1。
+- **決策：** merge `origin/main`；`version` 改 **5.26.0 / 2026100200**（高於 main 的 `2026100151`）。升級順序保留 main 的 2026091700–2026100100，再跑問卷建表 2026100200。`install.xml` 同時保留 equipment resolution 欄位與 11 張 survey 表。
+- **影響範圍：** `version.php`、`db/upgrade.php`、`db/install.xml`、FEATURE_LOG／SPEC；問卷與 main 功能碼並存。
+- **版本／狀態：** **整合完成，待測試站人工驗收。** 未合併 `main`、未開階段 2。
+
+## 2026-10-02 — 課程問卷 V1 階段 1（管理端與版本）
+
+- **需求：** 可設定的課程問卷。規格見 [`SPEC.md` §59](SPEC.md)。本階段只做 Admin 管理、題型、課程指定、啟用停用、版本與資料表。
+- **決策：** 題目不寫死；不以已出席作為填寫條件（填答在階段 2）；送出後不可修改（階段 2）。一門課一筆指定。版本被釘選或已有提交後凍結，再儲存開新版本。釘選函式與開始時間稽核已實作並測試，尚未接到場次編輯頁。
+- **影響範圍：** `survey_manager`、`admin/surveys.php`、`db/install.xml`、`db/upgrade.php`、`version.php`。不含學員頁、QR、統計、Excel。
+- **版本／狀態：** **階段 1 實作完成；分支已 rebase／merge 於 main 5.25.0 之上，整數版號為 5.26.0（`2026100200`）。** 待 Owner 決定是否進入階段 2。不合併 `main`。
+
 ## 2026-10-02 — TCMS 同步新增授課語言
 
 - **需求：** Moodle 場次已有 `teaching_language`（`zh_tw` / `en`），同步到 TCMS 的 payload 沒有帶。要在既有 `POST /api/integrations/moodle/sessions` 加上 `teachingLanguage`，原值傳送，不另做語言欄位、資料表或設定畫面。
@@ -135,7 +303,7 @@
 ## 2026-09-23 — 批改申請：測驗「已評分」改看最新 attempt
 
 - **問題：** 學員有較新、尚未人工評分的 quiz attempt 時，外掛仍讀成績簿舊分／繳交時間，誤顯示已評分（例如 90/90 + 繳交時間）。
-- **決策：** quiz 以最新 finished attempt 的 `sumgrades` 為準（空＝待評；有值＝已評）；不沿用 gradebook 舊分。`requires_manual_grading()` 僅作輔助（明確 true 才壓成待評）；載入 attempt 失敗時不可整排待評。assign 仍用 gradebook。排程同步含已完成單據。
+- **決策（已由 2026-10-08 最終規則取代）：** quiz 只看 finished attempt。attempt 數字最大且 `sumgrades` 為空 → 待評分，不回看較早分數、不用 gradebook、不用 `requires_manual_grading()`。最大 finished attempt 有 `sumgrades` 才顯示該筆換算分數與 `timefinish`，連結同一筆。assign 仍用 gradebook。
 - **影響：** `grading_request_manager`、`request.php` 顯示、搜尋預覽、取消檢查、完成通知；SPEC §58.5。
 - **版本：** 5.24.8。
 

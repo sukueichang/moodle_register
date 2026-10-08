@@ -243,6 +243,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                      get_string('session_created', 'local_tm_course') . " ($repeat_count sessions)",
                      null, \core\output\notification::NOTIFY_SUCCESS);
         } elseif ($id) {
+            $oldstart = (int) $session->starttime;
+            $newstart = (int) $data['starttime'];
+            if ($oldstart !== $newstart) {
+                require_once(__DIR__ . '/../classes/survey_manager.php');
+                \local_tm_course\survey_manager::lock_pin_before_starttime_edit(
+                    (int) $id,
+                    $oldstart,
+                    $newstart,
+                    (int) $USER->id
+                );
+            }
             session_manager::update_session($id, $data);
             redirect(new moodle_url('/local/tm_course/admin/sessions.php'),
                      get_string('session_updated', 'local_tm_course'),

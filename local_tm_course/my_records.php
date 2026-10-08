@@ -8,11 +8,13 @@ require_once(__DIR__ . '/../../config.php');
 require_once(__DIR__ . '/classes/enrolment_manager.php');
 require_once(__DIR__ . '/classes/certificate_helper.php');
 require_once(__DIR__ . '/classes/permissions_manager.php');
+require_once(__DIR__ . '/classes/survey_manager.php');
 
 use local_tm_course\enrolment_manager;
 use local_tm_course\certificate_helper;
 use local_tm_course\permissions_manager;
 use local_tm_course\session_manager;
+use local_tm_course\survey_manager;
 
 require_login();
 permissions_manager::require_view_access();
@@ -84,6 +86,21 @@ $enrolsourcelabel = static function(\stdClass $r) use ($str): string {
     return $str('enrol_source_self', 'Self-enrolment');
 };
 
+$surveycell = static function(\stdClass $r) use ($USER): string {
+    $state = survey_manager::my_records_survey_state($r, (int) $USER->id);
+    if ($state === survey_manager::STATE_NONE) {
+        return '—';
+    }
+    $url = new moodle_url('/local/tm_course/survey.php', ['sessionid' => (int) $r->sessionid]);
+    if ($state === survey_manager::STATE_NOT_OPEN) {
+        return html_writer::span(get_string('survey_not_open', 'local_tm_course'), 'text-muted');
+    }
+    if ($state === survey_manager::STATE_VIEW) {
+        return html_writer::link($url, get_string('survey_view_answers', 'local_tm_course'), ['class' => 'btn btn-secondary btn-sm']);
+    }
+    return html_writer::link($url, get_string('survey_fill', 'local_tm_course'), ['class' => 'btn btn-primary btn-sm']);
+};
+
 echo $OUTPUT->header();
 ?>
 <div class="tm-page-header">
@@ -103,6 +120,7 @@ echo $OUTPUT->header();
         <th><?php echo get_string('label_start', 'local_tm_course'); ?></th>
         <?php if ($showdeskcol): ?><th><?php echo get_string('label_desk', 'local_tm_course'); ?></th><?php endif; ?>
         <th><?php echo $str('label_learning_status', 'Class status'); ?></th>
+        <th><?php echo get_string('survey_column', 'local_tm_course'); ?></th>
     </tr></thead>
     <tbody>
     <?php foreach ($records as $r): [$badgecls, $badgelbl] = $learningstatusmeta($r); ?>
@@ -120,6 +138,7 @@ echo $OUTPUT->header();
         ?></td>
         <?php endif; ?>
         <td><span class="tm-badge tm-badge-<?php echo $badgecls; ?>"><?php echo $badgelbl; ?></span></td>
+        <td><?php echo $surveycell($r); ?></td>
     </tr>
     <?php endforeach; ?>
     </tbody>
@@ -140,6 +159,7 @@ echo $OUTPUT->header();
         <th><?php echo $str('label_enrol_source', 'Enrolment source'); ?></th>
         <th><?php echo get_string('label_applied_at', 'local_tm_course'); ?></th>
         <th><?php echo $str('label_learning_status', 'Class status'); ?></th>
+        <th><?php echo get_string('survey_column', 'local_tm_course'); ?></th>
     </tr></thead>
     <tbody>
     <?php foreach ($records as $r): [$badgecls, $badgelbl] = $learningstatusmeta($r); ?>
@@ -148,6 +168,7 @@ echo $OUTPUT->header();
         <td><?php echo s($enrolsourcelabel($r)); ?></td>
         <td><?php echo !empty($r->timecreated) ? userdate((int)$r->timecreated, get_string('strftimedatetimeshort')) : '—'; ?></td>
         <td><span class="tm-badge tm-badge-<?php echo $badgecls; ?>"><?php echo $badgelbl; ?></span></td>
+        <td><?php echo $surveycell($r); ?></td>
     </tr>
     <?php endforeach; ?>
     </tbody>

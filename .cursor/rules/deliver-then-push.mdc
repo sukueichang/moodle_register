@@ -1,25 +1,30 @@
 ---
-description: After feature delivery, prompt for test OK then commit+push; then ask whether to merge
+description: After feature delivery, commit+push, package ZIP, report path; then ask whether to merge
 alwaysApply: true
 ---
 
-# Feature delivery → test confirm → push → ask merge
+# Feature delivery → commit/push → ZIP → test confirm → ask merge
 
-When you **finish delivering a feature** (implementation done, ready for the user to verify):
+When you **finish delivering a Moodle plugin feature** (implementation done, ready for Owner human acceptance on a test site):
 
 1. Briefly say what shipped and how to verify.
-2. **Prompt the user** to test and reply if OK, e.g.:
-   - 「請測一下；沒問題回覆『可以 push』或『ok 推上去』，我就 commit 並 push。」
-3. Do **not** commit or push until they confirm testing is OK (or explicitly ask to push).
+2. Run available automated tests; confirm `version.php` / DB upgrade as needed.
+3. Commit and push the feature branch (follow the repo commit protocol).
+4. **Package the plugin ZIP** with the repo tool (see `docs/DEV_WORKFLOW.md` §4):
+   - `powershell -File tools/package_local_tm_course.ps1`
+   - Verify ZIP root `local_tm_course/`, `version.php` present, **backslash entry count = 0**
+   - Report delivery with **§4.1** fields, including the **full ZIP path**
+5. Do **not** skip packaging unless this turn is docs/spec-only, or the Owner explicitly said no ZIP.
+6. **Prompt the Owner** to install the ZIP on the test site and reply if OK, e.g.:
+   - 「請用這個 ZIP 測一下；沒問題回覆『ok』／『測試無誤』，我再問是否 merge。」
 
-When the user confirms (e.g. 「ok」「可以」「沒問題」「push」「推上去」) **after** that delivery prompt:
+When the user confirms (e.g. 「ok」「可以」「沒問題」「測試無誤」) **after** that delivery prompt:
 
-1. Create a commit if there are uncommitted changes (follow the repo commit protocol).
-2. Push to the tracked remote branch (`git push` / `-u` if needed).
-3. Tell them branch + remote result (and PR URL if you open/update one). Follow `notify-git-remote.mdc`.
-4. **Always ask** whether to merge the PR into `main` in the same turn, e.g.:
+1. Create a commit and push if there are still uncommitted / unpushed fixes (follow the repo commit protocol).
+2. Tell them branch + remote result (and PR URL if you open/update one). Follow `notify-git-remote.mdc`.
+3. **Always ask** whether to merge the PR into `main` in the same turn, e.g.:
    - 「要不要把這個 PR merge 進 `main`？回覆『merge』／『合進去』我就合併；不需要就說『先留著』。」
-5. Do **not** merge until they explicitly say to merge. 「ok／可以 push」 alone is **not** merge authorization.
+4. Do **not** merge until they explicitly say to merge. 「ok／測試無誤」 alone is **not** merge authorization.
 
 When the user later says merge / 合進去 / 合併 main (after that ask, or a clear merge request):
 

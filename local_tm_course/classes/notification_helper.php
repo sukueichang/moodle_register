@@ -418,10 +418,14 @@ class notification_helper {
     }
 
     /**
-     * Send batch-account-created mail using both EN and zh_TW templates (English first, then Chinese).
-     * Subject: English ｜ Traditional Chinese (fullwidth separator).
+     * Send batch-account-created mail: bilingual subject from admin templates;
+     * body uses fixed branded HTML (theme/image.php logos) + plain-text fallback.
+     *
+     * Uses Moodle email_to_user() (same path as other notifications).
      */
     private static function send_batch_account_created_bilingual_message(int $useridto, array $tokens): void {
+        require_once(__DIR__ . '/batch_account_created_email.php');
+
         $tplen = self::get_event_template('batch_account_created', 'en');
         $tplzh = self::get_event_template('batch_account_created', 'zh_tw');
 
@@ -433,15 +437,9 @@ class notification_helper {
             $subject = $suben !== '' ? $suben : $subzh;
         }
 
-        $bodyen = trim(self::render_template($tplen['body'], $tokens));
-        $bodyzh = trim(self::render_template($tplzh['body'], $tokens));
-        if ($bodyen !== '' && $bodyzh !== '') {
-            $body = $bodyen . "\n\n" . $bodyzh;
-        } else {
-            $body = $bodyen !== '' ? $bodyen : $bodyzh;
-        }
-
-        self::send_message($useridto, 'batch_account_created', $subject, $body);
+        $plain = batch_account_created_email::build_plain($tokens);
+        $html = batch_account_created_email::build_html($tokens);
+        self::send_message($useridto, 'batch_account_created', $subject, $plain, $html);
     }
 
     public static function notify_pending_overdue_to_admins_by_threshold(int $threshold): void {
@@ -541,7 +539,17 @@ class notification_helper {
         return get_string('reminder_minutes_option', 'local_tm_course', $m);
     }
 
-    private static function send_message(int $useridto, string $provider, string $subject, string $fullmessage): void {
+    /**
+     * @param string $fullmessage Plain-text body (always required; used as email fallback).
+     * @param string $fullmessagehtml Optional HTML body (batch_account_created only today).
+     */
+    private static function send_message(
+        int $useridto,
+        string $provider,
+        string $subject,
+        string $fullmessage,
+        string $fullmessagehtml = ''
+    ): void {
         global $DB;
         $userto = $DB->get_record('user', ['id' => $useridto, 'deleted' => 0], '*', IGNORE_MISSING);
         if (!$userto) {
@@ -552,6 +560,8 @@ class notification_helper {
         // email message processor from interrupting current admin actions.
         $usertoinapp->emailstop = 1;
 
+        $hashtml = trim($fullmessagehtml) !== '';
+
         try {
             $eventdata = new \core\message\message();
             $eventdata->component = 'local_tm_course';
@@ -560,8 +570,8 @@ class notification_helper {
             $eventdata->userto = $usertoinapp;
             $eventdata->subject = $subject;
             $eventdata->fullmessage = $fullmessage;
-            $eventdata->fullmessageformat = FORMAT_PLAIN;
-            $eventdata->fullmessagehtml = '';
+            $eventdata->fullmessageformat = $hashtml ? FORMAT_HTML : FORMAT_PLAIN;
+            $eventdata->fullmessagehtml = $hashtml ? $fullmessagehtml : '';
             $eventdata->smallmessage = $subject;
             $eventdata->notification = 1;
             message_send($eventdata);
@@ -570,7 +580,13 @@ class notification_helper {
         }
         // Email channel is sent explicitly and independently.
         try {
-            email_to_user($userto, \core_user::get_noreply_user(), $subject, $fullmessage);
+            email_to_user(
+                $userto,
+                \core_user::get_noreply_user(),
+                $subject,
+                $fullmessage,
+                $hashtml ? $fullmessagehtml : ''
+            );
         } catch (\Throwable $t) {
             debugging('TM Course email notification failed: ' . $t->getMessage(), DEBUG_DEVELOPER);
         }
@@ -848,10 +864,12 @@ class notification_helper {
                     '{{login_url}}',
                     '{{reset_url}}',
                 ],
-                'defaultsubject_zh_tw' => '【TM 課程】歡迎使用 Moodle 學習帳號',
-                'defaultbody_zh_tw' => "您好 {{learner}}：\n歡迎註冊 Moodle 學習帳號。\n登入信箱：{{learner_email}}\n登入帳號：{{username}}\n初始密碼：{{initial_password}}\n登入網址：{{login_url}}\n來源場次：{{session}}\n提交業務：{{submitter}}\n請首次登入後立即變更密碼（系統可能會要求變更）。\n若無法登入，可使用忘記密碼：{{reset_url}}",
-                'defaultsubject_en' => '[TM Course] Your Moodle learning account is ready',
-                'defaultbody_en' => "Hello {{learner}},\nYour Moodle learning account has been created.\nEmail on file: {{learner_email}}\nUsername: {{username}}\nInitial password: {{initial_password}}\nSign-in: {{login_url}}\nSession: {{session}}\nSubmitted by: {{submitter}}\nPlease change your password after first sign-in (you may be prompted to do so).\nIf you cannot sign in, use Forgot password: {{reset_url}}",
+                // Subject templates remain admin-editable. Body defaults are retained for
+                // backward-compatible config storage only — send path uses fixed HTML layout.
+                'defaultsubject_zh_tw' => '【TM 課程】學習帳號建立完成',
+                'defaultbody_zh_tw' => "您好 {{learner}}：\n系統已建立您的 TM Online Training 學習帳號。\n登入帳號：{{username}}\n初始密碼：{{initial_password}}\n來源場次：{{session}}\n提交業務：{{submitter}}\n登入：{{login_url}}\n忘記密碼：{{reset_url}}",
+                'defaultsubject_en' => '[TM Course] Account Created — TM Online Training',
+                'defaultbody_en' => "Hello {{learner}},\nYour TM Online Training account has been created.\nUsername: {{username}}\nInitial password: {{initial_password}}\nSession: {{session}}\nSubmitted by: {{submitter}}\nSign in: {{login_url}}\nForgot password: {{reset_url}}",
             ],
             'grading_submitted' => [
                 'label' => get_string('notify_event_grading_submitted', 'local_tm_course'),

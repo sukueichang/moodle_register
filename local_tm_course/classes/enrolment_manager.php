@@ -184,13 +184,10 @@ class enrolment_manager {
         if ($newuserid < 2) {
             throw new \moodle_exception('error_batch_user_invalid', 'local_tm_course');
         }
-        // Require learner to reset password on first login when schema supports it.
-        // Some older/custom Moodle schemas may not have this column.
-        $usertable = new \xmldb_table('user');
-        $forcepwfield = new \xmldb_field('forcepasswordchange');
-        if ($DB->get_manager()->field_exists($usertable, $forcepwfield)) {
-            $DB->set_field('user', 'forcepasswordchange', 1, ['id' => $newuserid]);
-        }
+        // Moodle core (manual auth) forces password change via user preference
+        // auth_forcepasswordchange — not a mdl_user.forcepasswordchange column.
+        // Cleared by core after the learner successfully changes password.
+        set_user_preference('auth_forcepasswordchange', 1, $newuserid);
 
         if ($submitterid > 0) {
             notification_helper::notify_batch_account_created($newuserid, $submitterid, $sessionid, $plainsecret);
@@ -1546,6 +1543,7 @@ class enrolment_manager {
     public static function get_user_records(int $userid): array {
         global $DB;
 
+        // Include seat-hold rows where this user is the linked learner (SPEC §59 / my_records).
         $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
@@ -1555,8 +1553,12 @@ class enrolment_manager {
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
                  WHERE e.userid = :userid
+                    OR e.linked_userid = :linkeduserid
               ORDER BY s.starttime DESC, e.timecreated DESC";
-        return $DB->get_records_sql($sql, ['userid' => $userid]);
+        return $DB->get_records_sql($sql, [
+            'userid' => $userid,
+            'linkeduserid' => $userid,
+        ]);
     }
 
     /**

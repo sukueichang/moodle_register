@@ -358,103 +358,99 @@ class grading_request_manager {
      * @return array{has:bool,str:string,time:int}
      */
     private static function quiz_latest_attempt_grade(int $cmid, int $userid): array {
-        global $CFG, $DB;
         $empty = ['has' => false, 'str' => '', 'time' => 0];
-        $sub = self::latest_submission($cmid, $userid);
-        if (!$sub || $sub['type'] !== 'quiz') {
+        $picked = self::quiz_selected_attempt($cmid, $userid);
+        if (!$picked) {
             return $empty;
         }
-        $attemptid = (int)$sub['id'];
-        $row = $DB->get_record('quiz_attempts', ['id' => $attemptid], 'id, quiz, sumgrades, timefinish, timemodified', IGNORE_MISSING);
-        if (!$row) {
-            return $empty;
-        }
+        return self::quiz_grade_from_attempt($picked);
+    }
 
-        // Primary signal: finished attempt with null sumgrades = awaiting mark (e.g. manual grading).
-        // Do NOT fall back to course gradebook (may still hold an older attempt's score).
-        $sumgrades = $row->sumgrades;
-        if ($sumgrades === null || $sumgrades === '') {
-            // Optional confirm via Moodle API when available; null sumgrades already means pending.
-            $needsmanual = self::quiz_attempt_needs_manual_grading($attemptid);
-            if ($needsmanual === false) {
-                // API says fully marked but DB sumgrades empty — try object marks.
-                $attemptobj = self::load_quiz_attempt($attemptid);
-                if ($attemptobj && method_exists($attemptobj, 'get_sum_marks')) {
-                    $sumgrades = $attemptobj->get_sum_marks();
-                }
+    /**
+     * The finished attempt that grade display and the grading link must share.
+     */
+    private static function quiz_selected_attempt(int $cmid, int $userid): ?\stdClass {
+        global $DB;
+        $activity = self::get_activity($cmid);
+        if (!$activity || !$activity['exists'] || $activity['modname'] !== 'quiz' || $userid <= 0) {
+            return null;
+        }
+        $rows = $DB->get_records_sql(
+            "SELECT qa.id, qa.quiz, qa.attempt, qa.state, qa.sumgrades, qa.timefinish
+               FROM {quiz_attempts} qa
+              WHERE qa.quiz = :qid
+                AND qa.userid = :uid",
+            ['qid' => $activity['instanceid'], 'uid' => $userid]
+        );
+        return self::select_finished_quiz_attempt(array_values($rows));
+    }
+
+    /**
+     * Highest finished attempt wins. Null sumgrades on that attempt stays pending.
+     * In progress, overdue, and abandoned attempts are ignored. No gradebook fill-in.
+     *
+     * @param \stdClass[] $rows quiz_attempts rows (any state)
+     * @return \stdClass|null
+     */
+    public static function select_finished_quiz_attempt(array $rows): ?\stdClass {
+        $finished = [];
+        foreach ($rows as $row) {
+            if (!is_object($row) || (string)($row->state ?? '') !== 'finished') {
+                continue;
+            }
+            $finished[] = $row;
+        }
+        usort($finished, static function($a, $b): int {
+            $byattempt = (int)$b->attempt <=> (int)$a->attempt;
+            if ($byattempt !== 0) {
+                return $byattempt;
+            }
+            return (int)$b->id <=> (int)$a->id;
+        });
+        if (!$finished) {
+            return null;
+        }
+        $top = $finished[0];
+        if (!self::quiz_sumgrades_present($top->sumgrades ?? null)) {
+            return $top;
+        }
+        foreach ($finished as $row) {
+            if (self::quiz_sumgrades_present($row->sumgrades ?? null)) {
+                return $row;
             }
         }
-        if ($sumgrades === null || $sumgrades === '') {
-            return $empty;
-        }
+        return $top;
+    }
 
-        // If API explicitly says still needs manual grading, trust that over a stale sumgrades.
-        $needsmanual = self::quiz_attempt_needs_manual_grading($attemptid);
-        if ($needsmanual === true) {
-            return $empty;
-        }
+    /**
+     * @param mixed $sumgrades
+     */
+    public static function quiz_sumgrades_present($sumgrades): bool {
+        return $sumgrades !== null && $sumgrades !== '';
+    }
 
+    /**
+     * @param \stdClass $row id, quiz, sumgrades, timefinish
+     * @return array{has:bool,str:string,time:int,attemptid:int}
+     */
+    private static function quiz_grade_from_attempt(\stdClass $row): array {
+        global $CFG, $DB;
+        $time = (int)($row->timefinish ?? 0);
+        $attemptid = (int)$row->id;
+        if (!self::quiz_sumgrades_present($row->sumgrades ?? null)) {
+            return ['has' => false, 'str' => '', 'time' => $time, 'attemptid' => $attemptid];
+        }
         $quiz = $DB->get_record('quiz', ['id' => (int)$row->quiz], '*', IGNORE_MISSING);
         if (!$quiz) {
-            return $empty;
+            return ['has' => false, 'str' => '', 'time' => $time, 'attemptid' => $attemptid];
         }
-
         require_once($CFG->dirroot . '/mod/quiz/locallib.php');
-        $grade = quiz_rescale_grade((float)$sumgrades, $quiz, false);
+        $grade = quiz_rescale_grade((float)$row->sumgrades, $quiz, false);
         if ($grade === null || $grade === '') {
-            return $empty;
+            return ['has' => false, 'str' => '', 'time' => $time, 'attemptid' => $attemptid];
         }
-        $gradeshown = quiz_format_grade($quiz, $grade);
-        $maxshown = quiz_format_grade($quiz, $quiz->grade);
-        $str = $gradeshown . ' / ' . $maxshown;
-
-        // Prefer attempt timemodified (updates when manual grading finishes) over timefinish (submit time).
-        $time = (int)$row->timemodified;
-        if ($time <= 0) {
-            $time = (int)$row->timefinish;
-        }
-
-        return ['has' => true, 'str' => $str, 'time' => $time];
-    }
-
-    /**
-     * @return bool|null true = awaiting manual, false = fully marked, null = could not determine
-     */
-    private static function quiz_attempt_needs_manual_grading(int $attemptid): ?bool {
-        $attemptobj = self::load_quiz_attempt($attemptid);
-        if (!$attemptobj) {
-            return null;
-        }
-        if (method_exists($attemptobj, 'requires_manual_grading')) {
-            return (bool)$attemptobj->requires_manual_grading();
-        }
-        return null;
-    }
-
-    /**
-     * @return \mod_quiz\quiz_attempt|\quiz_attempt|null
-     */
-    private static function load_quiz_attempt(int $attemptid) {
-        global $CFG;
-        if ($attemptid <= 0) {
-            return null;
-        }
-        try {
-            if (class_exists('\mod_quiz\quiz_attempt')) {
-                return \mod_quiz\quiz_attempt::create($attemptid);
-            }
-            require_once($CFG->dirroot . '/mod/quiz/locallib.php');
-            if (class_exists('\quiz_attempt')) {
-                return \quiz_attempt::create($attemptid);
-            }
-            require_once($CFG->dirroot . '/mod/quiz/attemptlib.php');
-            if (class_exists('\quiz_attempt')) {
-                return \quiz_attempt::create($attemptid);
-            }
-        } catch (\Throwable $e) {
-            debugging('TM grading load quiz attempt failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
-        }
-        return null;
+        $str = quiz_format_grade($quiz, $grade) . ' / ' . quiz_format_grade($quiz, $quiz->grade);
+        return ['has' => true, 'str' => $str, 'time' => $time, 'attemptid' => $attemptid];
     }
 
     /**
@@ -809,11 +805,11 @@ class grading_request_manager {
                 'userid' => (int)$item->userid,
             ]);
         }
-        $sub = self::latest_submission((int)$req->cmid, (int)$item->userid);
-        if (!$sub || $sub['type'] !== 'quiz') {
+        $picked = self::quiz_selected_attempt((int)$req->cmid, (int)$item->userid);
+        if (!$picked) {
             return null;
         }
-        return new \moodle_url('/mod/quiz/review.php', ['attempt' => $sub['id']]);
+        return new \moodle_url('/mod/quiz/review.php', ['attempt' => (int)$picked->id]);
     }
 
     /**
