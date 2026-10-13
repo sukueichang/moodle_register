@@ -92,7 +92,7 @@ if (empty($equip_items)):
                     $hassupport = ($checktype === equipment_check_manager::TYPE_STATUS && $externalsupport !== '');
                     $abnormalopen = ($checkstatus === equipment_check_manager::STATUS_ABNORMAL);
                     ?>
-                    <div class="tm-equip-item" data-checktype="<?php echo s($checktype); ?>">
+                    <div class="tm-equip-item" data-itemid="<?php echo $itemid; ?>" data-checktype="<?php echo s($checktype); ?>">
                         <div class="tm-equip-item-name">
                             <?php echo s($item['itemname']); ?>
                         </div>
@@ -173,10 +173,10 @@ if (empty($equip_items)):
                         <?php endif; ?>
                         <?php if (!empty($item['timemodified'])): ?>
                         <div class="text-muted small tm-equip-item-meta">
-                            <?php echo get_string('equipment_check_last_checked', 'local_tm_course', (object) [
-                                'name' => $item['checkedby_name'] !== '' ? $item['checkedby_name'] : '—',
-                                'time' => userdate((int) $item['timemodified'], get_string('strftimedatetimeshort')),
-                            ]); ?>
+                            <?php echo s(equipment_check_manager::format_last_modified_label(
+                                (string) ($item['checkedby_name'] ?? ''),
+                                (int) $item['timemodified']
+                            )); ?>
                         </div>
                         <?php endif; ?>
                     </div>

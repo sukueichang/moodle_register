@@ -902,7 +902,7 @@ $string['equipment_check_item_support_hint'] = 'Support contact or team (optiona
 $string['equipment_check_sync_button'] = 'Apply to all other desks';
 $string['equipment_check_sync_confirm'] = 'This will apply this desk\'s current results (status, notes, and completion) to every other desk, overwriting their existing results. Continue?';
 $string['equipment_check_sync_success'] = 'Applied desk {$a->source}\'s results to {$a->count} other desk(s).';
-$string['equipment_check_last_checked'] = 'Last checked: {$a->name}, {$a->time}';
+$string['equipment_check_last_checked'] = 'Last modified: {$a->name} · {$a->time}';
 $string['error_equipment_check_invalid_desk'] = 'Invalid desk number for this session.';
 
 $string['equipment_check_manage_title'] = 'Equipment check list maintenance';

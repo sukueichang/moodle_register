@@ -902,7 +902,7 @@ $string['equipment_check_item_support_hint'] = '可填支援單位／聯絡人�
 $string['equipment_check_sync_button'] = '套用到其他所有桌次';
 $string['equipment_check_sync_confirm'] = '將把這一桌目前的檢查結果（狀態、備註與完成度）套用到其他所有桌次，並覆蓋其他桌次現有的檢查結果，確定要繼續嗎？';
 $string['equipment_check_sync_success'] = '已將第 {$a->source} 桌的檢查結果套用到其他 {$a->count} 桌。';
-$string['equipment_check_last_checked'] = '最後檢查：{$a->name}，{$a->time}';
+$string['equipment_check_last_checked'] = '最後修改：{$a->name} · {$a->time}';
 $string['error_equipment_check_invalid_desk'] = '此場次的桌次編號無效。';
 
 $string['equipment_check_manage_title'] = '設備檢查清單維護';

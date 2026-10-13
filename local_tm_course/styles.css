@@ -1817,8 +1817,11 @@ a.tm-attendance-learner-profile-link:focus {
     flex: 1 1 10rem;
     min-width: 8rem;
 }
-.tm-equip-item-meta {
+.tm-equip-item .tm-equip-item-meta {
     margin-top: .2rem;
+    font-size: .75rem;
+    line-height: 1.3;
+    color: #6c757d;
 }
 .tm-equip-form-actions .btn {
     white-space: nowrap;

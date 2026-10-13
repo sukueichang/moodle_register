@@ -2105,6 +2105,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100806, 'local', 'tm_course');
     }
 
+    // 2026101300 — Equipment check last-modified updates only when content changes (no DB).
+    if ($oldversion < 2026101300) {
+        upgrade_plugin_savepoint(true, 2026101300, 'local', 'tm_course');
+    }
+
     return true;
 }
 

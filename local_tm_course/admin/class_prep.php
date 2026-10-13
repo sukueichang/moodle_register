@@ -306,7 +306,7 @@ if ($action && confirm_sesskey()) {
         $applicableitems = equipment_check_manager::get_applicable_items($session);
         $results = equipment_build_results($rawitems, $applicableitems);
 
-        equipment_check_manager::save_desk_checks($sessionid, $desknumber, $results, (int) $USER->id);
+        $savedrows = equipment_check_manager::save_desk_checks($sessionid, $desknumber, $results, (int) $USER->id);
 
         if ($action === 'equipment_sync') {
             $synced = equipment_check_manager::sync_desk_to_all($sessionid, $desknumber, (int) $USER->id);
@@ -323,6 +323,7 @@ if ($action && confirm_sesskey()) {
                 'action' => 'equipment_save',
                 'desknumber' => $desknumber,
                 'message' => get_string('equipment_check_saved_toast', 'local_tm_course'),
+                'items' => equipment_check_manager::present_saved_logs($savedrows),
             ]);
         }
 
@@ -336,6 +337,7 @@ if ($action && confirm_sesskey()) {
         $applicableitems = equipment_check_manager::get_applicable_items($session);
         $saveddesks = 0;
         $savedlist = [];
+        $savedrows = [];
 
         // Note: $_POST['equip_all'] is a 3-level nested array (equip_all[desknumber][itemid][field]);
         // optional_param_array() cannot handle multidimensional arrays, so walk it manually
@@ -348,7 +350,10 @@ if ($action && confirm_sesskey()) {
                 }
                 $rawitems = equipment_clean_raw_items($deskfields);
                 $results = equipment_build_results($rawitems, $applicableitems);
-                equipment_check_manager::save_desk_checks($sessionid, $desknumber, $results, (int) $USER->id);
+                $savedrows = array_merge(
+                    $savedrows,
+                    equipment_check_manager::save_desk_checks($sessionid, $desknumber, $results, (int) $USER->id)
+                );
                 $saveddesks++;
                 $savedlist[] = $desknumber;
             }
@@ -373,6 +378,7 @@ if ($action && confirm_sesskey()) {
                 'saveddesks' => $saveddesks,
                 'desks' => $savedlist,
                 'message' => get_string('equipment_check_saved_toast', 'local_tm_course'),
+                'items' => equipment_check_manager::present_saved_logs($savedrows),
             ]);
         }
 

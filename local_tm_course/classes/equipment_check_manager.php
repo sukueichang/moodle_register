@@ -198,6 +198,115 @@ class equipment_check_manager {
     }
 
     /**
+     * Whether two stored resolution snapshots mean the same checked labels.
+     * Ignores JSON encoding, key order, duplicates, and empty-array vs blank.
+     */
+    public static function resolution_checked_equivalent(?string $left, ?string $right): bool {
+        return self::canonical_resolution_checked($left) === self::canonical_resolution_checked($right);
+    }
+
+    /**
+     * @return string[] sorted unique labels
+     */
+    private static function canonical_resolution_checked(?string $json): array {
+        $unique = [];
+        foreach (self::decode_resolution_checked($json) as $label) {
+            $unique[$label] = $label;
+        }
+        $out = array_values($unique);
+        sort($out, SORT_STRING);
+        return $out;
+    }
+
+    /**
+     * True when status, remark, or resolution snapshot would change the stored row.
+     */
+    private static function saved_fields_differ(
+        \stdClass $existing,
+        int $checkstatus,
+        string $remark,
+        string $resolutionchecked
+    ): bool {
+        if ((int) $existing->checkstatus !== $checkstatus) {
+            return true;
+        }
+        if ((string) ($existing->remark ?? '') !== $remark) {
+            return true;
+        }
+        return !self::resolution_checked_equivalent(
+            (string) ($existing->resolution_checked ?? ''),
+            $resolutionchecked
+        );
+    }
+
+    /**
+     * Display time for the last save, in the current user's Moodle timezone.
+     */
+    public static function format_last_modified_time(int $timestamp): string {
+        if ($timestamp <= 0) {
+            return '';
+        }
+        return userdate($timestamp, '%Y/%m/%d %H:%M', 99, false, false);
+    }
+
+    /**
+     * Plain-text "last modified" line. Empty when the row has never been saved.
+     */
+    public static function format_last_modified_label(string $name, int $timestamp): string {
+        if ($timestamp <= 0) {
+            return '';
+        }
+        $displayname = $name !== '' ? $name : '—';
+        return get_string('equipment_check_last_checked', 'local_tm_course', (object) [
+            'name' => $displayname,
+            'time' => self::format_last_modified_time($timestamp),
+        ]);
+    }
+
+    /**
+     * Labels for already-saved log rows (server state, not unsaved form edits).
+     *
+     * @param \stdClass[] $rows
+     * @return array<int,array{desknumber:int,itemid:int,timemodified:int,checkedby:int,label:string}>
+     */
+    public static function present_saved_logs(array $rows): array {
+        global $DB;
+        $checkers = [];
+        foreach ($rows as $row) {
+            $uid = (int) ($row->checkedby ?? 0);
+            if ($uid > 0) {
+                $checkers[$uid] = true;
+            }
+        }
+        $names = [];
+        if (!empty($checkers)) {
+            $userrecords = $DB->get_records_list(
+                'user',
+                'id',
+                array_keys($checkers),
+                '',
+                'id, firstname, lastname, firstnamephonetic, lastnamephonetic, middlename, alternatename'
+            );
+            foreach ($userrecords as $uid => $user) {
+                $names[(int) $uid] = fullname($user);
+            }
+        }
+        $out = [];
+        foreach ($rows as $row) {
+            $timestamp = (int) ($row->timemodified ?? 0);
+            $checkedby = (int) ($row->checkedby ?? 0);
+            $out[] = [
+                'desknumber' => (int) ($row->desknumber ?? 0),
+                'itemid' => (int) ($row->itemid ?? 0),
+                'timemodified' => $timestamp,
+                'checkedby' => $checkedby,
+                'label' => self::format_last_modified_label($names[$checkedby] ?? '', $timestamp),
+            ];
+        }
+        return $out;
+    }
+
+    /**
      * Filter submitted checked labels to those present in the item template (order preserved as submitted).
      *
      * @param string[] $submitted
@@ -609,11 +718,12 @@ class equipment_check_manager {
      * Save one desk's checklist results (upsert per item).
      *
      * @param array<int,array{checkstatus?:int,remark?:string,resolution_checked?:string[]}> $results keyed by itemid
+     * @return \stdClass[] persisted rows for the submitted items (unchanged rows are returned as stored)
      */
-    public static function save_desk_checks(int $sessionid, int $desknumber, array $results, int $userid): void {
+    public static function save_desk_checks(int $sessionid, int $desknumber, array $results, int $userid): array {
         global $DB;
         if ($sessionid <= 0 || $desknumber <= 0 || empty($results)) {
-            return;
+            return [];
         }
         $itemids = array_map('intval', array_keys($results));
         $itemids = array_values(array_filter($itemids, static function (int $id): bool {
@@ -625,6 +735,7 @@ class equipment_check_manager {
         }
 
         $now = time();
+        $saved = [];
         $tx = $DB->start_delegated_transaction();
         foreach ($results as $itemid => $data) {
             $itemid = (int) $itemid;
@@ -657,12 +768,17 @@ class equipment_check_manager {
             ], '*', IGNORE_MISSING);
 
             if ($existing) {
+                if (!self::saved_fields_differ($existing, $checkstatus, $remark, $resolutionchecked)) {
+                    $saved[] = $existing;
+                    continue;
+                }
                 $existing->checkstatus = $checkstatus;
                 $existing->remark = $remark;
                 $existing->resolution_checked = $resolutionchecked;
                 $existing->checkedby = $userid;
                 $existing->timemodified = $now;
                 $DB->update_record('local_tm_equip_check_log', $existing);
+                $saved[] = $existing;
             } else {
                 $rec = new \stdClass();
                 $rec->sessionid = $sessionid;
@@ -674,15 +790,17 @@ class equipment_check_manager {
                 $rec->checkedby = $userid;
                 $rec->timecreated = $now;
                 $rec->timemodified = $now;
-                $DB->insert_record('local_tm_equip_check_log', $rec);
+                $rec->id = $DB->insert_record('local_tm_equip_check_log', $rec);
+                $saved[] = $rec;
             }
         }
         $tx->allow_commit();
+        return $saved;
     }
 
     /**
      * One-click sync: copy one desk's saved checklist results to every other desk of the session.
-     * Overwrites existing results on the other desks. Returns the number of desks synced to.
+     * Overwrites a target row only when its saved content differs. Returns the number of desks synced to.
      */
     public static function sync_desk_to_all(int $sessionid, int $sourcedesk, int $userid): int {
         global $DB;
@@ -712,9 +830,15 @@ class equipment_check_manager {
                     'itemid' => $itemid,
                 ], '*', IGNORE_MISSING);
                 if ($existing) {
-                    $existing->checkstatus = (int) $srclog->checkstatus;
-                    $existing->remark = (string) $srclog->remark;
-                    $existing->resolution_checked = (string) ($srclog->resolution_checked ?? '');
+                    $incomingstatus = (int) $srclog->checkstatus;
+                    $incomingremark = (string) ($srclog->remark ?? '');
+                    $incomingresolution = (string) ($srclog->resolution_checked ?? '');
+                    if (!self::saved_fields_differ($existing, $incomingstatus, $incomingremark, $incomingresolution)) {
+                        continue;
+                    }
+                    $existing->checkstatus = $incomingstatus;
+                    $existing->remark = $incomingremark;
+                    $existing->resolution_checked = $incomingresolution;
                     $existing->checkedby = $userid;
                     $existing->timemodified = $now;
                     $DB->update_record('local_tm_equip_check_log', $existing);
