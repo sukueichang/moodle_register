@@ -119,6 +119,12 @@ $tmbytes = file_get_contents($plugin . '/' . $paths['tm_robot']);
 $tcbytes = file_get_contents($plugin . '/' . $paths['training_center']);
 assert_true(is_string($tmbytes) && strncmp($tmbytes, "\x89PNG\r\n\x1a\n", 8) === 0, 'tm logo is PNG');
 assert_true(is_string($tcbytes) && strncmp($tcbytes, "\xff\xd8\xff", 3) === 0, 'training logo is JPEG bytes');
+$tcsize = getimagesize($plugin . '/' . $paths['training_center']);
+assert_true(is_array($tcsize) && (int) $tcsize[0] > 0 && (int) $tcsize[0] === (int) $tcsize[1], 'training logo file is square');
+assert_true((bool) preg_match('/<img[^>]*alt="Techman Robot Training Center"[^>]*>/', $html, $tcimg), 'training logo img present');
+$tctag = $tcimg[0] ?? '';
+assert_true(str_contains($tctag, 'width="120"') && str_contains($tctag, 'height="120"'), 'training logo display size is 1:1');
+assert_true(!str_contains($tctag, 'height:auto'), 'training logo is not stretched with height:auto');
 
 $libsrc = file_get_contents($plugin . '/lib.php');
 assert_true(!str_contains($libsrc, "filearea === 'emaillogo'"), 'no emaillogo pluginfile branch');

@@ -41,11 +41,15 @@ if ($surveyid <= 0) {
     );
 }
 
+list($exportcourseid, $exportsessionid) = survey_stats::align_course_session(
+    optional_param('courseid', 0, PARAM_INT),
+    optional_param('sessionid', 0, PARAM_INT)
+);
 $params = [
     'surveyid' => $surveyid,
     'versionid' => 0,
-    'courseid' => optional_param('courseid', 0, PARAM_INT),
-    'sessionid' => optional_param('sessionid', 0, PARAM_INT),
+    'courseid' => $exportcourseid,
+    'sessionid' => $exportsessionid,
     'datefrom' => $datefrom,
     'dateto' => $dateto,
     'email' => '',

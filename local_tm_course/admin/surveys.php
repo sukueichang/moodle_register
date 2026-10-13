@@ -255,7 +255,7 @@ if ($surveyid <= 0) {
             get_string('survey_version', 'local_tm_course', ''),
             get_string('survey_courses', 'local_tm_course'),
             get_string('survey_copy', 'local_tm_course'),
-            get_string('survey_delete', 'local_tm_course'),
+            get_string('survey_delete_survey', 'local_tm_course'),
         ];
         $listactionurl = (new moodle_url('/local/tm_course/admin/surveys.php'))->out(false);
         foreach ($surveys as $survey) {
@@ -292,14 +292,17 @@ if ($surveyid <= 0) {
                 $deleteform .= html_writer::empty_tag('input', [
                     'type' => 'submit',
                     'class' => 'btn btn-outline-danger btn-sm',
-                    'value' => get_string('survey_delete', 'local_tm_course'),
+                    'value' => get_string('survey_delete_survey', 'local_tm_course'),
                 ]);
                 $deleteform .= html_writer::end_tag('form');
             } else {
                 $deleteform = html_writer::tag('span', get_string('survey_delete_blocked', 'local_tm_course'), [
-                    'class' => 'text-muted small',
-                    'title' => get_string('survey_error_cannot_delete', 'local_tm_course'),
-                ]);
+                    'class' => 'badge badge-secondary',
+                ])
+                    . html_writer::tag('div', get_string('survey_error_cannot_delete', 'local_tm_course'), [
+                        'class' => 'text-muted small mt-1',
+                        'style' => 'max-width:16rem',
+                    ]);
             }
 
             $table->data[] = [
@@ -347,7 +350,34 @@ foreach ($assigned as $courseid) {
 }
 
 echo html_writer::link(new moodle_url('/local/tm_course/admin/surveys.php'), get_string('survey_back', 'local_tm_course'));
-echo html_writer::tag('h2', s($survey->name));
+echo html_writer::start_div('d-flex flex-wrap align-items-center justify-content-between mt-2 mb-2');
+echo html_writer::tag('h2', s($survey->name), ['class' => 'mb-0 mr-3']);
+$candeleteeditor = survey_manager::can_delete_survey($surveyid);
+if ($candeleteeditor) {
+    $editordelete = html_writer::start_tag('form', [
+        'method' => 'post',
+        'action' => (new moodle_url('/local/tm_course/admin/surveys.php'))->out(false),
+        'class' => 'mb-0',
+        'onsubmit' => 'return confirm(' . json_encode(
+            get_string('survey_delete_confirm', 'local_tm_course', $survey->name),
+            JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP
+        ) . ');',
+    ]);
+    $editordelete .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'sesskey', 'value' => sesskey()]);
+    $editordelete .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'action', 'value' => 'delete']);
+    $editordelete .= html_writer::empty_tag('input', ['type' => 'hidden', 'name' => 'deleteid', 'value' => $surveyid]);
+    $editordelete .= html_writer::empty_tag('input', [
+        'type' => 'submit',
+        'class' => 'btn btn-outline-danger',
+        'value' => get_string('survey_delete_survey', 'local_tm_course'),
+    ]);
+    $editordelete .= html_writer::end_tag('form');
+    echo $editordelete;
+}
+echo html_writer::end_div();
+if (!$candeleteeditor) {
+    echo $OUTPUT->notification(get_string('survey_error_cannot_delete', 'local_tm_course'), 'info');
+}
 if ($error !== '') {
     echo $OUTPUT->notification($error, 'error');
 }

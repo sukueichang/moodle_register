@@ -223,6 +223,11 @@ class survey_stats_test extends \advanced_testcase {
         $this->assertStringNotContainsString("name' => 'versionid'", $results);
         $this->assertStringNotContainsString('survey_stats_sessionid', $results);
         $this->assertStringContainsString('survey_stats_session_filter', $results);
+        $this->assertStringContainsString('survey_stats_no_sessions', $results);
+        $this->assertStringContainsString('align_course_session', $results);
+        $this->assertStringContainsString('align_course_session', $export);
+        $this->assertStringContainsString('s.courseid = :courseid', $results);
+        $this->assertStringNotContainsString('local_tm_course_svcrs', $results);
         $this->assertStringContainsString("'email' => ''", $export);
         $this->assertStringContainsString("'versionid' => 0", $export);
     }
@@ -310,6 +315,42 @@ class survey_stats_test extends \advanced_testcase {
             'sessionid' => $seed['sessionid'],
         ]);
         $this->assertSame(2, survey_stats::summary($onesession)['response_count']);
+
+        $othercourse = $this->getDataGenerator()->create_course();
+        $othersessionid = (int) $DB->insert_record('local_tm_course_sessions', (object) [
+            'courseid' => $othercourse->id,
+            'name' => 'Other course session',
+            'starttime' => time(),
+            'endtime' => time() + 7200,
+            'timecreated' => time(),
+            'timemodified' => time(),
+        ]);
+        list($keptcourse, $droppedsession) = survey_stats::align_course_session(
+            (int) $session->courseid,
+            $othersessionid
+        );
+        $this->assertSame((int) $session->courseid, $keptcourse);
+        $this->assertSame(0, $droppedsession);
+        list($nocourse, $nosession) = survey_stats::align_course_session(0, (int) $seed['sessionid']);
+        $this->assertSame(0, $nocourse);
+        $this->assertSame(0, $nosession);
+        list($samecourse, $samesession) = survey_stats::align_course_session(
+            (int) $session->courseid,
+            (int) $seed['sessionid']
+        );
+        $this->assertSame((int) $seed['sessionid'], $samesession);
+        $aligned = survey_stats::filters_from_params([
+            'surveyid' => $seed['surveyid'],
+            'courseid' => $keptcourse,
+            'sessionid' => $droppedsession,
+        ]);
+        $this->assertSame(2, survey_stats::summary($aligned)['response_count']);
+        $foreign = survey_stats::filters_from_params([
+            'surveyid' => $seed['surveyid'],
+            'courseid' => (int) $othercourse->id,
+            'sessionid' => (int) $seed['sessionid'],
+        ]);
+        $this->assertSame(0, survey_stats::summary($foreign)['response_count']);
         $this->assertSame(2, $this->question_by_title(survey_stats::question_stats($onesession)['questions'], 'Scale Q')['answered']);
     }
 

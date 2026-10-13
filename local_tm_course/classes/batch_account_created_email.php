@@ -149,7 +149,7 @@ class batch_account_created_email {
 <img src="' . $tmlogo . '" width="120" height="auto" alt="Techman Robot" style="display:block;width:120px;max-width:140px;height:auto;border:0;outline:none;text-decoration:none;">
 </td>
 <td align="center" valign="middle" style="padding:0 12px;">
-<img src="' . $tclogo . '" width="88" height="auto" alt="Techman Robot Training Center" style="display:block;width:88px;max-width:100px;height:auto;border:0;outline:none;text-decoration:none;">
+<img src="' . $tclogo . '" width="120" height="120" alt="Techman Robot Training Center" style="display:block;width:120px;height:120px;border:0;outline:none;text-decoration:none;">
 </td>
 </tr>
 </table>

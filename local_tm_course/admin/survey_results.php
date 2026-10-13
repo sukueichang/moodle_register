@@ -60,10 +60,14 @@ $coursemenu = [];
 $sessionmenu = [];
 if ($surveyid > 0) {
     $coursemenu = survey_results_course_options($surveyid);
-    $sessionmenu = survey_results_session_options($surveyid);
     if (!isset($coursemenu[(int) $params['courseid']])) {
         $params['courseid'] = 0;
     }
+    list($params['courseid'], $params['sessionid']) = survey_stats::align_course_session(
+        (int) $params['courseid'],
+        (int) $params['sessionid']
+    );
+    $sessionmenu = survey_results_session_options((int) $params['courseid']);
     if (!isset($sessionmenu[(int) $params['sessionid']])) {
         $params['sessionid'] = 0;
     }
@@ -140,7 +144,11 @@ echo html_writer::end_div();
 
 echo html_writer::start_div('form-group col-md-4');
 echo html_writer::tag('label', get_string('course'));
-echo html_writer::start_tag('select', ['name' => 'courseid', 'class' => 'form-control']);
+echo html_writer::start_tag('select', [
+    'name' => 'courseid',
+    'class' => 'form-control',
+    'onchange' => "var s=this.form.querySelector('[name=sessionid]'); if(s){s.disabled=false; s.value='0';} this.form.submit();",
+]);
 echo html_writer::tag('option', '—', ['value' => 0]);
 foreach ($coursemenu as $cid => $cname) {
     $attrs = ['value' => (int) $cid];
@@ -154,16 +162,31 @@ echo html_writer::end_div();
 
 echo html_writer::start_div('form-group col-md-4');
 echo html_writer::tag('label', get_string('survey_stats_session_filter', 'local_tm_course'));
-echo html_writer::start_tag('select', ['name' => 'sessionid', 'class' => 'form-control']);
-echo html_writer::tag('option', '—', ['value' => 0]);
-foreach ($sessionmenu as $sid => $slabel) {
-    $attrs = ['value' => (int) $sid];
-    if ((int) $sid === $selectedsession) {
-        $attrs['selected'] = 'selected';
+$sessionselectattrs = ['name' => 'sessionid', 'class' => 'form-control'];
+$nosesessions = ($selectedcourse > 0 && $sessionmenu === []);
+if ($selectedcourse <= 0 || $nosesessions) {
+    $sessionselectattrs['disabled'] = 'disabled';
+}
+echo html_writer::start_tag('select', $sessionselectattrs);
+if ($nosesessions) {
+    echo html_writer::tag('option', get_string('survey_stats_no_sessions', 'local_tm_course'), [
+        'value' => 0,
+        'selected' => 'selected',
+    ]);
+} else {
+    echo html_writer::tag('option', '—', ['value' => 0]);
+    foreach ($sessionmenu as $sid => $slabel) {
+        $attrs = ['value' => (int) $sid];
+        if ((int) $sid === $selectedsession) {
+            $attrs['selected'] = 'selected';
+        }
+        echo html_writer::tag('option', s($slabel), $attrs);
     }
-    echo html_writer::tag('option', s($slabel), $attrs);
 }
 echo html_writer::end_tag('select');
+if ($nosesessions) {
+    echo html_writer::div(get_string('survey_stats_no_sessions', 'local_tm_course'), 'text-muted small mt-1');
+}
 echo html_writer::end_div();
 
 echo html_writer::end_div();
@@ -318,27 +341,22 @@ function survey_results_course_options(int $surveyid): array {
 }
 
 /**
- * Sessions for this survey. Label is date/time and course name, not the raw id.
+ * Sessions of one course. Empty until a course is selected. Matched by courseid, not course name.
  *
  * @return array<int,string>
  */
-function survey_results_session_options(int $surveyid): array {
+function survey_results_session_options(int $courseid): array {
     global $DB;
+    if ($courseid <= 0) {
+        return [];
+    }
     $rows = $DB->get_records_sql(
-        "SELECT DISTINCT s.id, s.name, s.starttime, c.fullname
+        "SELECT s.id, s.name, s.starttime, c.fullname
            FROM {local_tm_course_sessions} s
            JOIN {course} c ON c.id = s.courseid
-          WHERE s.courseid IN (
-                    SELECT courseid FROM {local_tm_course_svcrs} WHERE surveyid = :surveyid1
-                )
-             OR s.id IN (
-                    SELECT r.sessionid
-                      FROM {local_tm_course_svresp} r
-                      JOIN {local_tm_course_svver} v ON v.id = r.versionid
-                     WHERE v.surveyid = :surveyid2
-                )
+          WHERE s.courseid = :courseid
        ORDER BY s.starttime DESC, s.id DESC",
-        ['surveyid1' => $surveyid, 'surveyid2' => $surveyid]
+        ['courseid' => $courseid]
     );
     $out = [];
     foreach ($rows as $row) {

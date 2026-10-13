@@ -126,6 +126,40 @@
         return { body: body, deskCount: deskCount };
     }
 
+    function applySavedMeta(items) {
+        if (!items || !items.length) {
+            return;
+        }
+        items.forEach(function(item) {
+            if (!item || item.itemid == null || item.desknumber == null) {
+                return;
+            }
+            document.querySelectorAll('.tm-equip-form').forEach(function(form) {
+                var deskInput = form.querySelector('input[name="desknumber"]');
+                if (!deskInput || String(deskInput.value) !== String(item.desknumber)) {
+                    return;
+                }
+                var row = form.querySelector('.tm-equip-item[data-itemid="' + String(item.itemid) + '"]');
+                if (!row) {
+                    return;
+                }
+                var meta = row.querySelector('.tm-equip-item-meta');
+                if (!item.timemodified || !item.label) {
+                    if (meta && meta.parentNode) {
+                        meta.parentNode.removeChild(meta);
+                    }
+                    return;
+                }
+                if (!meta) {
+                    meta = document.createElement('div');
+                    meta.className = 'text-muted small tm-equip-item-meta';
+                    row.appendChild(meta);
+                }
+                meta.textContent = item.label;
+            });
+        });
+    }
+
     function handleSaveResult(result, unlock) {
         var cfg = getConfig();
         var strings = cfg.strings || {};
@@ -133,6 +167,7 @@
             unlock();
         }
         if (result && result.data && result.data.ok) {
+            applySavedMeta(result.data.items);
             showToast(result.data.message || strings.saved || '已儲存', false);
             return;
         }
