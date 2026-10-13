@@ -1458,6 +1458,7 @@ $string['survey_copy'] = '複製';
 $string['survey_copy_suffix'] = '副本';
 $string['survey_copied'] = '問卷已複製。';
 $string['survey_delete'] = '刪除';
+$string['survey_delete_survey'] = '刪除問卷';
 $string['survey_delete_confirm'] = '確定刪除問卷「{$a}」？此操作無法復原。';
 $string['survey_deleted'] = '已刪除問卷「{$a}」。';
 $string['survey_delete_blocked'] = '不可刪除';

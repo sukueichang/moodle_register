@@ -2110,6 +2110,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026101300, 'local', 'tm_course');
     }
 
+    // 2026101301 — Survey delete button on the editor; Training Center email logo file (no DB).
+    if ($oldversion < 2026101301) {
+        upgrade_plugin_savepoint(true, 2026101301, 'local', 'tm_course');
+    }
+
     return true;
 }
 

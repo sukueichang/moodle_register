@@ -1458,6 +1458,7 @@ $string['survey_copy'] = 'Copy';
 $string['survey_copy_suffix'] = 'Copy';
 $string['survey_copied'] = 'Survey copied.';
 $string['survey_delete'] = 'Delete';
+$string['survey_delete_survey'] = 'Delete survey';
 $string['survey_delete_confirm'] = 'Delete survey “{$a}”? This cannot be undone.';
 $string['survey_deleted'] = 'Survey “{$a}” deleted.';
 $string['survey_delete_blocked'] = 'Cannot delete';
