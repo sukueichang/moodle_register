@@ -2115,6 +2115,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026101301, 'local', 'tm_course');
     }
 
+    // 2026101302 — Survey stats sessions follow the selected course (no DB).
+    if ($oldversion < 2026101302) {
+        upgrade_plugin_savepoint(true, 2026101302, 'local', 'tm_course');
+    }
+
     return true;
 }
 

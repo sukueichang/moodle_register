@@ -34,6 +34,26 @@ class survey_stats {
     }
 
     /**
+     * Keep a session filter only when that session row belongs to the selected course.
+     * No course selected means no session filter (the menu is empty until a course is chosen).
+     *
+     * @return array{0:int,1:int} courseid, sessionid
+     */
+    public static function align_course_session(int $courseid, int $sessionid): array {
+        global $DB;
+        $courseid = max(0, $courseid);
+        $sessionid = max(0, $sessionid);
+        if ($courseid <= 0 || $sessionid <= 0) {
+            return [$courseid, 0];
+        }
+        $owner = $DB->get_field('local_tm_course_sessions', 'courseid', ['id' => $sessionid]);
+        if ((int) $owner !== $courseid) {
+            return [$courseid, 0];
+        }
+        return [$courseid, $sessionid];
+    }
+
+    /**
      * @param \stdClass $filters
      * @return array{0:string,1:array}
      */
