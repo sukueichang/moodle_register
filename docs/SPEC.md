@@ -2249,7 +2249,7 @@ TM AI Cobot 推廣課程的九題只是 §59.10 的驗收案例。題幹、選�
 
 Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只存原始答案，不做商機分數或自動排序。
 
-階段 1（問卷管理）**Owner 驗收 PASS（2026-10-06）**。階段 2（學員填答）已實作。階段 3（Email Quick Access／QR 投影）**Owner PASS（2026-10-07）**。階段 4 篩選／題型統計 **Owner PASS**；Excel 匯出於 5.28.0 FAIL（`send_file`），已於 **5.28.1** 改 Moodle `excellib`，待 Owner 重測 Excel。**5.28.2** 起：指定課程不得 silent 搶走其他問卷、清單可複製問卷（僅結構）、Admin／學員／`class_prep` UI 層級調整。`ensure_session_survey_pin()` 建立釘選時一併 `ensure_session_survey_token()`；排程 `pin_session_surveys` 每 15 分鐘補釘。
+階段 1（問卷管理）**Owner 驗收 PASS（2026-10-06）**。階段 2（學員填答）、階段 3（Email Quick Access／QR 投影）、階段 4（統計、圖表、Excel）於 **2026-10-13 一併 Owner PASS**，收進 **5.28.14**。Excel 曾在 5.28.0 因 `send_file` FAIL，5.28.1 起改 Moodle `excellib`，本次驗收通過。**5.28.2** 起：指定課程不得 silent 搶走其他問卷、清單可複製問卷（僅結構）、Admin／學員／`class_prep` UI 層級調整。`ensure_session_survey_pin()` 建立釘選時一併 `ensure_session_survey_token()`；排程 `pin_session_surveys` 每 15 分鐘補釘。
 
 ### 59.1 範圍
 
@@ -2409,12 +2409,54 @@ Level 2 量表是學員自評，不是 Moodle 成績。產品與應用意向只�
 
 **階段 1 — 問卷與版本** — **Owner 驗收 PASS（2026-10-06）**
 
-**階段 2 — 學員填答** — 已實作（待／已驗收依交付紀錄）。
+**階段 2 — 學員填答** — **Owner 驗收 PASS（2026-10-13）**。
 
-**階段 3 — Email Quick Access 與投影** — 已實作於 5.28.0。QR 免登入；token 可關／重生；投影不列 email。
+**階段 3 — Email Quick Access 與投影** — **Owner 驗收 PASS（2026-10-07，2026-10-13 正式收版確認）**。QR 免登入；token 可關／重生；投影不列 email。
 
-**階段 4 — 統計與匯出** — 已實作於 5.28.0。不得做商機分數。
+**階段 4 — 統計與匯出** — **Owner 驗收 PASS（2026-10-13）**。不得做商機分數。統計頁課程與場次連動見 §59.15。
+
+**安全刪除** — **Owner 驗收 PASS（2026-10-13）**。任一版本已有場次釘選或填答時不可刪；未使用的問卷可從清單與編輯頁刪除，且須確認。已提交的回覆不會被刪除。
+
+### 59.15 統計頁課程與場次連動（2026-10-13 PASS）
+
+問卷結果頁（`admin/survey_results.php`）與 Excel 匯出（`admin/survey_export.php`）共用 `survey_stats::align_course_session()`。
+
+- 未選課程時，場次選單不列出任何場次，欄位停用，也不套用 `sessionid`。
+- 選了課程後，場次只列出 `local_tm_course_sessions.courseid` 等於該課程的場次。不以課程名稱比對，也不因其他課程綁定同一份問卷而帶出那些場次。
+- 切換課程時先清掉已選場次，再載入新課程的場次。
+- 該課程沒有場次時，顯示「此課程沒有可選擇的場次」。
+- 已選課程但未選場次時，查詢該課程全部符合其餘條件的結果。
+- 問卷、已對應、提交日起、提交日迄維持獨立篩選。
+- 手動傳入不屬於該課程的 `sessionid` 時，後端不套用該場次，避免查到其他課程的回覆。
 
 ### 59.14 實作前檢查
 
 沒有尚未決定、會擋住後續階段的業務規則。刻意不做：講師專屬權限、WebSocket、商機評分、題目多語系題庫、學員改答案、以出席作為開放條件、把九題寫進安裝程式。
+
+## 60. 2026-10-13 正式驗收（5.28.14）
+
+Owner 於測試站驗收 PASS，收進 `main`。升級只新增缺少的資料表或欄位，不刪除、不重建既有問卷、設備檢查、學員或課程場次資料。
+
+### 60.1 設備檢查
+
+上課準備事項的設備檢查是**場次共用紀錄**（`local_tm_equip_check_log`，唯一鍵 `sessionid + desknumber + itemid`）。
+
+- 具備出缺席權限者（`permissions_manager::user_can_attendance()`，含 `local/tm_course:attendance` 或 `local/tm_course:manage`）可查看並修改同一場次的結果。讀取不依登入者過濾。
+- `checkedby` 只記錄最後一次**內容有變**的操作者，不決定讀取權限。
+- 只有 `checkstatus`、`remark`、`resolution_checked` 實質變更時，才更新該列與 `checkedby`、`timemodified`。`resolution_checked` 依勾選標籤語意比較，不受 JSON 格式差異影響。`timecreated` 保留。
+- 不另建歷史資料表，也不批次改寫既有列。
+- 畫面在已儲存項目旁顯示「最後修改：姓名 · YYYY/MM/DD HH:mm」（Moodle 使用者時區）。未儲存項目不顯示。AJAX 儲存後只套用伺服器已存資料。
+
+### 60.2 一併驗收
+
+| 項目 | 結果 |
+|------|------|
+| 課程問卷建立、編輯、填答、Email 對應、QR | PASS，見 §59 |
+| 即時結果、統計圖表、Excel | PASS |
+| 問卷安全刪除與歷史保護 | PASS，見 §59.13 |
+| 統計頁課程／場次連動 | PASS，見 §59.15 |
+| 批次建帳與 HTML Email 實寄 | PASS |
+| Training Center Logo | PASS（原圖 JPEG，信件內 120×120 等比例） |
+| 便當發送歷史 | PASS（`local_tm_course_bento_log`，只記成功發送） |
+| Quiz 批改申請：只看最新已完成作答 | PASS |
+| 既有課程場次管理與出缺席 | PASS（本次不改其業務規則） |
