@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.28.14
+ * Version: 5.28.15
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026101302;   // Survey stats session list follows the selected course
-$plugin->release   = '5.28.14';
+$plugin->version   = 2026101500;   // Grading assign redirect is not interrupted by role-user debug output
+$plugin->release   = '5.28.15';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

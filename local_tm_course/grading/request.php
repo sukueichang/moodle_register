@@ -67,33 +67,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
-    $action = required_param('action', PARAM_ALPHANUMEXT);
-    try {
-        if ($action === 'assign' && $candispatch) {
-            $assignee = required_param('assigneeid', PARAM_INT);
-            grading_request_manager::assign_to($id, $assignee, (int)$USER->id);
-            redirect($PAGE->url, get_string('grading_assigned_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
-        }
-        if ($action === 'reject' && $candispatch) {
-            $reason = optional_param('rejectreason', '', PARAM_RAW_TRIMMED);
-            grading_request_manager::reject($id, $reason);
-            redirect($PAGE->url, get_string('grading_rejected_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
-        }
-        if ($action === 'cancel') {
-            grading_request_manager::cancel($id, (int)$USER->id);
-            redirect($PAGE->url, get_string('grading_cancelled_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
-        }
-        if ($action === 'restore' && $candispatch) {
-            grading_request_manager::restore($id);
-            redirect($PAGE->url, get_string('grading_restored_ok', 'local_tm_course'), null, \core\output\notification::NOTIFY_SUCCESS);
-        }
-    } catch (moodle_exception $e) {
-        \core\notification::error($e->getMessage());
-        $req = grading_request_manager::get_request($id);
-    }
-}
-
 $activity = grading_request_manager::get_activity((int)$req->cmid);
 $counts = grading_request_manager::progress_counts($req);
 $items = grading_request_manager::get_items($id);
