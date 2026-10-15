@@ -24,6 +24,28 @@
 - [ ] Windows 打包 zip：用 `tar.exe`，內部路徑必須是 `/` 而非 `\`（完整步驟見 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) §4）
 - [ ] 升級頁 `cURL`／遠端 plugin API 錯誤 ≠ DB 升級失敗，可繼續本地升級
 - [ ] 設備檢查 status：未選／正常不顯示備註、Checklist、ⓘ；僅異常展開。後台排除方法／外單位支援 textarea 必須用 `.value` 綁定，placeholder 不可長得像匯入內容
+- [ ] `get_role_users()` 若 `$fields` 只有 `u.id`，必須另傳不含 lastname/firstname 的 `$sort`（例如 `'u.id'`）。否則開發者除錯會在 `redirect()` 前印出，畫面變成「錯誤的輸出，因此關閉自動化的重新導向」
+
+---
+
+## 2026-10-15 — 批改分派成功後畫面出現除錯訊息，重新導向被取消
+
+### 問題現象
+Admin 分派批改人員成功（狀態已分派），但沒有回到申請頁。畫面上方是英文 `get_role_users()` 除錯與呼叫堆疊，綠色「已分派。」下面接著「錯誤的輸出，因此關閉自動化的重新導向」與「繼續」。
+
+### 根因判斷
+分派通知 `notification_helper::collect_role_user_ids()` 呼叫 `get_role_users($roleid, $ctx, false, 'u.id')`。Moodle 預設排序是 `u.lastname, u.firstname`，欄位卻沒有這兩欄，於是 `debugging()` 在重新導向前印出內容。測試站開著開發者除錯時，`redirect()` 偵測到已有輸出，就改顯示該中斷頁。
+
+`grading/request.php` 的 POST 處理區塊重複貼了一次。`redirect()` 會結束請求，所以這次沒有造成二次分派，但留下之後誤改的風險。
+
+### 解法
+1. `get_role_users()` 加上排序 `'u.id'`，只取使用者 id，不再觸發補欄位除錯。
+2. 刪除 `grading/request.php` 重複的 POST 處理。
+3. 版本 `5.28.15`／`2026101500`。
+
+### 預防準則
+- 只需要 id 時，`get_role_users()` 的 `$sort` 不要用預設姓名排序。
+- 成功後的 `redirect()` 路徑上不要呼叫會 `debugging()` 印出的 API；通知失敗應吞掉，不能先有輸出。
 
 ---
 
