@@ -1,7 +1,10 @@
 {{! Front session list: index.php builds context; do not put business logic here. }}
 <div class="tm-session-grid" id="tm-session-list-grid">
 {{#sessions}}
-  <article class="tm-session-card" data-sessionid="{{id}}" data-start-ts="{{start_ts}}" data-end-ts="{{end_ts}}">
+  <article class="tm-session-card{{#show_void_badge}} tm-session-card-void{{/show_void_badge}}" data-sessionid="{{id}}" data-start-ts="{{start_ts}}" data-end-ts="{{end_ts}}">
+    {{#show_void_badge}}
+    <div class="tm-session-void-banner">{{void_label}}</div>
+    {{/show_void_badge}}
     <header class="tm-session-header">
       <div>
         <small class="tm-session-date js-tm-local-time" data-tm-local-mode="date" data-tm-start-ts="{{start_ts}}">{{date_header}}</small>

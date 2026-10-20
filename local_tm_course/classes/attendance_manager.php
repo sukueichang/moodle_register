@@ -653,6 +653,10 @@ class attendance_manager {
 
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
 
+        if (!empty($enrol->prereq_absence_hold)) {
+            throw new \moodle_exception('error_prereq_absence_hold_attendance', 'local_tm_course');
+        }
+
         // Update our own table
         $DB->set_field('local_tm_course_enrolments', 'attended',     $attended, ['id' => $enrolid]);
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(),    ['id' => $enrolid]);
@@ -673,12 +677,31 @@ class attendance_manager {
 
         // Trigger course completion when student is marked present.
         // Seat-hold rows keep the placeholder on userid; the real learner is linked_userid.
+        $previousattended = (int) $enrol->attended;
         if ($attended === self::ATTEND_PRESENT) {
             $session = $DB->get_record('local_tm_course_sessions',
                                        ['id' => $enrol->sessionid], '*', MUST_EXIST);
             if (!empty($session->courseid)) {
                 self::sync_completion(self::attendance_log_userid($enrol), (int)$session->courseid);
             }
+        } else if ($attended === self::ATTEND_ABSENT && $previousattended === self::ATTEND_PRESENT) {
+            $session = $DB->get_record('local_tm_course_sessions',
+                                       ['id' => $enrol->sessionid], '*', MUST_EXIST);
+            if (!empty($session->courseid)) {
+                self::revoke_completion_after_flipped_absence(
+                    self::attendance_log_userid($enrol),
+                    (int) $session->courseid,
+                    $enrolid
+                );
+            }
+        }
+
+        $enrol->attended = $attended;
+        try {
+            require_once(__DIR__ . '/enrolment_manager.php');
+            enrolment_manager::sync_prereq_holds_after_attendance($enrolid);
+        } catch (\Throwable $t) {
+            error_log('TM Course prerequisite hold sync failed: ' . $t->getMessage());
         }
     }
 
@@ -1251,6 +1274,9 @@ class attendance_manager {
 
         $count = 0;
         foreach ($approved as $enrol) {
+            if (!empty($enrol->prereq_absence_hold)) {
+                continue;
+            }
             if ((int)$enrol->attended !== self::ATTEND_PRESENT) {
                 self::mark_attended((int)$enrol->id, self::ATTEND_PRESENT);
                 $count++;
@@ -1270,6 +1296,42 @@ class attendance_manager {
      * @param int $userid
      * @param int $courseid
      */
+    /**
+     * Drop course completion written for a present mark that was just changed to absent.
+     * Keeps completion when another present session or an issued certificate still exists.
+     */
+    private static function revoke_completion_after_flipped_absence(int $userid, int $courseid, int $enrolid): void {
+        global $DB, $CFG;
+        if ($userid < 2 || $courseid <= 0) {
+            return;
+        }
+        require_once(__DIR__ . '/certificate_helper.php');
+        require_once(__DIR__ . '/prerequisite_manager.php');
+        if (certificate_helper::user_has_issued_course_certificate($userid, $courseid)) {
+            return;
+        }
+        if (prerequisite_manager::user_has_present_approved_session($userid, $courseid, [
+            'exclude_enrolment_ids' => [$enrolid],
+        ])) {
+            return;
+        }
+        require_once($CFG->dirroot . '/lib/completionlib.php');
+        $course = $DB->get_record('course', ['id' => $courseid]);
+        if (!$course) {
+            return;
+        }
+        $completion = new \completion_info($course);
+        if (!$completion->is_enabled()) {
+            return;
+        }
+        $row = $DB->get_record('course_completions', ['userid' => $userid, 'course' => $courseid]);
+        if (!$row || empty($row->timecompleted)) {
+            return;
+        }
+        $row->timecompleted = null;
+        $DB->update_record('course_completions', $row);
+    }
+
     private static function sync_completion(int $userid, int $courseid): void {
         global $DB, $CFG;
 

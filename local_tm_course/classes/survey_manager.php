@@ -801,6 +801,9 @@ class survey_manager {
         if ((int) $enrol->status !== session_manager::ENROL_APPROVED) {
             return false;
         }
+        if (!empty($enrol->prereq_absence_hold)) {
+            return false;
+        }
         if (self::learner_userid_for_enrol($enrol) !== $userid) {
             return false;
         }

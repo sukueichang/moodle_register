@@ -518,8 +518,9 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
     } else {
         $emailhtml = s($holderemail);
     }
+    $hold = !empty($e->prereq_absence_hold);
 ?>
-<tr>
+<tr class="<?php echo $hold ? 'tm-prereq-absence-hold' : ''; ?>">
     <td><?php echo $e->id; ?></td>
     <td><?php echo s($e->firstname . ' ' . $e->lastname); ?></td>
     <td><?php echo $emailhtml; ?></td>
@@ -534,7 +535,14 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
         $bnote = isset($e->batch_submitter_note) ? trim((string)$e->batch_submitter_note) : '';
         echo $bnote !== '' ? nl2br(s($bnote)) : '—';
     ?></td>
-    <td><span class="tm-badge tm-badge-<?php echo $badge_cls; ?>"><?php echo $badge_lbl; ?></span></td>
+    <td>
+        <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
+            <span class="tm-badge tm-badge-<?php echo $badge_cls; ?>"><?php echo $badge_lbl; ?></span>
+        </div>
+        <?php if ($hold): ?>
+        <div class="tm-prereq-absence-reason"><?php echo s(get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+        <?php endif; ?>
+    </td>
     <td>
         <span class="tm-sync-pill tm-sync-pill-<?php echo s($syncmeta['class']); ?>"
               title="<?php echo s($syncmeta['tooltip']); ?>">

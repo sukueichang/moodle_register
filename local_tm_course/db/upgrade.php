@@ -2120,6 +2120,16 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026101302, 'local', 'tm_course');
     }
 
+    // 2026102000 — Pause dependent enrolment when a prerequisite session is marked absent.
+    if ($oldversion < 2026102000) {
+        $table = new xmldb_table('local_tm_course_enrolments');
+        $field = new xmldb_field('prereq_absence_hold', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'attended');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026102000, 'local', 'tm_course');
+    }
+
     return true;
 }
 

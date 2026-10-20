@@ -102,9 +102,15 @@ echo $OUTPUT->header();
         <tbody>
         <?php foreach ($view['online_groups'] as $instlabel => $group): ?>
             <?php foreach ($group as $idx => $learner): ?>
-            <tr>
+            <?php $hold = !empty($learner['prereq_absence_hold']); ?>
+            <tr class="<?php echo $hold ? 'tm-prereq-absence-hold' : ''; ?>">
                 <td><?php echo $idx === 0 ? s($instlabel) : ''; ?></td>
-                <td><?php echo s($learner['displayname']); ?></td>
+                <td>
+                    <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>"><?php echo s($learner['displayname']); ?></div>
+                    <?php if ($hold): ?>
+                    <div class="tm-prereq-absence-reason"><?php echo s(get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                    <?php endif; ?>
+                </td>
                 <td><?php echo s($learner['source_label']); ?></td>
             </tr>
             <?php endforeach; ?>
@@ -128,12 +134,18 @@ echo $OUTPUT->header();
             <?php else: ?>
                 <ul class="tm-roster-learner-list mb-0 pl-3">
                 <?php foreach ($desk['learners'] as $learner): ?>
-                    <li class="tm-roster-learner-item">
+                    <?php $hold = !empty($learner['prereq_absence_hold']); ?>
+                    <li class="tm-roster-learner-item<?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>">
+                        <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                         <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span>
                         <?php if ($learner['institution'] !== ''): ?>
                         <span class="text-muted small d-block"><?php echo s($learner['institution']); ?></span>
                         <?php endif; ?>
                         <span class="text-muted small d-block tm-roster-source"><?php echo s($learner['source_label']); ?></span>
+                        </div>
+                        <?php if ($hold): ?>
+                        <div class="tm-prereq-absence-reason"><?php echo s(get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                        <?php endif; ?>
                     </li>
                 <?php endforeach; ?>
                 </ul>
@@ -147,12 +159,18 @@ echo $OUTPUT->header();
         <h4 class="h5"><?php echo get_string('session_roster_unassigned_heading', 'local_tm_course'); ?></h4>
         <ul class="tm-roster-learner-list mb-0 pl-3">
         <?php foreach ($view['unassigned'] as $learner): ?>
-            <li class="tm-roster-learner-item">
+            <?php $hold = !empty($learner['prereq_absence_hold']); ?>
+            <li class="tm-roster-learner-item<?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>">
+                <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                 <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span>
                 <?php if ($learner['institution'] !== ''): ?>
                 <span class="text-muted small d-block"><?php echo s($learner['institution']); ?></span>
                 <?php endif; ?>
                 <span class="text-muted small d-block tm-roster-source"><?php echo s($learner['source_label']); ?></span>
+                </div>
+                <?php if ($hold): ?>
+                <div class="tm-prereq-absence-reason"><?php echo s(get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                <?php endif; ?>
             </li>
         <?php endforeach; ?>
         </ul>

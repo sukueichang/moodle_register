@@ -266,7 +266,9 @@ echo $OUTPUT->header();
                         <?php echo $sel; ?>>
                     <?php echo s($s->name); ?> — <?php echo userdate($s->starttime, get_string('strftimedatetimeshort')); ?>
                     (<?php echo get_string('batch_remaining', 'local_tm_course'); ?>: <?php echo $cap; ?>)
-                    <?php if ((int)$s->status === session_manager::STATUS_CLOSED): ?>
+                    <?php if (session_manager::is_unattended_void($s)): ?>
+                        — <?php echo get_string('session_status_void_unattended', 'local_tm_course'); ?>
+                    <?php elseif ((int)$s->status === session_manager::STATUS_CLOSED): ?>
                         — <?php echo get_string('session_status_closed', 'local_tm_course'); ?>
                     <?php elseif ((int)$s->status === session_manager::STATUS_FULL): ?>
                         — <?php echo get_string('session_status_full', 'local_tm_course'); ?>
@@ -309,7 +311,9 @@ echo $OUTPUT->header();
                                 ? $learner['diet_summary']
                                 : get_string('attendance_diet_no_choice_label', 'local_tm_course');
                             ?>
-                            <li class="tm-roster-learner-item <?php echo $ispending ? 'tm-batch-learner-pending' : ''; ?>">
+                            <?php $hold = !empty($learner['prereq_absence_hold']); ?>
+                            <li class="tm-roster-learner-item <?php echo $ispending ? 'tm-batch-learner-pending' : ''; ?><?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>">
+                                <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                                 <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span><?php
                                 if ($ispending): ?>
                                 <span class="tm-batch-pending-mark"> — <?php echo get_string('admin_desk_pending_badge', 'local_tm_course'); ?></span>
@@ -331,6 +335,10 @@ echo $OUTPUT->header();
                                     <span class="text-muted"><?php echo s($dietlabel); ?></span>
                                 <?php endif; ?>
                                 </span>
+                                </div>
+                                <?php if ($hold): ?>
+                                <div class="tm-prereq-absence-reason"><?php echo s(get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                                <?php endif; ?>
                             </li>
                         <?php endforeach; ?>
                         </ul>

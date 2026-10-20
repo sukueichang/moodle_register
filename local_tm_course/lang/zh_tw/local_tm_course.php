@@ -201,6 +201,10 @@ $string['session_status']         = '狀態';
 $string['session_status_open']    = '開放中';
 $string['session_status_full']    = '已額滿';
 $string['session_status_closed']  = '已截止';
+$string['session_status_void_unattended'] = '本課程無人報名，已失效';
+$string['error_session_void_unattended'] = '本課程無人報名，已失效，無法再加入學員。';
+$string['prereq_absence_hold_reason'] = '先修課程未完成，已取消本場次上課資格';
+$string['error_prereq_absence_hold_attendance'] = '此學員因先修課程缺席已取消本場次資格，不能變更出缺席。';
 $string['session_remaining_desks']= '剩餘桌次';
 $string['session_description']    = '說明';
 

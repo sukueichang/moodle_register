@@ -201,6 +201,10 @@ $string['session_status']         = 'Status';
 $string['session_status_open']    = 'Open';
 $string['session_status_full']    = 'Full';
 $string['session_status_closed']  = 'Closed';
+$string['session_status_void_unattended'] = 'No enrolments; this session has lapsed';
+$string['error_session_void_unattended'] = 'This session has no valid enrolments and has lapsed. New learners cannot be added.';
+$string['prereq_absence_hold_reason'] = 'Prerequisite not completed; this session place has been withdrawn';
+$string['error_prereq_absence_hold_attendance'] = 'This learner is withdrawn because a prerequisite session was marked absent. Attendance cannot be changed.';
 $string['session_remaining_desks']= 'Remaining Desks';
 $string['session_description']    = 'Description';
 

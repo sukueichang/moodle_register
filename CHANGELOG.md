@@ -3,6 +3,18 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.29.0] - 2026-10-20 - Prerequisite gate, absence hold, empty session label
+
+### Fixed
+- Real learners are prerequisite-checked on every enrolment entry, including site-admin batch. A dedicated-class co-bundle waiver applies only to learners on that application. An issued certificate counts as course completion.
+
+### Added
+- Marking a prerequisite session absent pauses dependent enrolments (`prereq_absence_hold`) without deleting the row or desk. Marking present again restores that pause only. Manual cancellations stay cancelled.
+- On the class-day midnight, a shut session with no valid learners shows「本課程無人報名，已失效」and rejects new enrolments. Sessions that still have valid learners stay「已截止」.
+
+### Notes
+- 版號 `2026102000`。升級新增 `local_tm_course_enrolments.prereq_absence_hold`。不 merge `main`。
+
 ## [5.28.11] - 2026-10-08 - Survey respondent names and quiz finished-attempt grades
 
 ### Changed

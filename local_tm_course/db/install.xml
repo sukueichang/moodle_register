@@ -149,6 +149,8 @@
                COMMENT="Assigned desk number (1..table_count); NULL until assigned"/>
         <FIELD NAME="attended"      TYPE="int"  LENGTH="1"  NOTNULL="true" DEFAULT="0"
                COMMENT="0=not attended, 1=attended (from mod_attendance)"/>
+        <FIELD NAME="prereq_absence_hold" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="1=qualification paused because a prerequisite session was marked absent"/>
         <FIELD NAME="institution"   TYPE="char" LENGTH="255" NOTNULL="false"
                COMMENT="Snapshot of user institution at time of enrolment"/>
         <!-- Diet survey (student-only UI flow before enrol success) -->
