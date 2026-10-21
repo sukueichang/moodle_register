@@ -71,31 +71,44 @@ if ($search_attempt) {
 }
 
 if ($search_attempt) {
-    try {
-        // Field LIKE on enrolment joins (covers linked email / placeholder display names).
-        $byfields = enrolment_manager::search_enrolments_by_user_filters($search_filters, $can_viewall, $USER->id, 100);
-        // Same Moodle user ids as the user-results table (root cause fix: do not rely on
-        // LIKE alone — certificates already used user ids; enrolments must too).
-        $byuserids = [];
-        if (!empty($user_results)) {
+    $byfields = [];
+    $byuserids = [];
+    // Primary path: same Moodle user ids (+ emails) as the user-results table.
+    // Isolated try so a field-LIKE failure cannot wipe userid hits (5.29.4 FAIL).
+    if (!empty($user_results)) {
+        try {
             $searchuserids = array_values(array_unique(array_map(static function(\stdClass $u): int {
                 return (int)$u->id;
             }, $user_results)));
+            $searchemails = array_values(array_unique(array_filter(array_map(static function(\stdClass $u): string {
+                return \core_text::strtolower(trim((string)($u->email ?? '')));
+            }, $user_results))));
             $byuserids = enrolment_manager::search_enrolments_by_userids(
                 $searchuserids,
                 $can_viewall,
                 $USER->id,
-                100
+                100,
+                $searchemails
             );
+        } catch (\Throwable $e) {
+            \core\notification::error($e->getMessage());
         }
-        $results = enrolment_manager::merge_enrolment_search_results($byfields, $byuserids);
-        if (count($results) > 100) {
-            $results = array_slice($results, 0, 100, true);
-        }
-        $search_hit_limit = count($results) >= 100 || count($byfields) >= 100 || count($byuserids) >= 100;
-    } catch (\moodle_exception $e) {
+    }
+    try {
+        $byfields = enrolment_manager::search_enrolments_by_user_filters(
+            $search_filters,
+            $can_viewall,
+            $USER->id,
+            100
+        );
+    } catch (\Throwable $e) {
         \core\notification::error($e->getMessage());
     }
+    $results = enrolment_manager::merge_enrolment_search_results($byfields, $byuserids);
+    if (count($results) > 100) {
+        $results = array_slice($results, 0, 100, true);
+    }
+    $search_hit_limit = count($results) >= 100 || count($byfields) >= 100 || count($byuserids) >= 100;
 }
 
 $user_system_roles = [];
@@ -194,23 +207,37 @@ if (!empty($results)) {
         }
     }
     if (!empty($pairuserids) && !empty($paircourseids)) {
-        global $DB;
-        [$usql, $up] = $DB->get_in_or_equal(array_values($pairuserids), SQL_PARAMS_NAMED, 'cu');
-        [$csql, $cp] = $DB->get_in_or_equal(array_values($paircourseids), SQL_PARAMS_NAMED, 'cc');
-        $crows = $DB->get_records_select(
-            'course_completions',
-            "userid $usql AND course $csql AND timecompleted IS NOT NULL AND timecompleted > 0",
-            $up + $cp,
-            '',
-            'id, userid, course, timecompleted'
-        );
-        foreach ($crows as $crow) {
-            $completion_by_pair[(int)$crow->userid . ':' . (int)$crow->course] = true;
+        try {
+            global $DB;
+            [$usql, $up] = $DB->get_in_or_equal(array_values($pairuserids), SQL_PARAMS_NAMED, 'cu');
+            [$csql, $cp] = $DB->get_in_or_equal(array_values($paircourseids), SQL_PARAMS_NAMED, 'cc');
+            $crows = $DB->get_records_select(
+                'course_completions',
+                "userid $usql AND course $csql AND timecompleted IS NOT NULL AND timecompleted > 0",
+                $up + $cp,
+                '',
+                'id, userid, course, timecompleted'
+            );
+            foreach ($crows as $crow) {
+                $completion_by_pair[(int)$crow->userid . ':' . (int)$crow->course] = true;
+            }
+        } catch (\Throwable $e) {
+            // Missing completion data must not hide enrolment rows.
         }
     }
 }
 
-$completion_status_label = static function(\stdClass $r) use ($str, $completion_by_pair): string {
+// 「已完成」= 本場次出席（plugin attended）；「已通過」= Moodle course_completions。
+// Do not conflate missing completion with missing enrolment.
+$completed_status_label = static function(\stdClass $r) use ($str): string {
+    $attended = (int) ($r->attended ?? 0);
+    if ($attended === \local_tm_course\attendance_manager::ATTEND_PRESENT) {
+        return $str('learning_status_completed', 'Completed');
+    }
+    return '—';
+};
+
+$passed_status_label = static function(\stdClass $r) use ($str, $completion_by_pair): string {
     $learnerid = (int) ($r->linked_userid ?? 0);
     if ($learnerid <= 1) {
         $learnerid = (int) ($r->userid ?? 0);
@@ -218,10 +245,6 @@ $completion_status_label = static function(\stdClass $r) use ($str, $completion_
     $cid = (int) ($r->courseid ?? 0);
     if ($learnerid > 1 && $cid > 0 && !empty($completion_by_pair[$learnerid . ':' . $cid])) {
         return $str('search_course_passed', 'Passed');
-    }
-    $attended = (int) ($r->attended ?? 0);
-    if ($attended === \local_tm_course\attendance_manager::ATTEND_PRESENT) {
-        return $str('learning_status_completed', 'Completed');
     }
     return '—';
 };
@@ -361,7 +384,8 @@ echo $OUTPUT->header();
     <?php endif; ?>
     <th><?php echo $str('search_enrol_status', 'Enrolment status'); ?></th>
     <th><?php echo $str('search_attendance_status', 'Attendance'); ?></th>
-    <th><?php echo $str('search_completion_status', 'Completion / pass'); ?></th>
+    <th><?php echo $str('search_completed_status', 'Completed'); ?></th>
+    <th><?php echo $str('search_passed_status', 'Passed'); ?></th>
     <th><?php echo $str('search_prereq_hold_status', 'Prerequisite hold'); ?></th>
 </tr></thead>
 <tbody>
@@ -392,7 +416,8 @@ echo $OUTPUT->header();
     <?php endif; ?>
     <td><span class="tm-badge tm-badge-<?php echo $badge_cls; ?>"><?php echo $badge_lbl; ?></span></td>
     <td><?php echo s($attendance_status_label($r)); ?></td>
-    <td><?php echo s($completion_status_label($r)); ?></td>
+    <td><?php echo s($completed_status_label($r)); ?></td>
+    <td><?php echo s($passed_status_label($r)); ?></td>
     <td><?php echo s($hold_status_label($r)); ?></td>
 </tr>
 <?php endforeach; ?>

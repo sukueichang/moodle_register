@@ -1713,6 +1713,8 @@ class enrolment_manager {
 
         // Seat-hold rows keep a placeholder on e.userid. After 補件, the learner
         // lives on linked_userid / linked_email. Search and display use that person.
+        // Use <> '' literals (not named params) inside CASE — named params inside
+        // sql_like() field expressions have caused empty result sets on some drivers.
         $linked = '(e.placeholder_seq > 0 AND lu.id IS NOT NULL)';
         $efffirstname = "CASE WHEN $linked THEN lu.firstname ELSE u.firstname END";
         $efflastname = "CASE WHEN $linked THEN lu.lastname ELSE u.lastname END";
@@ -1720,23 +1722,20 @@ class enrolment_manager {
                         WHEN $linked THEN lu.email
                         WHEN e.placeholder_seq > 0
                              AND e.linked_email IS NOT NULL
-                             AND e.linked_email <> :emptymail
+                             AND e.linked_email <> ''
                             THEN e.linked_email
                         ELSE u.email
                      END";
         $effinstitution = "CASE
                               WHEN $linked
                                    AND lu.institution IS NOT NULL
-                                   AND lu.institution <> :emptyinst
+                                   AND lu.institution <> ''
                                   THEN lu.institution
                               ELSE u.institution
                            END";
 
         $conditions = [];
-        $params = [
-            'emptymail' => '',
-            'emptyinst' => '',
-        ];
+        $params = [];
         $idx = 0;
         foreach ([
             $efffirstname => $firstname,
@@ -1759,7 +1758,9 @@ class enrolment_manager {
             $params['linkeduid'] = $current_userid;
         }
 
-        $sql = "SELECT e.*,
+        // e.id first: Moodle get_records_sql keys on column 1 (BUGFIX_LOG).
+        // LEFT JOIN course: orphan/missing course must not hide enrolments.
+        $sql = "SELECT e.id, e.*,
                        $efffirstname AS firstname,
                        $efflastname AS lastname,
                        $effemail AS email,
@@ -1773,7 +1774,7 @@ class enrolment_manager {
              LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
-                  JOIN {course} c ON c.id = s.courseid
+             LEFT JOIN {course} c ON c.id = s.courseid
                  WHERE " . implode(' AND ', $conditions) . "
               ORDER BY s.starttime DESC";
 
@@ -1781,10 +1782,12 @@ class enrolment_manager {
     }
 
     /**
-     * Enrolment rows for known Moodle user ids (holder or linked learner).
-     * Used by search.php so course records follow the same user hits as certificates.
+     * Enrolment rows for known Moodle user ids (holder or linked learner)
+     * and optional emails (seat-hold linked_email before linked_userid is set).
+     * Same identity basis as search.php user-results / certificates.
      *
      * @param int[] $userids
+     * @param string[] $emails lowercased emails from matched Moodle users
      * @param bool $admin_view
      * @param int|null $current_userid
      * @param int $limit
@@ -1794,7 +1797,8 @@ class enrolment_manager {
         array $userids,
         bool $admin_view = false,
         ?int $current_userid = null,
-        int $limit = 100
+        int $limit = 100,
+        array $emails = []
     ): array {
         global $DB;
 
@@ -1802,17 +1806,31 @@ class enrolment_manager {
         $userids = array_values(array_unique(array_filter(array_map('intval', $userids), static function(int $id): bool {
             return $id > 1;
         })));
-        if (empty($userids)) {
+        $emails = array_values(array_unique(array_filter(array_map(static function($e): string {
+            return \core_text::strtolower(trim((string) $e));
+        }, $emails), static function(string $e): bool {
+            return $e !== '' && strpos($e, '@') !== false;
+        })));
+        if (empty($userids) && empty($emails)) {
             return [];
         }
 
-        // Distinct param prefixes: drivers reject reusing the same named IN params twice.
-        [$insqluser, $paramsuser] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'eu');
-        [$insqllinked, $paramslinked] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'el');
-        $params = $paramsuser + $paramslinked;
-        $conditions = [
-            "(e.userid $insqluser OR e.linked_userid $insqllinked)",
-        ];
+        $params = [];
+        $identity = [];
+        if (!empty($userids)) {
+            // Distinct param prefixes: drivers reject reusing the same named IN params twice.
+            [$insqluser, $paramsuser] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'eu');
+            [$insqllinked, $paramslinked] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'el');
+            $params += $paramsuser + $paramslinked;
+            $identity[] = "e.userid $insqluser";
+            $identity[] = "e.linked_userid $insqllinked";
+        }
+        if (!empty($emails)) {
+            [$insqlemail, $paramsemail] = $DB->get_in_or_equal($emails, SQL_PARAMS_NAMED, 'em');
+            $params += $paramsemail;
+            $identity[] = "(e.placeholder_seq > 0 AND e.linked_email $insqlemail)";
+        }
+        $conditions = ['(' . implode(' OR ', $identity) . ')'];
 
         if (!$admin_view && $current_userid) {
             $conditions[] = '(e.userid = :uid OR (e.placeholder_seq > 0 AND e.linked_userid = :linkeduid))';
@@ -1820,23 +1838,22 @@ class enrolment_manager {
             $params['linkeduid'] = $current_userid;
         }
 
-        $sql = "SELECT e.*,
-                       CASE WHEN (e.placeholder_seq > 0 AND lu.id IS NOT NULL)
-                            THEN lu.firstname ELSE u.firstname END AS firstname,
-                       CASE WHEN (e.placeholder_seq > 0 AND lu.id IS NOT NULL)
-                            THEN lu.lastname ELSE u.lastname END AS lastname,
+        $linked = '(e.placeholder_seq > 0 AND lu.id IS NOT NULL)';
+        $sql = "SELECT e.id, e.*,
+                       CASE WHEN $linked THEN lu.firstname ELSE u.firstname END AS firstname,
+                       CASE WHEN $linked THEN lu.lastname ELSE u.lastname END AS lastname,
                        CASE
-                           WHEN (e.placeholder_seq > 0 AND lu.id IS NOT NULL) THEN lu.email
+                           WHEN $linked THEN lu.email
                            WHEN e.placeholder_seq > 0
                                 AND e.linked_email IS NOT NULL
-                                AND e.linked_email <> :emptymail
+                                AND e.linked_email <> ''
                                THEN e.linked_email
                            ELSE u.email
                        END AS email,
                        CASE
-                           WHEN (e.placeholder_seq > 0 AND lu.id IS NOT NULL)
+                           WHEN $linked
                                 AND lu.institution IS NOT NULL
-                                AND lu.institution <> :emptyinst
+                                AND lu.institution <> ''
                                THEN lu.institution
                            ELSE u.institution
                        END AS user_institution,
@@ -1849,12 +1866,9 @@ class enrolment_manager {
              LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
-                  JOIN {course} c ON c.id = s.courseid
+             LEFT JOIN {course} c ON c.id = s.courseid
                  WHERE " . implode(' AND ', $conditions) . "
               ORDER BY s.starttime DESC, e.timecreated DESC";
-
-        $params['emptymail'] = '';
-        $params['emptyinst'] = '';
 
         return $DB->get_records_sql($sql, $params, 0, $limit);
     }
@@ -1896,7 +1910,7 @@ class enrolment_manager {
         global $DB;
 
         // Include seat-hold rows where this user is the linked learner (SPEC §59 / my_records).
-        $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
+        $sql = "SELECT e.id, e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
                        s.delivery_mode AS session_delivery_mode,
@@ -1905,7 +1919,7 @@ class enrolment_manager {
                   JOIN {user} u ON u.id = e.userid
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
-                  JOIN {course} c ON c.id = s.courseid
+             LEFT JOIN {course} c ON c.id = s.courseid
                  WHERE e.userid = :userid
                     OR e.linked_userid = :linkeduserid
               ORDER BY s.starttime DESC, e.timecreated DESC";
@@ -2953,22 +2967,22 @@ class enrolment_manager {
             $status = session_manager::ENROL_APPROVED;
         }
 
-        // Audit stays on enrolment notes (and Moodle debugging at DEVELOPER only).
-        // Do not use DEBUG_NORMAL — it surfaces a stack trace on successful enrol.
+        // Audit: persist on enrolment.notes only. Never call debugging() here —
+        // test sites often run with debug display on, and any debugging() level
+        // surfaces a stack trace after a successful site-admin force enrol.
         $auditnote = '';
         if ($didprereqbypass) {
             $auditnote = get_string('siteadmin_prereq_bypass_note', 'local_tm_course', (object) [
                 'adminid' => $actorid,
+                'learnerid' => $userid,
+                'sessionid' => $sessionid,
                 'time' => userdate(time(), get_string('strftimedatetimeshort')),
             ]);
-            debugging(
-                'TM Course siteadmin prereq bypass: actor=' . $actorid
-                . ' learner=' . $userid . ' session=' . $sessionid,
-                DEBUG_DEVELOPER
-            );
         } else if ($status === session_manager::ENROL_APPROVED && $siteadminactor) {
             $auditnote = get_string('siteadmin_auto_approve_note', 'local_tm_course', (object) [
                 'adminid' => $actorid,
+                'learnerid' => $userid,
+                'sessionid' => $sessionid,
                 'time' => userdate(time(), get_string('strftimedatetimeshort')),
             ]);
         }
