@@ -653,31 +653,165 @@ class attendance_manager {
 
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
 
+        if (!empty($enrol->prereq_absence_hold)) {
+            throw new \moodle_exception('error_prereq_absence_hold_attendance', 'local_tm_course');
+        }
+
         // Update our own table
         $DB->set_field('local_tm_course_enrolments', 'attended',     $attended, ['id' => $enrolid]);
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(),    ['id' => $enrolid]);
 
-        // Sync to mod_attendance if installed
+        // Sync to mod_attendance if installed. Failures must not block local attendance
+        // or the prerequisite-absence hold update that follows.
         if (self::is_mod_attendance_installed()) {
-            // Ensure linkage (activity/slot/statuses) exists before writing attendance_log.
             try {
                 self::setup_session((int)$enrol->sessionid);
-                // Backfill any previously marked rows (present/absent) into the current attendance slot.
-                // This covers scenarios where the course attendance activity was deleted and recreated.
                 self::backfill_marked_attendance_for_session((int)$enrol->sessionid);
+                self::sync_to_mod_attendance($enrol, $attended);
             } catch (\Throwable $t) {
-                error_log('TM Course setup_session before attendance sync failed: ' . $t->getMessage());
+                error_log('TM Course mod_attendance sync failed: ' . $t->getMessage());
             }
-            self::sync_to_mod_attendance($enrol, $attended);
         }
 
         // Trigger course completion when student is marked present.
         // Seat-hold rows keep the placeholder on userid; the real learner is linked_userid.
-        if ($attended === self::ATTEND_PRESENT) {
-            $session = $DB->get_record('local_tm_course_sessions',
-                                       ['id' => $enrol->sessionid], '*', MUST_EXIST);
-            if (!empty($session->courseid)) {
-                self::sync_completion(self::attendance_log_userid($enrol), (int)$session->courseid);
+        $previousattended = (int) $enrol->attended;
+        try {
+            if ($attended === self::ATTEND_PRESENT) {
+                $session = $DB->get_record('local_tm_course_sessions',
+                                           ['id' => $enrol->sessionid], '*', MUST_EXIST);
+                if (!empty($session->courseid)) {
+                    self::sync_completion(self::attendance_log_userid($enrol), (int)$session->courseid);
+                }
+            } else if ($attended === self::ATTEND_ABSENT && $previousattended === self::ATTEND_PRESENT) {
+                $session = $DB->get_record('local_tm_course_sessions',
+                                           ['id' => $enrol->sessionid], '*', MUST_EXIST);
+                if (!empty($session->courseid)) {
+                    self::revoke_completion_after_flipped_absence(
+                        self::attendance_log_userid($enrol),
+                        (int) $session->courseid,
+                        $enrolid
+                    );
+                }
+            }
+        } catch (\Throwable $t) {
+            error_log('TM Course completion sync after attendance failed: ' . $t->getMessage());
+        }
+
+        $enrol->attended = $attended;
+        try {
+            require_once(__DIR__ . '/enrolment_manager.php');
+            enrolment_manager::sync_prereq_holds_after_attendance($enrolid);
+        } catch (\Throwable $t) {
+            error_log('TM Course prerequisite hold sync failed: ' . $t->getMessage());
+        }
+    }
+
+    /**
+     * After manual / admin / batch cancel: reset this enrolment's attendance to UNSET
+     * and remove the learner's mod_attendance log for this TM session slot only.
+     *
+     * Does not run on prerequisite hold/restore (those keep attended as-is).
+     * Does not call sync_prereq_holds_after_attendance — cancelled rows must not
+     * restore dependents via an accidental "no longer absent" signal.
+     * Course completion is revoked only when this row was Present and no other
+     * present session or issued certificate still justifies completion.
+     *
+     * @param int $enrolid local_tm_course_enrolments.id
+     */
+    public static function clear_attendance_after_enrolment_cancel(int $enrolid): void {
+        global $DB;
+
+        if ($enrolid <= 0) {
+            return;
+        }
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', IGNORE_MISSING);
+        if (!$enrol) {
+            return;
+        }
+
+        $previous = (int) ($enrol->attended ?? self::ATTEND_UNSET);
+        if ($previous !== self::ATTEND_UNSET) {
+            $DB->set_field('local_tm_course_enrolments', 'attended', self::ATTEND_UNSET, ['id' => $enrolid]);
+            $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+            $enrol->attended = self::ATTEND_UNSET;
+        }
+
+        if (self::is_mod_attendance_installed()) {
+            try {
+                self::clear_mod_attendance_log_for_enrol($enrol);
+            } catch (\Throwable $t) {
+                error_log('TM Course clear mod_attendance on cancel failed: ' . $t->getMessage());
+            }
+        }
+
+        if ($previous === self::ATTEND_PRESENT) {
+            try {
+                $session = $DB->get_record('local_tm_course_sessions', ['id' => (int) $enrol->sessionid], '*', IGNORE_MISSING);
+                if ($session && !empty($session->courseid)) {
+                    self::revoke_completion_after_flipped_absence(
+                        self::attendance_log_userid($enrol),
+                        (int) $session->courseid,
+                        $enrolid
+                    );
+                }
+            } catch (\Throwable $t) {
+                error_log('TM Course completion revoke on cancel failed: ' . $t->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Delete this learner's attendance_log row for the TM session's mod_attendance slot.
+     */
+    private static function clear_mod_attendance_log_for_enrol(\stdClass $enrol): void {
+        global $DB;
+
+        $session = $DB->get_record('local_tm_course_sessions', ['id' => (int) $enrol->sessionid], '*', IGNORE_MISSING);
+        if (!$session) {
+            return;
+        }
+        $courseid = (int) ($session->courseid ?? 0);
+        if ($courseid <= 0) {
+            return;
+        }
+
+        $att_sessionid = (int) ($session->attendance_sessionid ?? 0);
+        $att_instance = 0;
+        if ($att_sessionid > 0) {
+            $attsess = $DB->get_record('attendance_sessions', ['id' => $att_sessionid], 'id,attendanceid', IGNORE_MISSING);
+            if ($attsess) {
+                $att_instance = (int) $attsess->attendanceid;
+            } else {
+                $att_sessionid = 0;
+            }
+        }
+        if ($att_sessionid <= 0) {
+            $resolved = self::resolve_attendance_slot_across_course($session, $courseid);
+            if ($resolved) {
+                $att_sessionid = (int) ($resolved['sessionid'] ?? 0);
+                $att_instance = (int) ($resolved['attendanceid'] ?? 0);
+            }
+        }
+        if ($att_sessionid <= 0) {
+            return;
+        }
+
+        $studentid = self::attendance_log_userid($enrol);
+        if ($studentid < 2) {
+            return;
+        }
+
+        $DB->delete_records('attendance_log', [
+            'sessionid' => $att_sessionid,
+            'studentid' => $studentid,
+        ]);
+
+        if ($att_instance > 0) {
+            try {
+                self::sync_binary_attendance_grade_for_user($att_instance, $courseid, $studentid);
+            } catch (\Throwable $t) {
+                error_log('TM Course binary grade sync after cancel clear failed: ' . $t->getMessage());
             }
         }
     }
@@ -1251,6 +1385,9 @@ class attendance_manager {
 
         $count = 0;
         foreach ($approved as $enrol) {
+            if (!empty($enrol->prereq_absence_hold)) {
+                continue;
+            }
             if ((int)$enrol->attended !== self::ATTEND_PRESENT) {
                 self::mark_attended((int)$enrol->id, self::ATTEND_PRESENT);
                 $count++;
@@ -1270,6 +1407,42 @@ class attendance_manager {
      * @param int $userid
      * @param int $courseid
      */
+    /**
+     * Drop course completion written for a present mark that was just changed to absent.
+     * Keeps completion when another present session or an issued certificate still exists.
+     */
+    private static function revoke_completion_after_flipped_absence(int $userid, int $courseid, int $enrolid): void {
+        global $DB, $CFG;
+        if ($userid < 2 || $courseid <= 0) {
+            return;
+        }
+        require_once(__DIR__ . '/certificate_helper.php');
+        require_once(__DIR__ . '/prerequisite_manager.php');
+        if (certificate_helper::user_has_issued_course_certificate($userid, $courseid)) {
+            return;
+        }
+        if (prerequisite_manager::user_has_present_approved_session($userid, $courseid, [
+            'exclude_enrolment_ids' => [$enrolid],
+        ])) {
+            return;
+        }
+        require_once($CFG->dirroot . '/lib/completionlib.php');
+        $course = $DB->get_record('course', ['id' => $courseid]);
+        if (!$course) {
+            return;
+        }
+        $completion = new \completion_info($course);
+        if (!$completion->is_enabled()) {
+            return;
+        }
+        $row = $DB->get_record('course_completions', ['userid' => $userid, 'course' => $courseid]);
+        if (!$row || empty($row->timecompleted)) {
+            return;
+        }
+        $row->timecompleted = null;
+        $DB->update_record('course_completions', $row);
+    }
+
     private static function sync_completion(int $userid, int $courseid): void {
         global $DB, $CFG;
 

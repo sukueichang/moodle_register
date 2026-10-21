@@ -12,6 +12,7 @@ require_once(__DIR__ . '/attendance_manager.php');
 require_once(__DIR__ . '/notification_helper.php');
 require_once(__DIR__ . '/session_verification_manager.php');
 require_once(__DIR__ . '/prerequisite_manager.php');
+require_once(__DIR__ . '/prereq_hold_rules.php');
 
 class enrolment_manager {
 
@@ -258,6 +259,10 @@ class enrolment_manager {
 
         $session = session_manager::get_session($sessionid);
 
+        if (session_manager::is_unattended_void($session)) {
+            throw new \moodle_exception('error_session_void_unattended', 'local_tm_course');
+        }
+
         if (!session_manager::can_submit_enrolment($session, false)) {
             if (!session_manager::is_online_session($session)
                 && ((int) $session->status === session_manager::STATUS_FULL
@@ -380,7 +385,10 @@ class enrolment_manager {
         // 6. Write record
         if ($existing) {
             // Re-activate a cancelled/rejected enrolment by updating the same row.
+            // Never inherit prior present/absent marks onto the new enrolment cycle.
             $existing->status = $status;
+            $existing->attended = attendance_manager::ATTEND_UNSET;
+            $existing->prereq_absence_hold = 0;
             $existing->institution = $userobj->institution;
             if (empty($existing->batch_submittedby)) {
                 // Keep source attribution from now on for self-service enrolments.
@@ -422,6 +430,8 @@ class enrolment_manager {
                 ], '*', IGNORE_MISSING);
                 if ($existing2) {
                     $existing2->status = $status;
+                    $existing2->attended = attendance_manager::ATTEND_UNSET;
+                    $existing2->prereq_absence_hold = 0;
                     $existing2->institution = $userobj->institution;
                     if (empty($existing2->batch_submittedby)) {
                         $existing2->batch_submittedby = (int) $userid;
@@ -615,11 +625,76 @@ class enrolment_manager {
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status($enrol->sessionid);
         try {
+            attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
             attendance_manager::remove_from_group((int)$enrol->sessionid, (int)$enrol->userid);
             self::clear_sync_health_state((int)$enrolid);
             notification_helper::notify_enrolment_cancelled((int)$enrolid);
         } finally {
             self::cascade_cancel_after_prereq_lost((int)$enrolid);
+        }
+    }
+
+    /**
+     * Admin/approver: cancel enrolment directly to ENROL_CANCELLED (not reject, not unapprove).
+     * Releases desk, LMS enrolment, and attendance group when previously approved.
+     *
+     * @throws \moodle_exception When actor lacks capability or enrolment is already terminal.
+     */
+    public static function cancel_by_admin(int $enrolid, int $actorid, string $reasontext = ''): void {
+        global $DB;
+        if ($actorid <= 0) {
+            throw new \moodle_exception('nopermissions', 'error');
+        }
+        $ctx = \context_system::instance();
+        if (!is_siteadmin($actorid)
+            && !has_capability('local/tm_course:approve', $ctx, $actorid)
+            && !has_capability('local/tm_course:manage', $ctx, $actorid)) {
+            throw new \moodle_exception('nopermissions', 'error');
+        }
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        $status = (int) $enrol->status;
+        $terminal = [
+            session_manager::ENROL_CANCELLED,
+            session_manager::ENROL_REJECTED,
+        ];
+        if (in_array($status, $terminal, true)) {
+            throw new \moodle_exception('error_batch_cancel_terminal', 'local_tm_course');
+        }
+        $wasapproved = ($status === session_manager::ENROL_APPROVED);
+        $session = session_manager::get_session((int) $enrol->sessionid);
+        $syncuserid = self::moodle_sync_subject_userid($enrol);
+        $reasontext = clean_param(trim($reasontext), PARAM_TEXT);
+
+        $DB->set_field('local_tm_course_enrolments', 'status',
+            session_manager::ENROL_CANCELLED, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_code', 'admin', ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $reasontext, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        session_manager::recalculate_status((int) $enrol->sessionid);
+
+        try {
+            attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
+            if ($wasapproved) {
+                try {
+                    self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
+                } catch (\Throwable $e) {
+                    debugging('TM Course unenrol on admin cancel failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+                try {
+                    attendance_manager::remove_from_group((int) $enrol->sessionid, $syncuserid);
+                } catch (\Throwable $e) {
+                    debugging('TM Course remove_from_group on admin cancel failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+            }
+            self::clear_sync_health_state((int) $enrolid);
+            try {
+                notification_helper::notify_enrolment_cancelled((int) $enrolid);
+            } catch (\Throwable $e) {
+                debugging('TM Course cancel notify failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        } finally {
+            self::cascade_cancel_after_prereq_lost((int) $enrolid);
         }
     }
 
@@ -659,6 +734,7 @@ class enrolment_manager {
         session_manager::recalculate_status((int) $enrol->sessionid);
 
         try {
+            attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
             if ($wasapproved) {
                 try {
                     self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
@@ -989,6 +1065,11 @@ class enrolment_manager {
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status((int)$enrol->sessionid);
 
+        try {
+            attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
+        } catch (\Throwable $e) {
+            // ignore — cascade must continue
+        }
         if ($wasapproved) {
             try {
                 self::sync_moodle_enrolment($syncuserid, (int)$session->courseid, 'unenrol');
@@ -1011,6 +1092,182 @@ class enrolment_manager {
 
         // Further dependents of this cancelled row.
         self::cascade_cancel_after_prereq_lost($enrolid);
+    }
+
+    /**
+     * Learner userid for prerequisite display (linked learner on seat rows).
+     */
+    public static function enrolment_learner_userid(\stdClass $enrol): int {
+        $linked = (int) ($enrol->linked_userid ?? 0);
+        if ($linked > 1) {
+            return $linked;
+        }
+        $userid = (int) ($enrol->userid ?? 0);
+        if ($userid > 1 && !self::is_placeholder_holder_userid($userid)) {
+            return $userid;
+        }
+        return $userid > 1 ? $userid : 0;
+    }
+
+    /**
+     * Hold reason and optional pre-hold badge for roster / review UI.
+     *
+     * @return array{hold:bool,hold_reason:string,prehold_courses:string[]}
+     */
+    public static function prereq_roster_flags(\stdClass $enrol, \stdClass $session): array {
+        $hold = !empty($enrol->prereq_absence_hold);
+        $learnerid = self::enrolment_learner_userid($enrol);
+        $holdreason = '';
+        $prehold = [];
+        if ($learnerid > 1) {
+            if ($hold) {
+                $holdreason = prerequisite_manager::format_absence_hold_reason($learnerid, $session);
+            } else {
+                $prehold = prerequisite_manager::prehold_course_labels($learnerid, $session);
+            }
+        }
+        if ($hold && $holdreason === '') {
+            $holdreason = get_string('prereq_absence_hold_reason', 'local_tm_course');
+        }
+        return [
+            'hold' => $hold,
+            'hold_reason' => $holdreason,
+            'prehold_courses' => $prehold,
+        ];
+    }
+
+    /**
+     * Guard against recursive prerequisite-absence hold updates.
+     * @var array<int,bool>
+     */
+    private static $prereq_hold_guard = [];
+
+    /**
+     * After attendance changes, pause or restore dependent enrolments.
+     *
+     * The enrolment row, desk, and attendance value are left in place. Only
+     * prereq_absence_hold is toggled, and only on rows that are still active.
+     * Cancelled or rejected rows are never restored.
+     */
+    public static function sync_prereq_holds_after_attendance(int $sourceenrolid): void {
+        if ($sourceenrolid <= 0 || !empty(self::$prereq_hold_guard[$sourceenrolid])) {
+            return;
+        }
+        self::$prereq_hold_guard[$sourceenrolid] = true;
+        try {
+            global $DB;
+            $source = $DB->get_record('local_tm_course_enrolments', ['id' => $sourceenrolid], '*', IGNORE_MISSING);
+            if (!$source) {
+                return;
+            }
+            try {
+                $sourcesession = session_manager::get_session((int) $source->sessionid);
+            } catch (\Throwable $e) {
+                return;
+            }
+            $prereqcourseid = (int) ($sourcesession->courseid ?? 0);
+            if ($prereqcourseid <= 0) {
+                return;
+            }
+
+            $learnerids = [];
+            $linked = (int) ($source->linked_userid ?? 0);
+            $userid = (int) $source->userid;
+            if ($linked > 1) {
+                $learnerids[$linked] = $linked;
+            }
+            if ($userid > 1 && !self::is_placeholder_holder_userid($userid)) {
+                $learnerids[$userid] = $userid;
+            }
+            if (empty($learnerids) && $userid > 1) {
+                $learnerids[$userid] = $userid;
+            }
+            if (empty($learnerids)) {
+                return;
+            }
+
+            $activestatuses = [
+                session_manager::ENROL_PENDING,
+                session_manager::ENROL_APPROVED,
+                session_manager::ENROL_WAITLISTED,
+            ];
+            list($statusinsql, $statusparams) = $DB->get_in_or_equal($activestatuses, SQL_PARAMS_NAMED, 'st');
+            list($userinsql, $userparams) = $DB->get_in_or_equal(array_values($learnerids), SQL_PARAMS_NAMED, 'lu');
+            list($linkinsql, $linkparams) = $DB->get_in_or_equal(array_values($learnerids), SQL_PARAMS_NAMED, 'lk');
+            $sql = "SELECT e.*
+                      FROM {local_tm_course_enrolments} e
+                     WHERE e.id <> :src
+                       AND e.status $statusinsql
+                       AND (e.userid $userinsql OR e.linked_userid $linkinsql)";
+            $params = ['src' => $sourceenrolid] + $statusparams + $userparams + $linkparams;
+            $deps = $DB->get_records_sql($sql, $params);
+            if (empty($deps)) {
+                return;
+            }
+
+            $sourceinvalid = ((int) $source->attended === attendance_manager::ATTEND_ABSENT)
+                || !empty($source->prereq_absence_hold);
+
+            foreach ($deps as $dep) {
+                $depid = (int) $dep->id;
+                try {
+                    $depsession = session_manager::get_session((int) $dep->sessionid);
+                } catch (\Throwable $e) {
+                    continue;
+                }
+                $rules = prerequisite_manager::resolve_session_rules($depsession);
+                if (!prerequisite_manager::rules_reference_course_complete($rules, $prereqcourseid)) {
+                    continue;
+                }
+
+                $learnerid = $linked > 1 ? $linked : (int) reset($learnerids);
+                $deplinked = (int) ($dep->linked_userid ?? 0);
+                if ($deplinked > 1 && isset($learnerids[$deplinked])) {
+                    $learnerid = $deplinked;
+                } else if (isset($learnerids[(int) $dep->userid])) {
+                    $learnerid = (int) $dep->userid;
+                }
+
+                // Do not exclude the source enrolment id. Absent / held rows are already
+                // ignored by user_has_approved_prereq_session. Excluding the source made
+                // restore impossible after A was marked present again.
+                $ctx = [
+                    'target_starttime' => (int) ($depsession->starttime ?? 0),
+                    'coselected_courseids' => [],
+                ];
+                if ($sourceinvalid) {
+                    $ctx['disqualify_absent_completion'] = [$prereqcourseid];
+                }
+
+                $met = false;
+                try {
+                    $eval = prerequisite_manager::evaluate_user($learnerid, $rules, $ctx);
+                    $met = !empty($eval['met']);
+                } catch (\Throwable $e) {
+                    $met = false;
+                }
+
+                $currently = !empty($dep->prereq_absence_hold);
+                $target = prereq_hold_rules::hold_target($sourceinvalid, $met, $currently);
+                if ($target === ($currently ? 1 : 0)) {
+                    continue;
+                }
+
+                // Flag only. Desk, status, and any attendance already stored on this row stay as they are.
+                // Clearing the flag is not a new enrolment, so void / closed session gates do not apply.
+                $DB->set_field('local_tm_course_enrolments', 'prereq_absence_hold', $target, ['id' => $depid]);
+                $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $depid]);
+                $dep->prereq_absence_hold = $target;
+                try {
+                    session_manager::recalculate_status((int) $dep->sessionid);
+                } catch (\Throwable $e) {
+                    debugging('TM Course prereq hold status recalc failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+                self::sync_prereq_holds_after_attendance($depid);
+            }
+        } finally {
+            unset(self::$prereq_hold_guard[$sourceenrolid]);
+        }
     }
 
     /**
@@ -1469,6 +1726,8 @@ class enrolment_manager {
 
         // Seat-hold rows keep a placeholder on e.userid. After 補件, the learner
         // lives on linked_userid / linked_email. Search and display use that person.
+        // Use <> '' literals (not named params) inside CASE — named params inside
+        // sql_like() field expressions have caused empty result sets on some drivers.
         $linked = '(e.placeholder_seq > 0 AND lu.id IS NOT NULL)';
         $efffirstname = "CASE WHEN $linked THEN lu.firstname ELSE u.firstname END";
         $efflastname = "CASE WHEN $linked THEN lu.lastname ELSE u.lastname END";
@@ -1476,23 +1735,20 @@ class enrolment_manager {
                         WHEN $linked THEN lu.email
                         WHEN e.placeholder_seq > 0
                              AND e.linked_email IS NOT NULL
-                             AND e.linked_email <> :emptymail
+                             AND e.linked_email <> ''
                             THEN e.linked_email
                         ELSE u.email
                      END";
         $effinstitution = "CASE
                               WHEN $linked
                                    AND lu.institution IS NOT NULL
-                                   AND lu.institution <> :emptyinst
+                                   AND lu.institution <> ''
                                   THEN lu.institution
                               ELSE u.institution
                            END";
 
         $conditions = [];
-        $params = [
-            'emptymail' => '',
-            'emptyinst' => '',
-        ];
+        $params = [];
         $idx = 0;
         foreach ([
             $efffirstname => $firstname,
@@ -1515,23 +1771,146 @@ class enrolment_manager {
             $params['linkeduid'] = $current_userid;
         }
 
-        $sql = "SELECT e.*,
+        // e.id first: Moodle get_records_sql keys on column 1 (BUGFIX_LOG).
+        // LEFT JOIN course: orphan/missing course must not hide enrolments.
+        $sql = "SELECT e.id, e.*,
                        $efffirstname AS firstname,
                        $efflastname AS lastname,
                        $effemail AS email,
                        $effinstitution AS user_institution,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
-                       s.delivery_mode AS session_delivery_mode
+                       s.delivery_mode AS session_delivery_mode,
+                       c.fullname AS course_fullname
                   FROM {local_tm_course_enrolments} e
                   JOIN {user} u ON u.id = e.userid
              LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+             LEFT JOIN {course} c ON c.id = s.courseid
                  WHERE " . implode(' AND ', $conditions) . "
               ORDER BY s.starttime DESC";
 
         return $DB->get_records_sql($sql, $params, 0, $limit);
+    }
+
+    /**
+     * Enrolment rows for known Moodle user ids (holder or linked learner)
+     * and optional emails (seat-hold linked_email before linked_userid is set).
+     * Same identity basis as search.php user-results / certificates.
+     *
+     * @param int[] $userids
+     * @param string[] $emails lowercased emails from matched Moodle users
+     * @param bool $admin_view
+     * @param int|null $current_userid
+     * @param int $limit
+     * @return \stdClass[] keyed by enrolment id
+     */
+    public static function search_enrolments_by_userids(
+        array $userids,
+        bool $admin_view = false,
+        ?int $current_userid = null,
+        int $limit = 100,
+        array $emails = []
+    ): array {
+        global $DB;
+
+        $limit = min(100, max(1, $limit));
+        $userids = array_values(array_unique(array_filter(array_map('intval', $userids), static function(int $id): bool {
+            return $id > 1;
+        })));
+        $emails = array_values(array_unique(array_filter(array_map(static function($e): string {
+            return \core_text::strtolower(trim((string) $e));
+        }, $emails), static function(string $e): bool {
+            return $e !== '' && strpos($e, '@') !== false;
+        })));
+        if (empty($userids) && empty($emails)) {
+            return [];
+        }
+
+        $params = [];
+        $identity = [];
+        if (!empty($userids)) {
+            // Distinct param prefixes: drivers reject reusing the same named IN params twice.
+            [$insqluser, $paramsuser] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'eu');
+            [$insqllinked, $paramslinked] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'el');
+            $params += $paramsuser + $paramslinked;
+            $identity[] = "e.userid $insqluser";
+            $identity[] = "e.linked_userid $insqllinked";
+        }
+        if (!empty($emails)) {
+            [$insqlemail, $paramsemail] = $DB->get_in_or_equal($emails, SQL_PARAMS_NAMED, 'em');
+            $params += $paramsemail;
+            $identity[] = "(e.placeholder_seq > 0 AND e.linked_email $insqlemail)";
+        }
+        $conditions = ['(' . implode(' OR ', $identity) . ')'];
+
+        if (!$admin_view && $current_userid) {
+            $conditions[] = '(e.userid = :uid OR (e.placeholder_seq > 0 AND e.linked_userid = :linkeduid))';
+            $params['uid'] = $current_userid;
+            $params['linkeduid'] = $current_userid;
+        }
+
+        $linked = '(e.placeholder_seq > 0 AND lu.id IS NOT NULL)';
+        $sql = "SELECT e.id, e.*,
+                       CASE WHEN $linked THEN lu.firstname ELSE u.firstname END AS firstname,
+                       CASE WHEN $linked THEN lu.lastname ELSE u.lastname END AS lastname,
+                       CASE
+                           WHEN $linked THEN lu.email
+                           WHEN e.placeholder_seq > 0
+                                AND e.linked_email IS NOT NULL
+                                AND e.linked_email <> ''
+                               THEN e.linked_email
+                           ELSE u.email
+                       END AS email,
+                       CASE
+                           WHEN $linked
+                                AND lu.institution IS NOT NULL
+                                AND lu.institution <> ''
+                               THEN lu.institution
+                           ELSE u.institution
+                       END AS user_institution,
+                       sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
+                       s.name AS session_name, s.starttime, s.courseid,
+                       s.delivery_mode AS session_delivery_mode,
+                       c.fullname AS course_fullname
+                  FROM {local_tm_course_enrolments} e
+                  JOIN {user} u ON u.id = e.userid
+             LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
+             LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
+                  JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+             LEFT JOIN {course} c ON c.id = s.courseid
+                 WHERE " . implode(' AND ', $conditions) . "
+              ORDER BY s.starttime DESC, e.timecreated DESC";
+
+        return $DB->get_records_sql($sql, $params, 0, $limit);
+    }
+
+    /**
+     * Merge enrolment search hits by id (later rows win on conflict; preserve order by starttime).
+     *
+     * @param \stdClass[] ...$sets
+     * @return \stdClass[]
+     */
+    public static function merge_enrolment_search_results(array ...$sets): array {
+        $byid = [];
+        foreach ($sets as $set) {
+            foreach ($set as $row) {
+                $id = (int) ($row->id ?? 0);
+                if ($id > 0) {
+                    $byid[$id] = $row;
+                }
+            }
+        }
+        uasort($byid, static function(\stdClass $a, \stdClass $b): int {
+            $sa = (int) ($a->starttime ?? 0);
+            $sb = (int) ($b->starttime ?? 0);
+            if ($sa === $sb) {
+                return ((int) ($b->id ?? 0)) <=> ((int) ($a->id ?? 0));
+            }
+            return $sb <=> $sa;
+        });
+        return $byid;
     }
 
     /**
@@ -1544,14 +1923,16 @@ class enrolment_manager {
         global $DB;
 
         // Include seat-hold rows where this user is the linked learner (SPEC §59 / my_records).
-        $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
+        $sql = "SELECT e.id, e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
-                       s.delivery_mode AS session_delivery_mode
+                       s.delivery_mode AS session_delivery_mode,
+                       c.fullname AS course_fullname
                   FROM {local_tm_course_enrolments} e
                   JOIN {user} u ON u.id = e.userid
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+             LEFT JOIN {course} c ON c.id = s.courseid
                  WHERE e.userid = :userid
                     OR e.linked_userid = :linkeduserid
               ORDER BY s.starttime DESC, e.timecreated DESC";
@@ -1580,8 +1961,17 @@ class enrolment_manager {
      * @param array $entries   List of [ 'userid' => int, 'institution' => string optional, 'diet' => array ]
      * @param bool  $allowclosed When true, full / closed / deadline are allowed (admin manage paths).
      * @param string $batchsubmitternote Optional remark stored on each created/updated enrolment row.
-     * @param bool   $bypassprerequisite Site administrators may bypass prerequisite checks.
-     * @return array{ processed:int, capped:bool, requested:int, skipped:array<int,array{userid:int,reason:string,a?:mixed,message?:string}>, enrolment_ids:int[], prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}> }
+     * @param bool   $bypassprerequisite Only honoured when $actorid is a Moodle site admin
+     *                                   ({@see is_siteadmin()}). Manage / sales roles never bypass.
+     * @return array{
+     *   processed:int,
+     *   capped:bool,
+     *   requested:int,
+     *   skipped:array<int,array{userid:int,reason:string,a?:mixed,message?:string}>,
+     *   enrolment_ids:int[],
+     *   prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}>,
+     *   siteadmin_auto_approved:int
+     * }
      */
     public static function batch_enrol_pending(
         int $sessionid,
@@ -1594,6 +1984,9 @@ class enrolment_manager {
         global $DB;
 
         $session = session_manager::get_session($sessionid);
+        if (session_manager::is_unattended_void($session)) {
+            throw new \moodle_exception('error_session_void_unattended', 'local_tm_course');
+        }
         if (!session_manager::can_submit_enrolment($session, $allowclosed)) {
             if (!session_manager::is_online_session($session)
                 && ((int) $session->status === session_manager::STATUS_FULL
@@ -1642,10 +2035,15 @@ class enrolment_manager {
 
         $bnote = self::normalise_batch_submitter_note($batchsubmitternote);
 
+        // Only Moodle site administrators may skip prerequisite checks. Capability manage is not enough.
+        $siteadminactor = is_siteadmin($actorid);
+        $allowprereqbypass = $bypassprerequisite && $siteadminactor;
+
         $processed = 0;
         $skipped = [];
         $enrolmentids = [];
         $prereqbypassed = [];
+        $siteadminautoapproved = 0;
 
         foreach ($entries as $row) {
             $userid = (int) ($row['userid'] ?? 0);
@@ -1655,23 +2053,39 @@ class enrolment_manager {
             }
             $row['batch_submitter_note'] = $bnote;
             try {
-                $eid = self::enrol_one_pending_batch($sessionid, $session, $userid, $actorid, $row, false, $bypassprerequisite);
+                $preeval = null;
+                $isreallearner = empty($row['is_placeholder_holder']) && (int)($row['placeholder_seq'] ?? 0) <= 0
+                    && !self::is_placeholder_holder_userid($userid);
+                if ($allowprereqbypass && $isreallearner) {
+                    $preeval = self::evaluate_session_prerequisites($session, $userid);
+                }
+                $eid = self::enrol_one_pending_batch(
+                    $sessionid,
+                    $session,
+                    $userid,
+                    $actorid,
+                    $row,
+                    false,
+                    $allowprereqbypass
+                );
                 $enrolmentids[] = $eid;
                 $processed++;
-                if ($bypassprerequisite && empty($row['is_placeholder_holder']) && (int)($row['placeholder_seq'] ?? 0) <= 0
-                    && !self::is_placeholder_holder_userid($userid)) {
-                    $eval = self::evaluate_session_prerequisites($session, $userid);
-                    if (empty($eval['met'])) {
-                        $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], '*', IGNORE_MISSING);
-                        $missingdisplay = prerequisite_manager::format_missing_reason_list($eval['missing']);
-                        $prereqbypassed[] = [
-                            'userid' => $userid,
-                            'email' => $user ? (string)$user->email : '',
-                            'name' => $user ? fullname($user) : '',
-                            'missing' => $missingdisplay !== '' ? [$missingdisplay] : [],
-                            'missing_display' => $missingdisplay,
-                        ];
+                if ($siteadminactor && $isreallearner) {
+                    $fresh = $DB->get_record('local_tm_course_enrolments', ['id' => $eid], 'id,status', IGNORE_MISSING);
+                    if ($fresh && (int) $fresh->status === session_manager::ENROL_APPROVED) {
+                        $siteadminautoapproved++;
                     }
+                }
+                if ($preeval !== null && empty($preeval['met'])) {
+                    $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], '*', IGNORE_MISSING);
+                    $missingdisplay = prerequisite_manager::format_missing_reason_list($preeval['missing'] ?? []);
+                    $prereqbypassed[] = [
+                        'userid' => $userid,
+                        'email' => $user ? (string)$user->email : '',
+                        'name' => $user ? fullname($user) : '',
+                        'missing' => $missingdisplay !== '' ? [$missingdisplay] : [],
+                        'missing_display' => $missingdisplay,
+                    ];
                 }
             } catch (\moodle_exception $ex) {
                 $skipped[] = [
@@ -1692,6 +2106,7 @@ class enrolment_manager {
             'skipped'   => $skipped,
             'enrolment_ids' => $enrolmentids,
             'prereq_bypassed' => $prereqbypassed,
+            'siteadmin_auto_approved' => $siteadminautoapproved,
         ];
     }
 
@@ -1849,6 +2264,9 @@ class enrolment_manager {
         if ($DB->record_exists_sql($dupsql, $dupparams)) {
             throw new \moodle_exception('error_batch_already_active', 'local_tm_course');
         }
+
+        // Linking a real learner is an enrolment entry and must pass the same prerequisite gate.
+        self::assert_user_meets_prerequisites($session, $newuserid);
 
         if ($oldlinkeduserid > 0 && $oldlinkeduserid !== $newuserid) {
             $unlinkold($oldlinkeduserid);
@@ -2035,7 +2453,7 @@ class enrolment_manager {
         global $DB;
 
         $sql = "SELECT e.id, e.userid, e.status, e.desk_number, e.institution,
-                       e.attended, e.diet_choice, e.diet_meat_other,
+                       e.attended, e.diet_choice, e.diet_meat_other, e.prereq_absence_hold,
                        e.batch_submittedby, e.batch_submitter_note,
                        e.seat_company, e.placeholder_seq, e.linked_userid, e.linked_email, e.placeholder_name,
                        u.firstname, u.lastname, u.email, u.institution AS profile_institution,
@@ -2082,12 +2500,16 @@ class enrolment_manager {
             if ($inst === '—') {
                 $inst = '';
             }
+            $flags = self::prereq_roster_flags($row, $session);
             $learners[] = [
                 'enrolid' => (int) $row->id,
                 'desk_number' => (int) ($row->desk_number ?? 0),
                 'displayname' => (string) ($cells['displayname'] ?? '—'),
                 'institution' => $inst,
                 'source_label' => self::format_enrol_source_label($row),
+                'prereq_absence_hold' => $flags['hold'] ? 1 : 0,
+                'prereq_hold_reason' => $flags['hold_reason'],
+                'prehold_courses' => $flags['prehold_courses'],
             ];
         }
 
@@ -2186,7 +2608,8 @@ class enrolment_manager {
         list($statusinsql, $statusparams) = $DB->get_in_or_equal($statuses, SQL_PARAMS_NAMED, 'st');
 
         $sql = "SELECT e.id, e.userid, e.status, e.desk_number, e.institution, e.notes,
-                       e.diet_choice, e.diet_meat_other, e.batch_submittedby, e.batch_submitter_note,
+                       e.diet_choice, e.diet_meat_other, e.prereq_absence_hold,
+                       e.batch_submittedby, e.batch_submitter_note,
                        e.seat_company, e.placeholder_seq, e.linked_userid, e.linked_email, e.placeholder_name,
                        e.vq_submission_id, e.timecreated,
                        u.firstname, u.lastname, u.email, u.institution AS profile_institution,
@@ -2228,6 +2651,7 @@ class enrolment_manager {
             if ($email === '—') {
                 $email = '';
             }
+            $flags = self::prereq_roster_flags($row, $session);
             $learner = [
                 'enrolid' => (int) $row->id,
                 'status' => (int) $row->status,
@@ -2245,6 +2669,9 @@ class enrolment_manager {
                 'notes' => trim((string) ($row->notes ?? '')),
                 'vq_submission_id' => (int) ($row->vq_submission_id ?? 0),
                 'timecreated' => (int) ($row->timecreated ?? 0),
+                'prereq_absence_hold' => $flags['hold'] ? 1 : 0,
+                'prereq_hold_reason' => $flags['hold_reason'],
+                'prehold_courses' => $flags['prehold_courses'],
             ];
             $dn = (int) $learner['desk_number'];
             if ($dn >= 1 && $dn <= $numdesks) {
@@ -2358,7 +2785,12 @@ class enrolment_manager {
         $present = $absent = $unset = 0;
         $meat = $veg = $unknown = 0;
         $enrolledmeat = $enrolledveg = $enrolledunknown = 0;
+        $enrolled = 0;
         foreach ($learners as $learner) {
+            if (!empty($learner['prereq_absence_hold'])) {
+                continue;
+            }
+            $enrolled++;
             $att = (int) ($learner['attended'] ?? 0);
             if ($att === attendance_manager::ATTEND_PRESENT) {
                 $present++;
@@ -2386,7 +2818,7 @@ class enrolment_manager {
             }
         }
         return [
-            'enrolled' => count($learners),
+            'enrolled' => $enrolled,
             'present' => $present,
             'absent' => $absent,
             'unset' => $unset,
@@ -2430,6 +2862,10 @@ class enrolment_manager {
         $skipchecks = !empty($row['is_placeholder_holder'])
             || $placeholderseq > 0
             || self::is_placeholder_holder_userid($userid);
+        // Seat placeholders have no learner to check. Sessions with prerequisites cannot take them.
+        if ($skipchecks && prerequisite_manager::session_has_prerequisites($session)) {
+            throw new \moodle_exception('error_batch_seat_prerequisite', 'local_tm_course');
+        }
         $seatcompanyraw = isset($row['seat_company']) ? trim((string)$row['seat_company']) : '';
         $seatcompanydb = ($seatcompanyraw !== '') ? clean_param($seatcompanyraw, PARAM_TEXT) : null;
 
@@ -2453,8 +2889,19 @@ class enrolment_manager {
             $userobj->institution = $fallback;
         }
 
-        if (!$skipchecks && !$bypassprerequisite) {
-            self::assert_user_meets_prerequisites($session, $userid);
+        // Prerequisite bypass is restricted to Moodle site administrators (is_siteadmin).
+        // local/tm_course:manage alone must never skip the check.
+        $siteadminactor = is_siteadmin($actorid);
+        $didprereqbypass = false;
+        if (!$skipchecks) {
+            if ($bypassprerequisite && $siteadminactor) {
+                $eval = self::evaluate_session_prerequisites($session, $userid);
+                if (empty($eval['met'])) {
+                    $didprereqbypass = true;
+                }
+            } else {
+                self::assert_user_meets_prerequisites($session, $userid);
+            }
         }
 
         $activeStatuses = [
@@ -2527,7 +2974,31 @@ class enrolment_manager {
             'userid'    => $userid,
         ], '*', IGNORE_MISSING);
 
+        // Site admin proxy enrolments for real learners are approved immediately.
         $status = session_manager::ENROL_PENDING;
+        if ($siteadminactor && !$skipchecks) {
+            $status = session_manager::ENROL_APPROVED;
+        }
+
+        // Audit: persist on enrolment.notes only. Never call debugging() here —
+        // test sites often run with debug display on, and any debugging() level
+        // surfaces a stack trace after a successful site-admin force enrol.
+        $auditnote = '';
+        if ($didprereqbypass) {
+            $auditnote = get_string('siteadmin_prereq_bypass_note', 'local_tm_course', (object) [
+                'adminid' => $actorid,
+                'learnerid' => $userid,
+                'sessionid' => $sessionid,
+                'time' => userdate(time(), get_string('strftimedatetimeshort')),
+            ]);
+        } else if ($status === session_manager::ENROL_APPROVED && $siteadminactor) {
+            $auditnote = get_string('siteadmin_auto_approve_note', 'local_tm_course', (object) [
+                'adminid' => $actorid,
+                'learnerid' => $userid,
+                'sessionid' => $sessionid,
+                'time' => userdate(time(), get_string('strftimedatetimeshort')),
+            ]);
+        }
 
         if ($existing) {
             $st = (int) $existing->status;
@@ -2535,6 +3006,8 @@ class enrolment_manager {
                 throw new \moodle_exception('error_batch_already_active', 'local_tm_course');
             }
             $existing->status = $status;
+            $existing->attended = attendance_manager::ATTEND_UNSET;
+            $existing->prereq_absence_hold = 0;
             $existing->institution = $userobj->institution;
             $existing->desk_number = $desknumberdb;
             $existing->diet_choice = $dietchoice;
@@ -2548,6 +3021,9 @@ class enrolment_manager {
             $existing->placeholder_seq = $placeholderseq > 0 ? $placeholderseq : null;
             $existing->seat_company = $seatcompanydb;
             $existing->linked_email = $linkedpendingdb;
+            if ($auditnote !== '') {
+                $existing->notes = $auditnote;
+            }
             $existing->timemodified = time();
             $DB->update_record('local_tm_course_enrolments', $existing);
             $enrolid = (int)$existing->id;
@@ -2556,6 +3032,8 @@ class enrolment_manager {
             $record->sessionid = $sessionid;
             $record->userid = $userid;
             $record->status = $status;
+            $record->attended = attendance_manager::ATTEND_UNSET;
+            $record->prereq_absence_hold = 0;
             $record->institution = $userobj->institution;
             $record->desk_number = $desknumberdb;
             $record->diet_choice = $dietchoice;
@@ -2569,15 +3047,53 @@ class enrolment_manager {
             $record->placeholder_seq = $placeholderseq > 0 ? $placeholderseq : null;
             $record->seat_company = $seatcompanydb;
             $record->linked_email = $linkedpendingdb;
+            if ($auditnote !== '') {
+                $record->notes = $auditnote;
+            }
             $record->timecreated = time();
             $record->timemodified = time();
             $enrolid = (int)$DB->insert_record('local_tm_course_enrolments', $record, true);
+        }
+
+        if ($status === session_manager::ENROL_APPROVED) {
+            self::finalize_siteadmin_batch_approval($enrolid, $session, $userid);
         }
 
         if ($recalc) {
             session_manager::recalculate_status($sessionid);
         }
         return $enrolid;
+    }
+
+    /**
+     * LMS sync + approval notice after a site-admin batch row is created as approved.
+     */
+    private static function finalize_siteadmin_batch_approval(int $enrolid, \stdClass $session, int $userid): void {
+        global $DB;
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', IGNORE_MISSING);
+        if (!$enrol) {
+            return;
+        }
+        $syncuserid = self::moodle_sync_subject_userid($enrol);
+        $learneruser = $DB->get_record('user', ['id' => $syncuserid, 'deleted' => 0], 'id,email', IGNORE_MISSING);
+        $skiplms = $learneruser && self::is_placeholder_holder_email((string) $learneruser->email);
+        if ($skiplms) {
+            self::clear_sync_health_state($enrolid);
+            return;
+        }
+        try {
+            self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'enrol');
+            attendance_manager::setup_session((int) $session->id);
+            attendance_manager::add_to_group((int) $session->id, $syncuserid);
+            self::audit_enrolment_sync_health($enrolid, false);
+        } catch (\Throwable $e) {
+            debugging('TM Course siteadmin auto-approve LMS sync failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+        try {
+            notification_helper::notify_approval_result($enrolid, true, '');
+        } catch (\Throwable $e) {
+            debugging('TM Course siteadmin auto-approve notify failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
     }
 
     /**

@@ -1863,7 +1863,8 @@ delivery_mode = onsite：
 | 角色 | 未達先修者 |
 |------|------------|
 | **業務**（`user_can_batch_enrol()`，非 Site Admin） | **略過（skipped）**；符合者照常 pending；成功訊息含略過筆數與原因 |
-| **Site Admin** | **可 bypass**：仍建立 pending；成功訊息另列「未達先修仍已建立報名」摘要（僅列**先修課程名稱**，不列活動細節） |
+| **一般 manage（非 Site Admin）** | **不可 bypass**；未達先修者拒絕建立 |
+| **Site Admin**（僅 Moodle `is_siteadmin()`） | **可 bypass** 先修；代報**直接核准**（不經待審）；成功訊息另列豁免摘要；`notes` 留下可追蹤紀錄。重複報名／時段衝突等完整性檢查仍執行 |
 
 ### 53.7 技術備註（維運）
 

@@ -138,6 +138,7 @@ $calendar_month_view_label = get_string('calendar_month_view', 'local_tm_course'
 $calendar_status_open = get_string('calendar_status_open', 'local_tm_course');
 $calendar_status_full = get_string('session_status_full', 'local_tm_course');
 $calendar_status_closed = get_string('session_status_closed', 'local_tm_course');
+$calendar_status_void = get_string('session_status_void_unattended', 'local_tm_course');
 $calendar_popover_title = get_string('calendar_popover_title', 'local_tm_course');
 $calendar_available_seats = get_string('calendar_available_seats', 'local_tm_course');
 $calendar_view_details = get_string('calendar_view_details', 'local_tm_course');
@@ -197,6 +198,11 @@ foreach ($sessions as $s) {
     $my_enrol = $my_map[$s->id] ?? null;
     [$badge_cls, $badge_lbl] = $status_labels[(int)($my_enrol->status ?? -1)]
         ?? ['open', get_string('session_status_open', 'local_tm_course')];
+    if ($my_enrol && !empty($my_enrol->prereq_absence_hold)) {
+        $badge_cls = 'void';
+        $badge_lbl = enrolment_manager::prereq_roster_flags($my_enrol, $s)['hold_reason']
+            ?: get_string('prereq_absence_hold_reason', 'local_tm_course');
+    }
     $fill_class = $s->fill_percent >= 100 ? 'danger'
         : ($s->fill_percent >= 80 ? 'warning' : '');
 
@@ -291,9 +297,13 @@ foreach ($sessions as $s) {
         }
     }
 
+    $is_void_unattended = session_manager::is_unattended_void($s);
+    $session_closed_label = $is_void_unattended
+        ? get_string('session_status_void_unattended', 'local_tm_course')
+        : $closed_str;
     $show_batch_open = $can_batch_enrol && $can_submit_batch;
     $show_batch_closed = $can_batch_enrol && !$show_batch_open;
-    $batch_disabled_label = $closed_str;
+    $batch_disabled_label = $session_closed_label;
     if ($show_batch_closed && !session_manager::is_online_session($s)
         && ((int) $s->status === session_manager::STATUS_FULL
             || session_manager::is_onsite_persons_full($s))) {
@@ -398,7 +408,9 @@ foreach ($sessions as $s) {
         'reject_notes' => ($my_enrol && !empty($my_enrol->notes)) ? (string) $my_enrol->notes : '',
         'enrol_button_text' => $enrol_button_text,
         'show_closed_btn' => $show_closed_btn,
-        'closed_label' => $closed_str,
+        'show_void_badge' => $is_void_unattended,
+        'void_label' => $is_void_unattended ? $session_closed_label : '',
+        'closed_label' => $session_closed_label,
         'show_full_badge' => $show_full_badge,
         'full_label' => $full_str,
         'show_contact_notice' => $show_contact_notice,
@@ -923,8 +935,11 @@ echo $OUTPUT->header();
             var remainClass = nearly ? 'tm-fc-remain-nearly' : 'tm-fc-remain-normal';
             var checkHtml = isEnrolled ? '<span class="tm-fc-check" aria-label="enrolled">✔</span>' : '';
             var isClosed = Number(ext.sessionStatus) === <?php echo (int) session_manager::STATUS_CLOSED; ?>;
+            var isVoid = !!ext.isUnattendedVoid;
             var statusBadge = '';
-            if (isClosed) {
+            if (isVoid) {
+                statusBadge = '<span class="tm-fc-status-badge tm-fc-status-badge-void">' + esc(<?php echo json_encode($calendar_status_void); ?>) + '</span>';
+            } else if (isClosed) {
                 statusBadge = '<span class="tm-fc-status-badge tm-fc-status-badge-closed">' + esc(<?php echo json_encode($calendar_status_closed); ?>) + '</span>';
             } else if (!isOnline && remain <= 0) {
                 statusBadge = '<span class="tm-fc-status-badge tm-fc-status-badge-full">' + esc(<?php echo json_encode($calendar_status_full); ?>) + '</span>';

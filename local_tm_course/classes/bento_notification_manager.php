@@ -339,6 +339,7 @@ class bento_notification_manager {
                  WHERE e.sessionid = :sid
                    AND e.status = :approved
                    AND e.attended = :present
+                   AND COALESCE(e.prereq_absence_hold, 0) = 0
               ORDER BY u.lastname ASC, u.firstname ASC";
 
         return array_values($DB->get_records_sql($sql, [

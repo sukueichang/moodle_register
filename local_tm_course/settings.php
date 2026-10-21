@@ -80,6 +80,19 @@ if ($hassiteconfig) {
             24 * HOURSECS,
             $choices
         ));
+        $m5settings->add(new admin_setting_configcheckbox(
+            'local_tm_course/grading_overdue_enabled',
+            get_string('setting_grading_overdue_enabled', 'local_tm_course'),
+            get_string('setting_grading_overdue_enabled_desc', 'local_tm_course'),
+            0
+        ));
+        $m5settings->add(new admin_setting_configtext(
+            'local_tm_course/grading_overdue_days',
+            get_string('setting_grading_overdue_days', 'local_tm_course'),
+            get_string('setting_grading_overdue_days_desc', 'local_tm_course'),
+            7,
+            PARAM_INT
+        ));
         $auditchoices = [];
         for ($h = 1; $h <= 24; $h++) {
             $auditchoices[$h * HOURSECS] = get_string('reminder_hours_option', 'local_tm_course', $h);

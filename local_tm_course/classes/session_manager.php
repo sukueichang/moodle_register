@@ -11,6 +11,7 @@ require_once(__DIR__ . '/classroom_manager.php');
 require_once(__DIR__ . '/attendance_manager.php');
 require_once(__DIR__ . '/enabled_course_manager.php');
 require_once(__DIR__ . '/prerequisite_manager.php');
+require_once(__DIR__ . '/prereq_hold_rules.php');
 require_once(__DIR__ . '/tcms_sync_manager.php');
 
 class session_manager {
@@ -504,18 +505,75 @@ class session_manager {
      * Unix timestamp when the registration auto-close rule takes effect for a session start time.
      */
     public static function session_auto_close_timestamp(int $starttime): int {
-        $startday = strtotime(date('Y-m-d 00:00:00', $starttime));
+        $startday = self::session_start_day_midnight($starttime);
         return $startday - (self::get_session_auto_close_days_before() * DAYSECS);
     }
 
     /**
-     * True when the configured registration deadline has passed and this session is not exempt.
+     * 00:00 on the session start date, in the PHP timezone Moodle set from the site timezone.
      */
-    public static function is_registration_deadline_passed(\stdClass $session): bool {
+    public static function session_start_day_midnight(int $starttime): int {
+        return prereq_hold_rules::start_day_midnight($starttime);
+    }
+
+    /**
+     * True when the configured registration deadline has passed and this session is not exempt.
+     *
+     * @param int|null $now Unix timestamp; null uses the current time.
+     */
+    public static function is_registration_deadline_passed(\stdClass $session, ?int $now = null): bool {
         if (!empty($session->auto_close_exempt)) {
             return false;
         }
-        return time() >= self::session_auto_close_timestamp((int)$session->starttime);
+        $now = $now ?? time();
+        return $now >= self::session_auto_close_timestamp((int)$session->starttime);
+    }
+
+    /**
+     * Active enrolments that still count as learners (pending, approved, waitlisted).
+     * Prerequisite-absence holds, cancelled/rejected rows, and unnamed placeholder
+     * seats (no linked learner yet) are excluded.
+     */
+    public static function count_valid_enrolments(int $sessionid): int {
+        global $DB;
+        if ($sessionid <= 0) {
+            return 0;
+        }
+        $sql = "SELECT COUNT(1)
+                  FROM {local_tm_course_enrolments}
+                 WHERE sessionid = :sid
+                   AND status IN (:pending, :approved, :waitlisted)
+                   AND COALESCE(prereq_absence_hold, 0) = 0
+                   AND (COALESCE(placeholder_seq, 0) = 0 OR COALESCE(linked_userid, 0) > 0)";
+        return (int) $DB->count_records_sql($sql, [
+            'sid' => $sessionid,
+            'pending' => self::ENROL_PENDING,
+            'approved' => self::ENROL_APPROVED,
+            'waitlisted' => self::ENROL_WAITLISTED,
+        ]);
+    }
+
+    /**
+     * Class day has started, registration is shut, and no valid learner remains.
+     * Derived for display and enrolment blocking. The session row is not deleted or retitled in the database.
+     */
+    public static function is_unattended_void(\stdClass $session, ?int $now = null): bool {
+        $now = $now ?? time();
+        $start = (int) ($session->starttime ?? 0);
+        $sid = (int) ($session->id ?? 0);
+        $valid = 0;
+        if ($sid > 0 && $now >= self::session_start_day_midnight($start)) {
+            $valid = self::count_valid_enrolments($sid);
+        }
+        return prereq_hold_rules::is_unattended_void(
+            $now,
+            $start,
+            self::is_registration_deadline_passed($session, $now),
+            !empty($session->auto_close_exempt),
+            (int) ($session->status ?? -1) === self::STATUS_CLOSED,
+            $valid,
+            self::is_room_closed_session($session)
+        );
     }
 
     /**
@@ -577,6 +635,10 @@ class session_manager {
      * @param bool $adminoverride allow full + closed/deadline for admin (manage) paths
      */
     public static function can_submit_enrolment(\stdClass $session, bool $adminoverride = false): bool {
+        // Empty class-day sessions are closed to every entry, including admin override.
+        if (self::is_unattended_void($session)) {
+            return false;
+        }
         if (!self::is_online_session($session)
             && ((int) $session->status === self::STATUS_FULL || self::is_onsite_persons_full($session))) {
             if (!$adminoverride) {
@@ -643,12 +705,19 @@ class session_manager {
 
     /**
      * Count confirmed (approved) enrolments.
+     * Unnamed placeholder seats and prerequisite-absence holds do not count.
      */
     public static function confirmed_count(int $sessionid): int {
         global $DB;
-        return (int)$DB->count_records('local_tm_course_enrolments', [
-            'sessionid' => $sessionid,
-            'status'    => self::ENROL_APPROVED,
+        $sql = "SELECT COUNT(1)
+                  FROM {local_tm_course_enrolments}
+                 WHERE sessionid = :sid
+                   AND status = :approved
+                   AND COALESCE(prereq_absence_hold, 0) = 0
+                   AND (COALESCE(placeholder_seq, 0) = 0 OR COALESCE(linked_userid, 0) > 0)";
+        return (int) $DB->count_records_sql($sql, [
+            'sid' => $sessionid,
+            'approved' => self::ENROL_APPROVED,
         ]);
     }
 

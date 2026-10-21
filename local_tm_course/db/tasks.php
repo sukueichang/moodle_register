@@ -63,6 +63,15 @@ $tasks = [
         'month' => '*',
     ],
     [
+        'classname' => 'local_tm_course\\task\\notify_grading_overdue',
+        'blocking' => 0,
+        'minute' => '20',
+        'hour' => '4',
+        'day' => '*',
+        'dayofweek' => '*',
+        'month' => '*',
+    ],
+    [
         'classname' => 'local_tm_course\\task\\sync_grading_request_grades',
         'blocking' => 0,
         'minute' => '*/10',

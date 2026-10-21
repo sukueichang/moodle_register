@@ -33,7 +33,6 @@ $PAGE->set_title($str('nav_notifications', 'Notification settings'));
 $PAGE->requires->css('/local/tm_course/styles.css');
 
 $events = notification_helper::get_notification_events_config();
-$availabletargets = notification_helper::get_recipient_target_options();
 $eventdescriptions = [
     'new_enrolment' => $str('notify_event_new_enrolment_desc', 'Triggered when a learner submits a new enrolment request.'),
     'approval_result' => $str('notify_event_approval_result_desc', 'Triggered when an enrolment is approved or rejected.'),
@@ -45,6 +44,7 @@ $eventdescriptions = [
     'batch_account_created' => $str('notify_event_batch_account_created_desc', 'Triggered when batch enrolment auto-creates a new Moodle account.'),
     'grading_submitted' => $str('notify_event_grading_submitted_desc', 'Triggered when sales submits a grading request.'),
     'grading_assigned' => $str('notify_event_grading_assigned_desc', 'Triggered when an admin assigns a grading request to a colleague.'),
+    'grading_overdue' => $str('notify_event_grading_overdue_desc', 'Sent once when an assigned grading request is still unfinished after the configured number of days.'),
     'grading_closed' => $str('notify_event_grading_closed_desc', 'Triggered when a grading request is rejected or cancelled.'),
     'grading_completed' => $str('notify_event_grading_completed_desc', 'Triggered when every learner on a grading request is graded or missing. Learner target is off by default.'),
 ];
@@ -468,6 +468,7 @@ if ($preclasspreviewrequested) {
         <?php foreach ($events as $eventkey => $eventmeta): ?>
             <?php
                 $targetsettings = notification_helper::get_event_target_settings($eventkey);
+                $eventtargets = notification_helper::get_recipient_target_options_for_event($eventkey);
                 $templatezhtw = notification_helper::get_event_template($eventkey, 'zh_tw');
                 $templateen = notification_helper::get_event_template($eventkey, 'en');
             ?>
@@ -536,7 +537,7 @@ if ($preclasspreviewrequested) {
                     <div class="mb-2">
                         <div class="font-weight-bold"><?php echo s(get_string('notifications_targets_label', 'local_tm_course')); ?></div>
                         <div class="d-flex flex-wrap" style="gap:1rem;">
-                            <?php foreach ($availabletargets as $targetkey => $targetlabel): ?>
+                            <?php foreach ($eventtargets as $targetkey => $targetlabel): ?>
                                 <label class="mb-0">
                                     <input type="checkbox"
                                            name="<?php echo s('targets_' . $eventkey); ?>[]"

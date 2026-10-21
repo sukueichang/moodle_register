@@ -193,6 +193,7 @@ foreach ($sessions as $s) {
             'teachingLanguage' => (string)($s->teaching_language ?? session_manager::LANG_ZH_TW),
             'deliveryMode' => (string)($s->delivery_mode ?? session_manager::DELIVERY_ONSITE),
             'sessionStatus' => $effectivestatus,
+            'isUnattendedVoid' => session_manager::is_unattended_void($s),
             'ownDedicatedSession' => $owndedicated,
             'sourceReservationId' => $srcresvid > 0 ? $srcresvid : null,
             'ownDedicatedSessionLabel' => $ownlabel,

@@ -36,6 +36,13 @@ if (is_siteadmin() || has_capability('local/tm_course:approve', $ctx)) {
     redirect(new moodle_url('/local/tm_course/admin/enrolments.php', ['sessionid' => $sessionid]));
 }
 
+// PAGE context before roster build: format_string() / course names need a context.
+$PAGE->set_context($ctx);
+$PAGE->set_url(new moodle_url('/local/tm_course/admin/session_roster.php', ['sessionid' => $sessionid]));
+$PAGE->set_pagelayout(has_capability('local/tm_course:manage', $ctx) ? 'admin' : 'standard');
+$PAGE->set_title(get_string('session_roster_title', 'local_tm_course'));
+$PAGE->requires->css('/local/tm_course/styles.css');
+
 try {
     $view = enrolment_manager::build_session_roster_view($sessionid);
 } catch (\dml_missing_record_exception $ex) {
@@ -46,12 +53,6 @@ $session = $view['session'];
 $backurl = has_capability('local/tm_course:manage', $ctx)
     ? new moodle_url('/local/tm_course/admin/sessions.php')
     : new moodle_url('/local/tm_course/index.php');
-
-$PAGE->set_context($ctx);
-$PAGE->set_url(new moodle_url('/local/tm_course/admin/session_roster.php', ['sessionid' => $sessionid]));
-$PAGE->set_pagelayout(has_capability('local/tm_course:manage', $ctx) ? 'admin' : 'standard');
-$PAGE->set_title(get_string('session_roster_title', 'local_tm_course'));
-$PAGE->requires->css('/local/tm_course/styles.css');
 
 echo $OUTPUT->header();
 ?>
@@ -102,9 +103,23 @@ echo $OUTPUT->header();
         <tbody>
         <?php foreach ($view['online_groups'] as $instlabel => $group): ?>
             <?php foreach ($group as $idx => $learner): ?>
-            <tr>
+            <?php
+            $hold = !empty($learner['prereq_absence_hold']);
+            $preholdcourses = $learner['prehold_courses'] ?? [];
+            ?>
+            <tr class="<?php echo $hold ? 'tm-prereq-absence-hold' : ''; ?>">
                 <td><?php echo $idx === 0 ? s($instlabel) : ''; ?></td>
-                <td><?php echo s($learner['displayname']); ?></td>
+                <td>
+                    <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>"><?php echo s($learner['displayname']); ?>
+                    <?php if (!$hold && !empty($preholdcourses)): ?>
+                        <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
+                        <div class="small text-muted"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></div>
+                    <?php endif; ?>
+                    </div>
+                    <?php if ($hold): ?>
+                    <div class="tm-prereq-absence-reason"><?php echo s($learner['prereq_hold_reason'] ?? get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                    <?php endif; ?>
+                </td>
                 <td><?php echo s($learner['source_label']); ?></td>
             </tr>
             <?php endforeach; ?>
@@ -128,12 +143,25 @@ echo $OUTPUT->header();
             <?php else: ?>
                 <ul class="tm-roster-learner-list mb-0 pl-3">
                 <?php foreach ($desk['learners'] as $learner): ?>
-                    <li class="tm-roster-learner-item">
+                    <?php
+                    $hold = !empty($learner['prereq_absence_hold']);
+                    $preholdcourses = $learner['prehold_courses'] ?? [];
+                    ?>
+                    <li class="tm-roster-learner-item<?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>">
+                        <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                         <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span>
+                        <?php if (!$hold && !empty($preholdcourses)): ?>
+                        <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
+                        <span class="text-muted small d-block"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></span>
+                        <?php endif; ?>
                         <?php if ($learner['institution'] !== ''): ?>
                         <span class="text-muted small d-block"><?php echo s($learner['institution']); ?></span>
                         <?php endif; ?>
                         <span class="text-muted small d-block tm-roster-source"><?php echo s($learner['source_label']); ?></span>
+                        </div>
+                        <?php if ($hold): ?>
+                        <div class="tm-prereq-absence-reason"><?php echo s($learner['prereq_hold_reason'] ?? get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                        <?php endif; ?>
                     </li>
                 <?php endforeach; ?>
                 </ul>
@@ -147,12 +175,25 @@ echo $OUTPUT->header();
         <h4 class="h5"><?php echo get_string('session_roster_unassigned_heading', 'local_tm_course'); ?></h4>
         <ul class="tm-roster-learner-list mb-0 pl-3">
         <?php foreach ($view['unassigned'] as $learner): ?>
-            <li class="tm-roster-learner-item">
+            <?php
+            $hold = !empty($learner['prereq_absence_hold']);
+            $preholdcourses = $learner['prehold_courses'] ?? [];
+            ?>
+            <li class="tm-roster-learner-item<?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>">
+                <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                 <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span>
+                <?php if (!$hold && !empty($preholdcourses)): ?>
+                <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
+                <span class="text-muted small d-block"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></span>
+                <?php endif; ?>
                 <?php if ($learner['institution'] !== ''): ?>
                 <span class="text-muted small d-block"><?php echo s($learner['institution']); ?></span>
                 <?php endif; ?>
                 <span class="text-muted small d-block tm-roster-source"><?php echo s($learner['source_label']); ?></span>
+                </div>
+                <?php if ($hold): ?>
+                <div class="tm-prereq-absence-reason"><?php echo s($learner['prereq_hold_reason'] ?? get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                <?php endif; ?>
             </li>
         <?php endforeach; ?>
         </ul>

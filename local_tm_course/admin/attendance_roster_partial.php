@@ -75,7 +75,7 @@ $render_attendance_status = static function (array $learner): void {
 $render_attendance_actions = static function (array $learner) use ($render_mark_form): void {
     $enrolid = (int) ($learner['enrolid'] ?? 0);
     $attended = (int) ($learner['attended'] ?? 0);
-    if ($enrolid < 1) {
+    if ($enrolid < 1 || !empty($learner['prereq_absence_hold'])) {
         return;
     }
     echo '<span class="tm-attendance-actions ml-2">';
@@ -150,26 +150,60 @@ $render_diet_line = static function (array $learner) use ($attendance_can_edit_d
 /**
  * @param array $learner
  */
+$render_hold_reason = static function (array $learner): void {
+    if (empty($learner['prereq_absence_hold'])) {
+        return;
+    }
+    $reason = trim((string) ($learner['prereq_hold_reason'] ?? ''));
+    if ($reason === '') {
+        $reason = get_string('prereq_absence_hold_reason', 'local_tm_course');
+    }
+    echo '<div class="tm-prereq-absence-reason">' . s($reason) . '</div>';
+};
+
+$render_prehold_badge = static function (array $learner): void {
+    if (!empty($learner['prereq_absence_hold'])) {
+        return;
+    }
+    $courses = $learner['prehold_courses'] ?? [];
+    if (empty($courses)) {
+        return;
+    }
+    echo ' <span class="tm-badge tm-badge-prehold">'
+        . s(get_string('prereq_prehold_badge', 'local_tm_course'))
+        . '</span>';
+    echo '<span class="text-muted small d-block">'
+        . s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $courses)))
+        . '</span>';
+};
+
 $render_learner_block = static function (array $learner) use (
     $render_learner_name,
     $render_attendance_actions,
     $render_attendance_status,
-    $render_diet_line
+    $render_diet_line,
+    $render_hold_reason,
+    $render_prehold_badge
 ): void {
-    echo '<li class="tm-roster-learner-item tm-attendance-learner-item">';
-    echo '<div class="d-flex flex-wrap align-items-start">';
+    $held = !empty($learner['prereq_absence_hold']);
+    $holdclass = $held ? ' tm-prereq-absence-hold' : '';
+    echo '<li class="tm-roster-learner-item tm-attendance-learner-item' . $holdclass . '">';
+    echo '<div class="' . ($held ? 'tm-prereq-absence-hold-body ' : '') . 'd-flex flex-wrap align-items-start">';
     echo '<div class="flex-grow-1">';
     echo '<div class="tm-attendance-name-row">';
     $render_learner_name($learner);
     $render_attendance_actions($learner);
     echo '</div>';
+    $render_prehold_badge($learner);
     $render_diet_line($learner);
     $render_attendance_status($learner);
     if (!empty($learner['institution'])) {
         echo '<span class="text-muted small d-block">' . s($learner['institution']) . '</span>';
     }
     echo '<span class="text-muted small d-block tm-roster-source">' . s($learner['source_label']) . '</span>';
-    echo '</div></div></li>';
+    echo '</div></div>';
+    $render_hold_reason($learner);
+    echo '</li>';
 };
 
 if ((int) ($view['total'] ?? 0) === 0): ?>
@@ -187,15 +221,20 @@ if ((int) ($view['total'] ?? 0) === 0): ?>
         <tbody>
         <?php foreach ($view['online_groups'] as $instlabel => $group): ?>
             <?php foreach ($group as $idx => $learner): ?>
-            <tr>
+            <?php $holdclass = !empty($learner['prereq_absence_hold']) ? 'tm-prereq-absence-hold' : ''; ?>
+            <tr class="<?php echo $holdclass; ?>">
                 <td><?php echo $idx === 0 ? s($instlabel) : ''; ?></td>
                 <td>
+                    <div class="<?php echo $holdclass !== '' ? 'tm-prereq-absence-hold-body' : ''; ?>">
                     <div class="tm-attendance-name-row">
                         <?php $render_learner_name($learner); ?>
                         <?php $render_attendance_actions($learner); ?>
                     </div>
+                    <?php $render_prehold_badge($learner); ?>
                     <?php $render_diet_line($learner); ?>
                     <?php $render_attendance_status($learner); ?>
+                    </div>
+                    <?php $render_hold_reason($learner); ?>
                 </td>
                 <td><?php echo s($learner['source_label']); ?></td>
             </tr>

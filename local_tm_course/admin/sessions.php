@@ -246,6 +246,9 @@ $pluginver = local_tm_course_plugin_version_info();
     if ($is_room_closed) {
         $badge_class = 'closed';
         $badge_label = get_string('session_room_closed_list_badge', 'local_tm_course');
+    } else if (session_manager::is_unattended_void($s)) {
+        $badge_class = 'void';
+        $badge_label = get_string('session_status_void_unattended', 'local_tm_course');
     }
 ?>
 <tr>

@@ -2120,6 +2120,36 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026101302, 'local', 'tm_course');
     }
 
+    // 2026102000 — Pause dependent enrolment when a prerequisite session is marked absent.
+    if ($oldversion < 2026102000) {
+        $table = new xmldb_table('local_tm_course_enrolments');
+        $field = new xmldb_field('prereq_absence_hold', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'attended');
+        if (!$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026102000, 'local', 'tm_course');
+    }
+
+    // 2026102100 — Remember which grading assignment cycle already got an overdue notice.
+    if ($oldversion < 2026102100) {
+        $table = new xmldb_table('local_tm_course_grreq');
+        $field = new xmldb_field('overdue_sent_assign', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, '0', 'timeassigned');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026102100, 'local', 'tm_course');
+    }
+
+    // 2026102101 — Acceptance fixes (no schema). Savepoint for version bump only.
+    if ($oldversion < 2026102101) {
+        upgrade_plugin_savepoint(true, 2026102101, 'local', 'tm_course');
+    }
+
+    // 2026102102 — Site admin batch prereq bypass + auto-approve (no schema).
+    if ($oldversion < 2026102102) {
+        upgrade_plugin_savepoint(true, 2026102102, 'local', 'tm_course');
+    }
+
     return true;
 }
 

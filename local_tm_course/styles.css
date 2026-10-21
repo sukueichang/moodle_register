@@ -188,6 +188,27 @@
 .tm-badge-open     { background: var(--tm-green-light);  color: var(--tm-green-dark); }
 .tm-badge-full     { background: #fff3cd;                 color: #856404; }
 .tm-badge-closed   { background: #f8d7da;                 color: #721c24; }
+.tm-badge-void     { background: #3d2914;                 color: #fff; }
+.tm-session-card-void { outline: 2px dashed #c45c26; }
+.tm-session-void-banner {
+    background: #c45c26;
+    color: #fff;
+    font-weight: 700;
+    padding: .45rem .7rem;
+    margin: -.25rem -.25rem .6rem;
+}
+.tm-prereq-absence-hold-body { opacity: .45; }
+.tm-badge-prehold {
+    background: #e8f4fc;
+    color: #0b5cad;
+    border: 1px solid #9cc9ea;
+    font-weight: 600;
+}
+.tm-prereq-absence-reason {
+    color: #8a1c1c;
+    font-weight: 700;
+    margin-top: .25rem;
+}
 .tm-badge-pending  { background: #fff3cd;                 color: #856404; }
 .tm-badge-approved { background: var(--tm-green-light);  color: var(--tm-green-dark); }
 .tm-badge-rejected { background: #f8d7da;                 color: #721c24; }
@@ -1252,6 +1273,10 @@ body.tm-bento-modal-open {
 }
 .tm-fc-status-badge-closed {
     background: #7a7a7a;
+}
+.tm-fc-status-badge-void {
+    background: #c45c26;
+    text-transform: none;
 }
 .tm-fc-status-badge-full {
     background: #b26a1f;

@@ -3,6 +3,39 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.29.3] - 2026-10-21 - Site admin prereq bypass and auto-approve
+
+### Changed
+- Moodle site administrators may again batch-enrol learners who lack prerequisites. Those rows are approved immediately (not pending). Bypass and auto-approve are written to enrolment notes. Non–site-admin manage and sales roles still cannot bypass. Cancel already went straight to cancelled; unchanged.
+
+## [5.29.2] - 2026-10-21 - Pre-hold badge, absence-hold restore, void placeholders
+
+### Fixed
+- Marking prerequisite A absent now pauses B, and marking A present again clears that pause. The sync no longer excludes A’s enrolment id (that blocked restore). mod_attendance errors no longer skip the hold update.
+- Review desk board shows hold dimming and the named reason. Pre-hold rows show「先修預卡位」and the dependent course when qualification is only an approved earlier session.
+- Unnamed placeholder seats no longer count toward valid / confirmed headcount, so seat-only sessions lapse on class day.
+- Grading-overdue recipients are「被指派批改者」and approvers only; the assignee is not forced when unchecked.
+
+## [5.29.1] - 2026-10-21 - Online roster count, grading overdue notice
+
+### Fixed
+- On a video session, the enrolled count and the learner list now use the same review scope. A status filter that hides every row says so, instead of「查無報名紀錄」. No desk is created for video sessions.
+
+### Added
+- Optional grading-overdue notice. Admin turns it on and sets a positive number of days after a real instructor assignment. Recipients and wording use the existing notification settings. Each assignment cycle sends once. Reassignment starts again. Rows whose assignment time was only backfilled are skipped.
+
+## [5.29.0] - 2026-10-20 - Prerequisite gate, absence hold, empty session label
+
+### Fixed
+- Real learners are prerequisite-checked on every enrolment entry, including site-admin batch. A dedicated-class co-bundle waiver applies only to learners on that application. An issued certificate counts as course completion.
+
+### Added
+- Marking a prerequisite session absent pauses dependent enrolments (`prereq_absence_hold`) without deleting the row or desk. Marking present again restores that pause only. Manual cancellations stay cancelled.
+- On the class-day midnight, a shut session with no valid learners shows「本課程無人報名，已失效」and rejects new enrolments. Sessions that still have valid learners stay「已截止」.
+
+### Notes
+- 版號 `2026102000`。升級新增 `local_tm_course_enrolments.prereq_absence_hold`。不 merge `main`。
+
 ## [5.28.11] - 2026-10-08 - Survey respondent names and quiz finished-attempt grades
 
 ### Changed

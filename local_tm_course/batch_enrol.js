@@ -160,6 +160,9 @@
                 });
                 html += '</ul>';
             }
+            if (cfg.isSiteAdmin && S.batch_prereq_siteadmin_force_hint) {
+                html += '<div class="small text-info mt-1">' + esc(S.batch_prereq_siteadmin_force_hint) + '</div>';
+            }
             return html;
         }
 
@@ -647,6 +650,9 @@
                     html += '<li>' + esc(reason) + '</li>';
                 });
                 html += '</ul>';
+            }
+            if (cfg.isSiteAdmin && S.batch_prereq_siteadmin_force_hint) {
+                html += '<div class="small text-info mt-1">' + esc(S.batch_prereq_siteadmin_force_hint) + '</div>';
             }
             return html;
         }

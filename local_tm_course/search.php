@@ -57,14 +57,6 @@ $search_filters = [
     'institution' => $ui,
     'email' => $ue,
 ];
-if ($search_attempt) {
-    try {
-        $results = enrolment_manager::search_enrolments_by_user_filters($search_filters, $can_viewall, $USER->id, 100);
-        $search_hit_limit = count($results) >= 100;
-    } catch (\moodle_exception $e) {
-        \core\notification::error($e->getMessage());
-    }
-}
 
 $user_results = [];
 if ($search_attempt) {
@@ -76,6 +68,47 @@ if ($search_attempt) {
             \core\notification::error($e->getMessage());
         }
     }
+}
+
+if ($search_attempt) {
+    $byfields = [];
+    $byuserids = [];
+    // Primary path: same Moodle user ids (+ emails) as the user-results table.
+    // Isolated try so a field-LIKE failure cannot wipe userid hits (5.29.4 FAIL).
+    if (!empty($user_results)) {
+        try {
+            $searchuserids = array_values(array_unique(array_map(static function(\stdClass $u): int {
+                return (int)$u->id;
+            }, $user_results)));
+            $searchemails = array_values(array_unique(array_filter(array_map(static function(\stdClass $u): string {
+                return \core_text::strtolower(trim((string)($u->email ?? '')));
+            }, $user_results))));
+            $byuserids = enrolment_manager::search_enrolments_by_userids(
+                $searchuserids,
+                $can_viewall,
+                $USER->id,
+                100,
+                $searchemails
+            );
+        } catch (\Throwable $e) {
+            \core\notification::error($e->getMessage());
+        }
+    }
+    try {
+        $byfields = enrolment_manager::search_enrolments_by_user_filters(
+            $search_filters,
+            $can_viewall,
+            $USER->id,
+            100
+        );
+    } catch (\Throwable $e) {
+        \core\notification::error($e->getMessage());
+    }
+    $results = enrolment_manager::merge_enrolment_search_results($byfields, $byuserids);
+    if (count($results) > 100) {
+        $results = array_slice($results, 0, 100, true);
+    }
+    $search_hit_limit = count($results) >= 100 || count($byfields) >= 100 || count($byuserids) >= 100;
 }
 
 $user_system_roles = [];
@@ -127,7 +160,7 @@ $str = static function(string $key, string $fallback, $a = null) use ($sm): stri
     return $fallback;
 };
 
-$learning_status_meta = static function(\stdClass $r) use ($str): array {
+$enrol_status_label = static function(\stdClass $r) use ($str): array {
     if ((int)$r->status === session_manager::ENROL_CANCELLED) {
         return ['closed', $str('learning_status_cancelled', 'Cancelled')];
     }
@@ -141,15 +174,86 @@ $learning_status_meta = static function(\stdClass $r) use ($str): array {
         return ['pending', $str('learning_status_pending', 'Pending review')];
     }
     if ((int)$r->status === session_manager::ENROL_APPROVED) {
-        if (isset($r->attended) && (int)$r->attended === \local_tm_course\attendance_manager::ATTEND_PRESENT) {
-            return ['approved', $str('learning_status_completed', 'Completed')];
-        }
-        if (isset($r->attended) && (int)$r->attended === \local_tm_course\attendance_manager::ATTEND_ABSENT) {
-            return ['rejected', $str('learning_status_absent', 'Absent')];
-        }
         return ['approved', $str('learning_status_approved', 'Approved')];
     }
     return ['closed', get_string('session_status_unknown', 'local_tm_course')];
+};
+
+$attendance_status_label = static function(\stdClass $r) use ($str): string {
+    $attended = (int) ($r->attended ?? 0);
+    if ($attended === \local_tm_course\attendance_manager::ATTEND_PRESENT) {
+        return $str('search_attendance_present', 'Present');
+    }
+    if ($attended === \local_tm_course\attendance_manager::ATTEND_ABSENT) {
+        return $str('learning_status_absent', 'Absent');
+    }
+    return '—';
+};
+
+// Moodle course_completions for (learner userid, courseid) — batch, no N+1.
+$completion_by_pair = [];
+if (!empty($results)) {
+    $pairuserids = [];
+    $paircourseids = [];
+    foreach ($results as $rx) {
+        $learnerid = (int) ($rx->linked_userid ?? 0);
+        if ($learnerid <= 1) {
+            $learnerid = (int) ($rx->userid ?? 0);
+        }
+        $cid = (int) ($rx->courseid ?? 0);
+        if ($learnerid > 1 && $cid > 0) {
+            $pairuserids[$learnerid] = $learnerid;
+            $paircourseids[$cid] = $cid;
+        }
+    }
+    if (!empty($pairuserids) && !empty($paircourseids)) {
+        try {
+            global $DB;
+            [$usql, $up] = $DB->get_in_or_equal(array_values($pairuserids), SQL_PARAMS_NAMED, 'cu');
+            [$csql, $cp] = $DB->get_in_or_equal(array_values($paircourseids), SQL_PARAMS_NAMED, 'cc');
+            $crows = $DB->get_records_select(
+                'course_completions',
+                "userid $usql AND course $csql AND timecompleted IS NOT NULL AND timecompleted > 0",
+                $up + $cp,
+                '',
+                'id, userid, course, timecompleted'
+            );
+            foreach ($crows as $crow) {
+                $completion_by_pair[(int)$crow->userid . ':' . (int)$crow->course] = true;
+            }
+        } catch (\Throwable $e) {
+            // Missing completion data must not hide enrolment rows.
+        }
+    }
+}
+
+// 「已完成」= 本場次出席（plugin attended）；「已通過」= Moodle course_completions。
+// Do not conflate missing completion with missing enrolment.
+$completed_status_label = static function(\stdClass $r) use ($str): string {
+    $attended = (int) ($r->attended ?? 0);
+    if ($attended === \local_tm_course\attendance_manager::ATTEND_PRESENT) {
+        return $str('learning_status_completed', 'Completed');
+    }
+    return '—';
+};
+
+$passed_status_label = static function(\stdClass $r) use ($str, $completion_by_pair): string {
+    $learnerid = (int) ($r->linked_userid ?? 0);
+    if ($learnerid <= 1) {
+        $learnerid = (int) ($r->userid ?? 0);
+    }
+    $cid = (int) ($r->courseid ?? 0);
+    if ($learnerid > 1 && $cid > 0 && !empty($completion_by_pair[$learnerid . ':' . $cid])) {
+        return $str('search_course_passed', 'Passed');
+    }
+    return '—';
+};
+
+$hold_status_label = static function(\stdClass $r) use ($str): string {
+    if (!empty($r->prereq_absence_hold)) {
+        return $str('search_prereq_hold', 'Prerequisite hold');
+    }
+    return '—';
 };
 
 $enrol_source_label = static function(\stdClass $r) use ($str): string {
@@ -272,22 +376,32 @@ echo $OUTPUT->header();
     <th><?php echo get_string('label_email', 'local_tm_course'); ?></th>
     <th><?php echo $str('label_company', 'Company'); ?></th>
     <th><?php echo get_string('search_enrol_sales', 'local_tm_course'); ?></th>
+    <th><?php echo $str('search_course_name', 'Course'); ?></th>
     <th><?php echo get_string('session_name', 'local_tm_course'); ?></th>
     <th><?php echo get_string('label_start', 'local_tm_course'); ?></th>
     <?php if ($search_show_desk_col): ?>
     <th><?php echo get_string('label_desk', 'local_tm_course'); ?></th>
     <?php endif; ?>
-    <th><?php echo $str('label_learning_status', 'Class status'); ?></th>
+    <th><?php echo $str('search_enrol_status', 'Enrolment status'); ?></th>
+    <th><?php echo $str('search_attendance_status', 'Attendance'); ?></th>
+    <th><?php echo $str('search_completed_status', 'Completed'); ?></th>
+    <th><?php echo $str('search_passed_status', 'Passed'); ?></th>
+    <th><?php echo $str('search_prereq_hold_status', 'Prerequisite hold'); ?></th>
 </tr></thead>
 <tbody>
 <?php foreach ($results as $r):
-    [$badge_cls, $badge_lbl] = $learning_status_meta($r);
+    [$badge_cls, $badge_lbl] = $enrol_status_label($r);
+    $coursename = trim((string) ($r->course_fullname ?? ''));
+    if ($coursename === '') {
+        $coursename = '#' . (int) ($r->courseid ?? 0);
+    }
 ?>
 <tr>
     <td><?php echo s($r->firstname.' '.$r->lastname); ?></td>
     <td><?php echo s($r->email); ?></td>
     <td><?php echo s($r->user_institution); ?></td>
     <td><?php echo s($enrol_source_label($r)); ?></td>
+    <td><?php echo s(format_string($coursename)); ?></td>
     <td><?php echo s($r->session_name); ?></td>
     <td><?php echo userdate($r->starttime, get_string('strftimedatetimeshort')); ?></td>
     <?php if ($search_show_desk_col): ?>
@@ -301,6 +415,10 @@ echo $OUTPUT->header();
     ?></td>
     <?php endif; ?>
     <td><span class="tm-badge tm-badge-<?php echo $badge_cls; ?>"><?php echo $badge_lbl; ?></span></td>
+    <td><?php echo s($attendance_status_label($r)); ?></td>
+    <td><?php echo s($completed_status_label($r)); ?></td>
+    <td><?php echo s($passed_status_label($r)); ?></td>
+    <td><?php echo s($hold_status_label($r)); ?></td>
 </tr>
 <?php endforeach; ?>
 </tbody>

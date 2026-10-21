@@ -128,7 +128,17 @@ if ($sessionid && $confirmed && confirm_sesskey()) {
                     redirect(new moodle_url('/local/tm_course/enrol_session_verification.php', ['submissionid' => $subid]));
                 }
             }
-            $msg = get_string('batch_success_processed', 'local_tm_course', (object)['n' => $result['processed']]);
+            if ($issiteadmin && (int) ($result['siteadmin_auto_approved'] ?? 0) > 0) {
+                $msg = get_string('batch_success_siteadmin_approved', 'local_tm_course', (object)[
+                    'n' => (int) $result['siteadmin_auto_approved'],
+                ]);
+                $pendingn = (int) $result['processed'] - (int) $result['siteadmin_auto_approved'];
+                if ($pendingn > 0) {
+                    $msg .= ' ' . get_string('batch_success_processed', 'local_tm_course', (object)['n' => $pendingn]);
+                }
+            } else {
+                $msg = get_string('batch_success_processed', 'local_tm_course', (object)['n' => $result['processed']]);
+            }
             if (!empty($result['capped'])) {
                 $msg .= ' ' . get_string('batch_cap_notice', 'local_tm_course', (object)[
                     'requested' => $result['requested'],
@@ -266,7 +276,9 @@ echo $OUTPUT->header();
                         <?php echo $sel; ?>>
                     <?php echo s($s->name); ?> — <?php echo userdate($s->starttime, get_string('strftimedatetimeshort')); ?>
                     (<?php echo get_string('batch_remaining', 'local_tm_course'); ?>: <?php echo $cap; ?>)
-                    <?php if ((int)$s->status === session_manager::STATUS_CLOSED): ?>
+                    <?php if (session_manager::is_unattended_void($s)): ?>
+                        — <?php echo get_string('session_status_void_unattended', 'local_tm_course'); ?>
+                    <?php elseif ((int)$s->status === session_manager::STATUS_CLOSED): ?>
                         — <?php echo get_string('session_status_closed', 'local_tm_course'); ?>
                     <?php elseif ((int)$s->status === session_manager::STATUS_FULL): ?>
                         — <?php echo get_string('session_status_full', 'local_tm_course'); ?>
@@ -309,10 +321,19 @@ echo $OUTPUT->header();
                                 ? $learner['diet_summary']
                                 : get_string('attendance_diet_no_choice_label', 'local_tm_course');
                             ?>
-                            <li class="tm-roster-learner-item <?php echo $ispending ? 'tm-batch-learner-pending' : ''; ?>">
+                            <?php
+                            $hold = !empty($learner['prereq_absence_hold']);
+                            $preholdcourses = $learner['prehold_courses'] ?? [];
+                            ?>
+                            <li class="tm-roster-learner-item <?php echo $ispending ? 'tm-batch-learner-pending' : ''; ?><?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>">
+                                <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                                 <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span><?php
                                 if ($ispending): ?>
                                 <span class="tm-batch-pending-mark"> — <?php echo get_string('admin_desk_pending_badge', 'local_tm_course'); ?></span>
+                                <?php endif; ?>
+                                <?php if (!$hold && !empty($preholdcourses)): ?>
+                                <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
+                                <span class="text-muted small d-block"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></span>
                                 <?php endif; ?>
                                 <?php if ($learner['institution'] !== ''): ?>
                                 <span class="text-muted small d-block"><?php echo s($learner['institution']); ?></span>
@@ -331,6 +352,10 @@ echo $OUTPUT->header();
                                     <span class="text-muted"><?php echo s($dietlabel); ?></span>
                                 <?php endif; ?>
                                 </span>
+                                </div>
+                                <?php if ($hold): ?>
+                                <div class="tm-prereq-absence-reason"><?php echo s($learner['prereq_hold_reason'] ?? get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                                <?php endif; ?>
                             </li>
                         <?php endforeach; ?>
                         </ul>
@@ -467,6 +492,7 @@ $batch_enrol_js_cfg = [
     'lookupBase' => (new moodle_url('/local/tm_course/batch_lookup.php'))->out(false),
     'prereqCheckBase' => (new moodle_url('/local/tm_course/batch_prereq_check.php'))->out(false),
     'sesskey' => sesskey(),
+    'isSiteAdmin' => $issiteadmin,
     'str' => [
         'batch_remaining' => get_string('batch_remaining', 'local_tm_course'),
         'batch_select_session' => get_string('batch_select_session', 'local_tm_course'),
@@ -500,6 +526,7 @@ $batch_enrol_js_cfg = [
         'batch_prereq_warning_title' => get_string('batch_prereq_warning_title', 'local_tm_course'),
         'batch_prereq_met' => get_string('batch_prereq_met', 'local_tm_course'),
         'batch_prereq_not_met' => get_string('batch_prereq_not_met', 'local_tm_course'),
+        'batch_prereq_siteadmin_force_hint' => get_string('batch_prereq_siteadmin_force_hint', 'local_tm_course'),
         'error_batch_seat_prerequisite' => get_string('error_batch_seat_prerequisite', 'local_tm_course'),
     ],
 ];

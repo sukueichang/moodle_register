@@ -391,6 +391,26 @@ class certificate_helper {
     }
 
     /**
+     * True when customcert has already issued a certificate for this user and course.
+     * Eligibility without an issue row does not count.
+     */
+    public static function user_has_issued_course_certificate(int $userid, int $courseid): bool {
+        global $DB;
+        if ($userid < 2 || $courseid <= 0 || !self::is_customcert_installed()) {
+            return false;
+        }
+        $sql = "SELECT ci.id
+                  FROM {customcert_issues} ci
+                  JOIN {customcert} cc ON cc.id = ci.customcertid
+                 WHERE ci.userid = :uid
+                   AND cc.course = :cid";
+        return $DB->record_exists_sql($sql, [
+            'uid' => $userid,
+            'cid' => $courseid,
+        ]);
+    }
+
+    /**
      * Whether mod_customcert tables are available.
      *
      * @return bool

@@ -18,6 +18,12 @@ $sessionid = required_param('sessionid', PARAM_INT);
 $session = session_manager::get_session($sessionid);
 
 if (!session_manager::can_submit_enrolment($session, false)) {
+    if (session_manager::is_unattended_void($session)) {
+        redirect(new moodle_url('/local/tm_course/index.php'),
+            get_string('error_session_void_unattended', 'local_tm_course'),
+            null,
+            \core\output\notification::NOTIFY_WARNING);
+    }
     if (!session_manager::is_online_session($session)
         && ((int) $session->status === session_manager::STATUS_FULL
             || session_manager::is_onsite_persons_full($session))) {

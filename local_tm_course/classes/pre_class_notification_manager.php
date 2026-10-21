@@ -484,6 +484,7 @@ class pre_class_notification_manager {
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby AND sb.deleted = 0
                  WHERE e.sessionid = :sid
                    AND e.status = :approved
+                   AND COALESCE(e.prereq_absence_hold, 0) = 0
               ORDER BY COALESCE(e.desk_number, 9999) ASC, u.lastname ASC, u.firstname ASC";
 
         return array_values($DB->get_records_sql($sql, [
