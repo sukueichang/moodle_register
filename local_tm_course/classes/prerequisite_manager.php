@@ -1388,7 +1388,17 @@ class prerequisite_manager {
             return '';
         }
         $cname = $DB->get_field('course', 'fullname', ['id' => $courseid], IGNORE_MISSING);
-        return $cname ? format_string($cname) : ('#' . $courseid);
+        if (!$cname) {
+            return '#' . $courseid;
+        }
+        // Pass explicit course context so format_string() does not depend on $PAGE
+        // being initialised yet (roster builders may run before set_context).
+        try {
+            $ctx = \context_course::instance($courseid, MUST_EXIST);
+        } catch (\Throwable $e) {
+            $ctx = \context_system::instance();
+        }
+        return format_string($cname, true, ['context' => $ctx]);
     }
 
     /**

@@ -492,6 +492,7 @@ $batch_enrol_js_cfg = [
     'lookupBase' => (new moodle_url('/local/tm_course/batch_lookup.php'))->out(false),
     'prereqCheckBase' => (new moodle_url('/local/tm_course/batch_prereq_check.php'))->out(false),
     'sesskey' => sesskey(),
+    'isSiteAdmin' => $issiteadmin,
     'str' => [
         'batch_remaining' => get_string('batch_remaining', 'local_tm_course'),
         'batch_select_session' => get_string('batch_select_session', 'local_tm_course'),
@@ -525,6 +526,7 @@ $batch_enrol_js_cfg = [
         'batch_prereq_warning_title' => get_string('batch_prereq_warning_title', 'local_tm_course'),
         'batch_prereq_met' => get_string('batch_prereq_met', 'local_tm_course'),
         'batch_prereq_not_met' => get_string('batch_prereq_not_met', 'local_tm_course'),
+        'batch_prereq_siteadmin_force_hint' => get_string('batch_prereq_siteadmin_force_hint', 'local_tm_course'),
         'error_batch_seat_prerequisite' => get_string('error_batch_seat_prerequisite', 'local_tm_course'),
     ],
 ];

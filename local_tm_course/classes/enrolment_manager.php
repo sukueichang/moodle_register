@@ -629,6 +629,69 @@ class enrolment_manager {
     }
 
     /**
+     * Admin/approver: cancel enrolment directly to ENROL_CANCELLED (not reject, not unapprove).
+     * Releases desk, LMS enrolment, and attendance group when previously approved.
+     *
+     * @throws \moodle_exception When actor lacks capability or enrolment is already terminal.
+     */
+    public static function cancel_by_admin(int $enrolid, int $actorid, string $reasontext = ''): void {
+        global $DB;
+        if ($actorid <= 0) {
+            throw new \moodle_exception('nopermissions', 'error');
+        }
+        $ctx = \context_system::instance();
+        if (!is_siteadmin($actorid)
+            && !has_capability('local/tm_course:approve', $ctx, $actorid)
+            && !has_capability('local/tm_course:manage', $ctx, $actorid)) {
+            throw new \moodle_exception('nopermissions', 'error');
+        }
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        $status = (int) $enrol->status;
+        $terminal = [
+            session_manager::ENROL_CANCELLED,
+            session_manager::ENROL_REJECTED,
+        ];
+        if (in_array($status, $terminal, true)) {
+            throw new \moodle_exception('error_batch_cancel_terminal', 'local_tm_course');
+        }
+        $wasapproved = ($status === session_manager::ENROL_APPROVED);
+        $session = session_manager::get_session((int) $enrol->sessionid);
+        $syncuserid = self::moodle_sync_subject_userid($enrol);
+        $reasontext = clean_param(trim($reasontext), PARAM_TEXT);
+
+        $DB->set_field('local_tm_course_enrolments', 'status',
+            session_manager::ENROL_CANCELLED, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_code', 'admin', ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $reasontext, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
+        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        session_manager::recalculate_status((int) $enrol->sessionid);
+
+        try {
+            if ($wasapproved) {
+                try {
+                    self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
+                } catch (\Throwable $e) {
+                    debugging('TM Course unenrol on admin cancel failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+                try {
+                    attendance_manager::remove_from_group((int) $enrol->sessionid, $syncuserid);
+                } catch (\Throwable $e) {
+                    debugging('TM Course remove_from_group on admin cancel failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+                }
+            }
+            self::clear_sync_health_state((int) $enrolid);
+            try {
+                notification_helper::notify_enrolment_cancelled((int) $enrolid);
+            } catch (\Throwable $e) {
+                debugging('TM Course cancel notify failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+            }
+        } finally {
+            self::cascade_cancel_after_prereq_lost((int) $enrolid);
+        }
+    }
+
+    /**
      * Cancel an enrolment row submitted via batch enrolment by the same business user (batch_submittedby).
      * Releases LMS manual enrolment / attendance group when previously approved.
      *
@@ -1703,16 +1766,124 @@ class enrolment_manager {
                        $effinstitution AS user_institution,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
-                       s.delivery_mode AS session_delivery_mode
+                       s.delivery_mode AS session_delivery_mode,
+                       c.fullname AS course_fullname
                   FROM {local_tm_course_enrolments} e
                   JOIN {user} u ON u.id = e.userid
              LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+                  JOIN {course} c ON c.id = s.courseid
                  WHERE " . implode(' AND ', $conditions) . "
               ORDER BY s.starttime DESC";
 
         return $DB->get_records_sql($sql, $params, 0, $limit);
+    }
+
+    /**
+     * Enrolment rows for known Moodle user ids (holder or linked learner).
+     * Used by search.php so course records follow the same user hits as certificates.
+     *
+     * @param int[] $userids
+     * @param bool $admin_view
+     * @param int|null $current_userid
+     * @param int $limit
+     * @return \stdClass[] keyed by enrolment id
+     */
+    public static function search_enrolments_by_userids(
+        array $userids,
+        bool $admin_view = false,
+        ?int $current_userid = null,
+        int $limit = 100
+    ): array {
+        global $DB;
+
+        $limit = min(100, max(1, $limit));
+        $userids = array_values(array_unique(array_filter(array_map('intval', $userids), static function(int $id): bool {
+            return $id > 1;
+        })));
+        if (empty($userids)) {
+            return [];
+        }
+
+        // Distinct param prefixes: drivers reject reusing the same named IN params twice.
+        [$insqluser, $paramsuser] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'eu');
+        [$insqllinked, $paramslinked] = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'el');
+        $params = $paramsuser + $paramslinked;
+        $conditions = [
+            "(e.userid $insqluser OR e.linked_userid $insqllinked)",
+        ];
+
+        if (!$admin_view && $current_userid) {
+            $conditions[] = '(e.userid = :uid OR (e.placeholder_seq > 0 AND e.linked_userid = :linkeduid))';
+            $params['uid'] = $current_userid;
+            $params['linkeduid'] = $current_userid;
+        }
+
+        $sql = "SELECT e.*,
+                       CASE WHEN (e.placeholder_seq > 0 AND lu.id IS NOT NULL)
+                            THEN lu.firstname ELSE u.firstname END AS firstname,
+                       CASE WHEN (e.placeholder_seq > 0 AND lu.id IS NOT NULL)
+                            THEN lu.lastname ELSE u.lastname END AS lastname,
+                       CASE
+                           WHEN (e.placeholder_seq > 0 AND lu.id IS NOT NULL) THEN lu.email
+                           WHEN e.placeholder_seq > 0
+                                AND e.linked_email IS NOT NULL
+                                AND e.linked_email <> :emptymail
+                               THEN e.linked_email
+                           ELSE u.email
+                       END AS email,
+                       CASE
+                           WHEN (e.placeholder_seq > 0 AND lu.id IS NOT NULL)
+                                AND lu.institution IS NOT NULL
+                                AND lu.institution <> :emptyinst
+                               THEN lu.institution
+                           ELSE u.institution
+                       END AS user_institution,
+                       sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
+                       s.name AS session_name, s.starttime, s.courseid,
+                       s.delivery_mode AS session_delivery_mode,
+                       c.fullname AS course_fullname
+                  FROM {local_tm_course_enrolments} e
+                  JOIN {user} u ON u.id = e.userid
+             LEFT JOIN {user} lu ON lu.id = e.linked_userid AND e.linked_userid > 0
+             LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
+                  JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+                  JOIN {course} c ON c.id = s.courseid
+                 WHERE " . implode(' AND ', $conditions) . "
+              ORDER BY s.starttime DESC, e.timecreated DESC";
+
+        $params['emptymail'] = '';
+        $params['emptyinst'] = '';
+
+        return $DB->get_records_sql($sql, $params, 0, $limit);
+    }
+
+    /**
+     * Merge enrolment search hits by id (later rows win on conflict; preserve order by starttime).
+     *
+     * @param \stdClass[] ...$sets
+     * @return \stdClass[]
+     */
+    public static function merge_enrolment_search_results(array ...$sets): array {
+        $byid = [];
+        foreach ($sets as $set) {
+            foreach ($set as $row) {
+                $id = (int) ($row->id ?? 0);
+                if ($id > 0) {
+                    $byid[$id] = $row;
+                }
+            }
+        }
+        uasort($byid, static function(\stdClass $a, \stdClass $b): int {
+            $sa = (int) ($a->starttime ?? 0);
+            $sb = (int) ($b->starttime ?? 0);
+            if ($sa === $sb) {
+                return ((int) ($b->id ?? 0)) <=> ((int) ($a->id ?? 0));
+            }
+            return $sb <=> $sa;
+        });
+        return $byid;
     }
 
     /**
@@ -1728,11 +1899,13 @@ class enrolment_manager {
         $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS user_institution,
                        sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
                        s.name AS session_name, s.starttime, s.courseid,
-                       s.delivery_mode AS session_delivery_mode
+                       s.delivery_mode AS session_delivery_mode,
+                       c.fullname AS course_fullname
                   FROM {local_tm_course_enrolments} e
                   JOIN {user} u ON u.id = e.userid
              LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
                   JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+                  JOIN {course} c ON c.id = s.courseid
                  WHERE e.userid = :userid
                     OR e.linked_userid = :linkeduserid
               ORDER BY s.starttime DESC, e.timecreated DESC";
@@ -2780,6 +2953,8 @@ class enrolment_manager {
             $status = session_manager::ENROL_APPROVED;
         }
 
+        // Audit stays on enrolment notes (and Moodle debugging at DEVELOPER only).
+        // Do not use DEBUG_NORMAL — it surfaces a stack trace on successful enrol.
         $auditnote = '';
         if ($didprereqbypass) {
             $auditnote = get_string('siteadmin_prereq_bypass_note', 'local_tm_course', (object) [
@@ -2789,7 +2964,7 @@ class enrolment_manager {
             debugging(
                 'TM Course siteadmin prereq bypass: actor=' . $actorid
                 . ' learner=' . $userid . ' session=' . $sessionid,
-                DEBUG_NORMAL
+                DEBUG_DEVELOPER
             );
         } else if ($status === session_manager::ENROL_APPROVED && $siteadminactor) {
             $auditnote = get_string('siteadmin_auto_approve_note', 'local_tm_course', (object) [

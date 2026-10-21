@@ -36,6 +36,13 @@ if (is_siteadmin() || has_capability('local/tm_course:approve', $ctx)) {
     redirect(new moodle_url('/local/tm_course/admin/enrolments.php', ['sessionid' => $sessionid]));
 }
 
+// PAGE context before roster build: format_string() / course names need a context.
+$PAGE->set_context($ctx);
+$PAGE->set_url(new moodle_url('/local/tm_course/admin/session_roster.php', ['sessionid' => $sessionid]));
+$PAGE->set_pagelayout(has_capability('local/tm_course:manage', $ctx) ? 'admin' : 'standard');
+$PAGE->set_title(get_string('session_roster_title', 'local_tm_course'));
+$PAGE->requires->css('/local/tm_course/styles.css');
+
 try {
     $view = enrolment_manager::build_session_roster_view($sessionid);
 } catch (\dml_missing_record_exception $ex) {
@@ -46,12 +53,6 @@ $session = $view['session'];
 $backurl = has_capability('local/tm_course:manage', $ctx)
     ? new moodle_url('/local/tm_course/admin/sessions.php')
     : new moodle_url('/local/tm_course/index.php');
-
-$PAGE->set_context($ctx);
-$PAGE->set_url(new moodle_url('/local/tm_course/admin/session_roster.php', ['sessionid' => $sessionid]));
-$PAGE->set_pagelayout(has_capability('local/tm_course:manage', $ctx) ? 'admin' : 'standard');
-$PAGE->set_title(get_string('session_roster_title', 'local_tm_course'));
-$PAGE->requires->css('/local/tm_course/styles.css');
 
 echo $OUTPUT->header();
 ?>

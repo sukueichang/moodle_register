@@ -41,6 +41,9 @@ if ($action && $enrolid && confirm_sesskey()) {
         } elseif ($action === 'unapprove') {
             enrolment_manager::unapprove($enrolid);
             $msg = get_string('enrol_unapproved_notice', 'local_tm_course');
+        } elseif ($action === 'cancel') {
+            enrolment_manager::cancel_by_admin($enrolid, (int) $USER->id, $reason);
+            $msg = get_string('enrol_cancelled_notice', 'local_tm_course');
         } elseif ($action === 'reject') {
             enrolment_manager::reject($enrolid, $reason);
             $msg = get_string('enrol_rejected_notice', 'local_tm_course');
@@ -371,9 +374,22 @@ if ($show_desk_board) {
                             <button type="submit" class="btn btn-sm btn-tm-danger"
                                 onclick="return confirm(<?php echo json_encode(get_string('confirm_reject_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('reject_enrolment', 'local_tm_course'); ?></button>
                         </form>
+                        <form method="post" action="" class="mt-1">
+                            <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                            <input type="hidden" name="action" value="cancel">
+                            <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                            <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                            <?php if ($fromresv > 0): ?>
+                            <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                            <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                            <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                            <?php endif; ?>
+                            <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                onclick="return confirm(<?php echo json_encode(get_string('confirm_cancel_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('cancel_enrolment', 'local_tm_course'); ?></button>
+                        </form>
                     </div>
                     <?php elseif (!$hold && $isapproved): ?>
-                    <form method="post" action="" class="mt-2">
+                    <form method="post" action="" class="mt-2 d-inline">
                         <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
                         <input type="hidden" name="action" value="unapprove">
                         <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
@@ -385,6 +401,33 @@ if ($show_desk_board) {
                         <?php endif; ?>
                         <button type="submit" class="btn btn-sm btn-secondary"
                                 onclick="return confirm(<?php echo json_encode(get_string('confirm_unapprove_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('unapprove_enrolment', 'local_tm_course'); ?></button>
+                    </form>
+                    <form method="post" action="" class="mt-2 d-inline">
+                        <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                        <input type="hidden" name="action" value="cancel">
+                        <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                        <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                        <?php if ($fromresv > 0): ?>
+                        <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                        <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                        <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                        <?php endif; ?>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                onclick="return confirm(<?php echo json_encode(get_string('confirm_cancel_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('cancel_enrolment', 'local_tm_course'); ?></button>
+                    </form>
+                    <?php elseif ($hold && ($ispending || $isapproved)): ?>
+                    <form method="post" action="" class="mt-2">
+                        <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                        <input type="hidden" name="action" value="cancel">
+                        <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                        <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                        <?php if ($fromresv > 0): ?>
+                        <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                        <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                        <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                        <?php endif; ?>
+                        <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                onclick="return confirm(<?php echo json_encode(get_string('confirm_cancel_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('cancel_enrolment', 'local_tm_course'); ?></button>
                     </form>
                     <?php endif; ?>
                     </div>
@@ -468,6 +511,33 @@ if ($show_desk_board) {
                            placeholder="<?php echo s(get_string('reject_reason_prompt_optional', 'local_tm_course')); ?>">
                     <button type="submit" class="btn btn-sm btn-tm-danger"
                         onclick="return confirm(<?php echo json_encode(get_string('confirm_reject_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('reject_enrolment', 'local_tm_course'); ?></button>
+                </form>
+                <form method="post" action="" class="mt-1">
+                    <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                    <input type="hidden" name="action" value="cancel">
+                    <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                    <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                    <?php if ($fromresv > 0): ?>
+                    <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                    <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                    <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                    <?php endif; ?>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary"
+                        onclick="return confirm(<?php echo json_encode(get_string('confirm_cancel_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('cancel_enrolment', 'local_tm_course'); ?></button>
+                </form>
+                <?php elseif ($hold && ($ispending || $isapproved)): ?>
+                <form method="post" action="" class="mt-1">
+                    <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                    <input type="hidden" name="action" value="cancel">
+                    <input type="hidden" name="enrolid" value="<?php echo (int)$learner['enrolid']; ?>">
+                    <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                    <?php if ($fromresv > 0): ?>
+                    <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                    <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                    <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                    <?php endif; ?>
+                    <button type="submit" class="btn btn-sm btn-outline-secondary"
+                        onclick="return confirm(<?php echo json_encode(get_string('confirm_cancel_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('cancel_enrolment', 'local_tm_course'); ?></button>
                 </form>
                 <?php endif; ?>
                 </div>
@@ -642,8 +712,20 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
     ?></td>
     <?php endif; ?>
     <td>
-        <?php if ($hold): ?>
-            <span class="text-muted">—</span>
+        <?php if ($hold && in_array((int)$e->status, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true)): ?>
+            <form method="post" action="" style="display:inline-flex;align-items:center;gap:.35rem">
+                <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                <input type="hidden" name="action" value="cancel">
+                <input type="hidden" name="enrolid" value="<?php echo (int)$e->id; ?>">
+                <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                <?php if ($fromresv > 0): ?>
+                <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                <?php endif; ?>
+                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                    onclick="return confirm(<?php echo json_encode(get_string('confirm_cancel_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('cancel_enrolment', 'local_tm_course'); ?></button>
+            </form>
         <?php elseif ((int)$e->status === session_manager::ENROL_PENDING): ?>
             <form method="post" action="" style="display:inline-flex;align-items:center;gap:.35rem">
                 <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
@@ -685,6 +767,19 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
                 <button type="submit" class="btn btn-sm btn-tm-danger"
                     onclick="return confirm(<?php echo json_encode(get_string('confirm_reject_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('reject_enrolment', 'local_tm_course'); ?></button>
             </form>
+            <form method="post" action="" style="display:inline-flex;align-items:center;gap:.35rem">
+                <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                <input type="hidden" name="action" value="cancel">
+                <input type="hidden" name="enrolid" value="<?php echo (int)$e->id; ?>">
+                <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                <?php if ($fromresv > 0): ?>
+                <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                <?php endif; ?>
+                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                    onclick="return confirm(<?php echo json_encode(get_string('confirm_cancel_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('cancel_enrolment', 'local_tm_course'); ?></button>
+            </form>
         <?php elseif ((int)$e->status === session_manager::ENROL_APPROVED): ?>
             <form method="post" action="" style="display:inline-flex;align-items:center;gap:.35rem">
                 <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
@@ -698,6 +793,19 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
                 <?php endif; ?>
                 <button type="submit" class="btn btn-sm btn-secondary"
                         onclick="return confirm(<?php echo json_encode(get_string('confirm_unapprove_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('unapprove_enrolment', 'local_tm_course'); ?></button>
+            </form>
+            <form method="post" action="" style="display:inline-flex;align-items:center;gap:.35rem">
+                <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
+                <input type="hidden" name="action" value="cancel">
+                <input type="hidden" name="enrolid" value="<?php echo (int)$e->id; ?>">
+                <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                <?php if ($fromresv > 0): ?>
+                <input type="hidden" name="from_resv" value="<?php echo (int)$fromresv; ?>">
+                <input type="hidden" name="resvstatus" value="<?php echo (int)$fromresvstatus; ?>">
+                <input type="hidden" name="enrolstatus" value="<?php echo (int)$fromenrolstatus; ?>">
+                <?php endif; ?>
+                <button type="submit" class="btn btn-sm btn-outline-secondary"
+                        onclick="return confirm(<?php echo json_encode(get_string('confirm_cancel_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('cancel_enrolment', 'local_tm_course'); ?></button>
             </form>
         <?php elseif ($e->notes): ?>
             <span class="text-muted" title="<?php echo s($e->notes); ?>">ℹ <?php echo get_string('reject_reason_label', 'local_tm_course'); ?>: <?php echo s($e->notes); ?></span>
