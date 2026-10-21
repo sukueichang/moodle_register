@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.29.6
+ * Version: 5.29.7
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026102105;   // Clear attendance on cancel; reset on re-enrol
-$plugin->release   = '5.29.6';
+$plugin->version   = 2026102106;   // Dedicated-class learners on formal session roster
+$plugin->release   = '5.29.7';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;
