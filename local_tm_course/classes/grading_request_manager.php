@@ -11,6 +11,7 @@ defined('MOODLE_INTERNAL') || die();
 require_once(__DIR__ . '/enabled_course_manager.php');
 require_once(__DIR__ . '/permissions_manager.php');
 require_once(__DIR__ . '/notification_helper.php');
+require_once(__DIR__ . '/grading_overdue_rules.php');
 
 class grading_request_manager {
     public const STATUS_PENDING = 0;
@@ -989,6 +990,7 @@ class grading_request_manager {
         ]);
         $DB->set_field('local_tm_course_grreq', 'assigneeid', $assigneeid, ['id' => $requestid]);
         $DB->set_field('local_tm_course_grreq', 'timeassigned', $now, ['id' => $requestid]);
+        $DB->set_field('local_tm_course_grreq', 'overdue_sent_assign', 0, ['id' => $requestid]);
         $status = ((int)$req->status === self::STATUS_IN_PROGRESS) ? self::STATUS_IN_PROGRESS : self::STATUS_ASSIGNED;
         $DB->set_field('local_tm_course_grreq', 'status', $status, ['id' => $requestid]);
         $DB->set_field('local_tm_course_grreq', 'timemodified', $now, ['id' => $requestid]);
@@ -1170,5 +1172,86 @@ class grading_request_manager {
             return get_string('grading_item_missing', 'local_tm_course');
         }
         return get_string('grading_item_pending', 'local_tm_course');
+    }
+
+    /**
+     * Assignment time written by assign_to (history row has an actor).
+     * Backfilled history uses assignedby = 0 and is not a reliable start.
+     */
+    public static function reliable_assignment_time(\stdClass $req): int {
+        global $DB;
+        $assigned = (int) ($req->timeassigned ?? 0);
+        $assignee = (int) ($req->assigneeid ?? 0);
+        if ($assigned <= 0 || $assignee <= 0) {
+            return 0;
+        }
+        if (!$DB->get_manager()->table_exists('local_tm_course_grasn')) {
+            return 0;
+        }
+        $row = $DB->get_record_sql(
+            "SELECT id
+               FROM {local_tm_course_grasn}
+              WHERE requestid = :rid
+                AND assigneeid = :aid
+                AND timecreated = :t
+                AND assignedby > 0",
+            ['rid' => (int) $req->id, 'aid' => $assignee, 't' => $assigned],
+            IGNORE_MULTIPLE
+        );
+        return $row ? $assigned : 0;
+    }
+
+    /**
+     * @return int notices sent
+     */
+    public static function dispatch_overdue_notices(int $now): int {
+        global $DB;
+        if (!notification_helper::is_grading_overdue_enabled()) {
+            return 0;
+        }
+        $days = notification_helper::get_grading_overdue_days();
+        if ($days < 1) {
+            return 0;
+        }
+        $rows = $DB->get_records_select('local_tm_course_grreq',
+            'assigneeid > 0 AND timeassigned > 0 AND status IN (:s1, :s2, :s3)',
+            [
+                's1' => self::STATUS_PENDING,
+                's2' => self::STATUS_ASSIGNED,
+                's3' => self::STATUS_IN_PROGRESS,
+            ]
+        );
+        $sent = 0;
+        foreach ($rows as $req) {
+            if (!self::overdue_ready($req, $now, $days)) {
+                continue;
+            }
+            self::sync_request((int) $req->id);
+            $fresh = self::get_request((int) $req->id);
+            if (!$fresh || !self::overdue_ready($fresh, $now, $days)) {
+                continue;
+            }
+            $reliable = self::reliable_assignment_time($fresh);
+            if (!notification_helper::notify_grading_overdue((int) $fresh->id, $reliable, $days, $now)) {
+                continue;
+            }
+            $DB->set_field('local_tm_course_grreq', 'overdue_sent_assign', $reliable, ['id' => (int) $fresh->id]);
+            $sent++;
+        }
+        return $sent;
+    }
+
+    private static function overdue_ready(\stdClass $req, int $now, int $days): bool {
+        $counts = self::progress_counts($req);
+        $finished = !in_array((int) $req->status, self::OPEN_STATUSES, true)
+            || ($counts['total'] > 0 && $counts['done'] >= $counts['total']);
+        return grading_overdue_rules::should_notify(
+            $now,
+            self::reliable_assignment_time($req),
+            $days,
+            true,
+            $finished,
+            (int) ($req->overdue_sent_assign ?? 0)
+        );
     }
 }

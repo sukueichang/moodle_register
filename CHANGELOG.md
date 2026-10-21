@@ -3,6 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.29.1] - 2026-10-21 - Online roster count, grading overdue notice
+
+### Fixed
+- On a video session, the enrolled count and the learner list now use the same review scope. A status filter that hides every row says so, instead of「查無報名紀錄」. No desk is created for video sessions.
+
+### Added
+- Optional grading-overdue notice. Admin turns it on and sets a positive number of days after a real instructor assignment. Recipients and wording use the existing notification settings. Each assignment cycle sends once. Reassignment starts again. Rows whose assignment time was only backfilled are skipped.
+
 ## [5.29.0] - 2026-10-20 - Prerequisite gate, absence hold, empty session label
 
 ### Fixed

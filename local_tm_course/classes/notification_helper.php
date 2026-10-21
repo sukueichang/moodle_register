@@ -510,6 +510,15 @@ class notification_helper {
     /**
      * Whether pending overdue reminders are enabled. Defaults to on when unset.
      */
+    public static function is_grading_overdue_enabled(): bool {
+        return (string) get_config('local_tm_course', 'grading_overdue_enabled') === '1';
+    }
+
+    public static function get_grading_overdue_days(): int {
+        $days = (int) get_config('local_tm_course', 'grading_overdue_days');
+        return $days > 0 ? $days : 0;
+    }
+
     public static function is_reminder_threshold_enabled(): bool {
         $raw = get_config('local_tm_course', 'reminder_threshold_enabled');
         if ($raw === false || $raw === null || $raw === '') {
@@ -678,6 +687,92 @@ class notification_helper {
         foreach (self::normalise_user_ids($ids) as $userid) {
             self::send_event_message($userid, 'grading_request', 'grading_assigned', $ctx['tokens']);
         }
+    }
+
+    /**
+     * One overdue notice for the current assignment cycle.
+     *
+     * @return bool true when at least one recipient was queued
+     */
+    public static function notify_grading_overdue(int $requestid, int $assignedat, int $days, int $now): bool {
+        $ctx = self::grading_notify_context($requestid);
+        if (!$ctx) {
+            return false;
+        }
+        $req = $ctx['req'];
+        $pending = [];
+        foreach (grading_request_manager::get_items($requestid) as $item) {
+            if ((int) $item->itemstatus === grading_request_manager::ITEM_PENDING) {
+                $pending[] = grading_request_manager::display_item_name($item);
+            }
+        }
+        if ($pending === []) {
+            return false;
+        }
+        $elapsed = max(0, (int) floor(($now - $assignedat) / 86400));
+        $tokens = $ctx['tokens'];
+        $tokens['session'] = self::grading_related_session_label($req);
+        $tokens['instructor'] = grading_request_manager::assignment_display_name($req);
+        $tokens['pending'] = implode('、', $pending);
+        $tokens['overdue'] = get_string('notify_grading_overdue_age', 'local_tm_course', (object) [
+            'elapsed' => $elapsed,
+            'days' => $days,
+        ]);
+        $tokens['days'] = (string) $days;
+        $settings = self::get_event_target_settings('grading_overdue');
+        $ids = [];
+        if ((int) $req->assigneeid > 0) {
+            $ids[] = (int) $req->assigneeid;
+        }
+        if (in_array(self::TARGET_APPROVER, $settings['targets'], true)) {
+            $ids = array_merge($ids, self::collect_grading_admin_ids());
+        }
+        if (in_array(self::TARGET_REQUESTER, $settings['targets'], true) && (int) $req->requesterid > 0) {
+            $ids[] = (int) $req->requesterid;
+        }
+        $ids = array_merge($ids, self::collect_role_user_ids($settings['roleids']));
+        $recipients = self::normalise_user_ids($ids);
+        if ($recipients === []) {
+            return false;
+        }
+        foreach ($recipients as $userid) {
+            self::send_event_message($userid, 'grading_request', 'grading_overdue', $tokens);
+        }
+        return true;
+    }
+
+    /**
+     * Sessions of this course that the listed learners are actually on.
+     * Grading requests are not stored against one session.
+     */
+    private static function grading_related_session_label(\stdClass $req): string {
+        global $DB;
+        $names = $DB->get_records_sql(
+            "SELECT DISTINCT s.id, s.name
+               FROM {local_tm_course_gritem} i
+               JOIN {local_tm_course_enrolments} e ON e.userid = i.userid
+               JOIN {local_tm_course_sessions} s ON s.id = e.sessionid AND s.courseid = :courseid
+              WHERE i.requestid = :rid
+                AND e.status IN (:pending, :approved, :waitlisted)",
+            [
+                'courseid' => (int) $req->courseid,
+                'rid' => (int) $req->id,
+                'pending' => session_manager::ENROL_PENDING,
+                'approved' => session_manager::ENROL_APPROVED,
+                'waitlisted' => session_manager::ENROL_WAITLISTED,
+            ]
+        );
+        $labels = [];
+        foreach ($names as $row) {
+            $name = trim((string) $row->name);
+            if ($name !== '') {
+                $labels[] = $name;
+            }
+        }
+        if ($labels === []) {
+            return get_string('notify_grading_overdue_no_session', 'local_tm_course');
+        }
+        return implode('、', $labels);
     }
 
     public static function notify_grading_closed(int $requestid, string $action): void {
@@ -879,6 +974,14 @@ class notification_helper {
                 'defaultsubject_en' => '[TM Course] Grading request submitted: #{{requestid}} ({{activity}})',
                 'defaultbody_en' => "Request #: {{requestid}}\nSales: {{requester}}\nCourse: {{course}}\nActivity: {{activity}}\nLearners: {{count}}\nNote: {{note}}\nLink: {{link}}",
             ],
+            'grading_overdue' => [
+                'label' => get_string('notify_event_grading_overdue', 'local_tm_course'),
+                'tokens' => ['{{requestid}}', '{{course}}', '{{session}}', '{{instructor}}', '{{activity}}', '{{pending}}', '{{overdue}}', '{{days}}', '{{link}}'],
+                'defaultsubject_zh_tw' => '【TM 課程】批改逾時：#{{requestid}}（{{course}}）',
+                'defaultbody_zh_tw' => "課程：{{course}}\n場次：{{session}}\n講師：{{instructor}}\n待批改項目：{{activity}}\n尚未批改：{{pending}}\n逾期：{{overdue}}\n批改頁：{{link}}",
+                'defaultsubject_en' => '[TM Course] Grading overdue: #{{requestid}} ({{course}})',
+                'defaultbody_en' => "Course: {{course}}\nSession: {{session}}\nInstructor: {{instructor}}\nActivity: {{activity}}\nStill to grade: {{pending}}\nOverdue: {{overdue}}\nGrading page: {{link}}",
+            ],
             'grading_assigned' => [
                 'label' => get_string('notify_event_grading_assigned', 'local_tm_course'),
                 'tokens' => ['{{requestid}}', '{{requester}}', '{{course}}', '{{activity}}', '{{count}}', '{{note}}', '{{link}}'],
@@ -1010,7 +1113,7 @@ class notification_helper {
         if ($eventkey === 'grading_submitted') {
             return [self::TARGET_APPROVER];
         }
-        if ($eventkey === 'grading_assigned') {
+        if ($eventkey === 'grading_assigned' || $eventkey === 'grading_overdue') {
             return [];
         }
         if ($eventkey === 'grading_closed') {

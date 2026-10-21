@@ -97,6 +97,28 @@ if ($sessionid) {
     }
     $sql .= ' ORDER BY e.timecreated ASC';
     $enrolments = $DB->get_records_sql($sql, $params);
+    $scopeinitial = $fromresv > 0 ? 1 : 0;
+    $scope_rows = $DB->get_records_sql(
+        "SELECT e.id, e.status, COALESCE(e.prereq_absence_hold, 0) AS prereq_absence_hold
+           FROM {local_tm_course_enrolments} e
+          WHERE e.sessionid = :sid
+            AND COALESCE(e.reservation_initial_enrol, 0) = :initial",
+        ['sid' => $sessionid, 'initial' => $scopeinitial]
+    );
+    $otherscope = (int) $DB->count_records_sql(
+        "SELECT COUNT(1)
+           FROM {local_tm_course_enrolments} e
+          WHERE e.sessionid = :sid
+            AND COALESCE(e.reservation_initial_enrol, 0) = :initial",
+        ['sid' => $sessionid, 'initial' => $scopeinitial ? 0 : 1]
+    );
+    $scope_approved = 0;
+    foreach ($scope_rows as $scoperow) {
+        if ((int) $scoperow->status === session_manager::ENROL_APPROVED && empty($scoperow->prereq_absence_hold)) {
+            $scope_approved++;
+        }
+    }
+    $scope_total = count($scope_rows);
 } else {
     $session_is_online = false;
     $session_has_vq = false;
@@ -216,7 +238,7 @@ echo $OUTPUT->header();
         ? get_string('session_online_enrolled_heading', 'local_tm_course')
         : get_string('session_total_capacity', 'local_tm_course'); ?>:</strong><br><?php
     if ($session_is_online) {
-        echo get_string('session_online_enrolled_only', 'local_tm_course', (object)['n' => (int) $se->confirmed_count]);
+        echo get_string('session_online_enrolled_only', 'local_tm_course', (object)['n' => (int) $scope_approved]);
     } else {
         echo $se->confirmed_count . '/' . $se->total_capacity . ' ' . get_string('session_capacity_persons_suffix', 'local_tm_course');
     }
@@ -469,9 +491,32 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
     <summary class="mb-2"><?php echo get_string('all_statuses', 'local_tm_course'); ?> / <?php echo get_string('view'); ?></summary>
 <?php endif; ?>
 
+<?php if ($session_is_online): ?>
+<p class="small text-muted mb-2"><?php echo get_string('enrolments_shown_count', 'local_tm_course', count($enrolments)); ?></p>
+<?php endif; ?>
 <?php if (empty($enrolments)): ?>
-    <div class="tm-alert tm-alert-info"><?php echo get_string('enrolments_none_found', 'local_tm_course'); ?></div>
+    <div class="tm-alert tm-alert-info"><?php
+        if ($status_filter !== '' && $scope_total > 0) {
+            $filterlabel = $status_labels[(int) $status_filter][1] ?? '';
+            echo get_string('enrolments_filter_empty', 'local_tm_course', (object) [
+                'status' => $filterlabel,
+                'total' => $scope_total,
+                'approved' => $scope_approved,
+            ]);
+        } else if ($scope_total === 0 && $otherscope > 0) {
+            echo $fromresv > 0
+                ? get_string('enrolments_other_scope_later', 'local_tm_course', $otherscope)
+                : get_string('enrolments_other_scope_initial', 'local_tm_course', $otherscope);
+        } else {
+            echo get_string('enrolments_none_found', 'local_tm_course');
+        }
+    ?></div>
 <?php else: ?>
+<?php if ($session_is_online && $otherscope > 0): ?>
+<p class="small text-muted mb-2"><?php echo $fromresv > 0
+    ? get_string('enrolments_other_scope_later', 'local_tm_course', $otherscope)
+    : get_string('enrolments_other_scope_initial', 'local_tm_course', $otherscope); ?></p>
+<?php endif; ?>
 <div class="tm-table-responsive">
 <table class="tm-table">
 <thead><tr>
