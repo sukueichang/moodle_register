@@ -56,9 +56,19 @@ $attend = file_get_contents($root . '/classes/attendance_manager.php');
 $session = file_get_contents($root . '/classes/session_manager.php');
 $zhtw = file_get_contents($root . '/lang/zh_tw/local_tm_course.php');
 
-check(strpos($enrol, 'if (!$skipchecks) {') !== false, '2 real learners are not bypassed');
-check(strpos($enrol, '$bypassprerequisite = false') !== false, 'site-admin bypass flag is cleared');
+check(strpos($enrol, 'if (!$skipchecks) {') !== false, '2 real learners still hit prerequisite checks');
+check(strpos($enrol, 'is_siteadmin($actorid)') !== false, '1.3 site-admin bypass uses is_siteadmin only');
+check(strpos($enrol, 'local/tm_course:manage alone must never skip') !== false
+    || strpos($enrol, 'Manage / sales roles never bypass') !== false, 'non-siteadmin manage cannot bypass');
+check(strpos($enrol, 'ENROL_APPROVED') !== false && strpos($enrol, 'finalize_siteadmin_batch_approval') !== false, 'site-admin proxy auto-approves');
+check(strpos($enrol, 'siteadmin_prereq_bypass_note') !== false, 'prereq bypass leaves a notes audit trail');
 check(strpos($enrol, 'error_batch_seat_prerequisite') !== false, 'placeholder seats cannot skip a prerequisite session');
+check(strpos($enrol, 'function cancel(') !== false && strpos($enrol, 'ENROL_CANCELLED') !== false, 'cancel goes to cancelled');
+$cancelfn = '';
+if (preg_match('/public static function cancel\(.*?public static function /s', $enrol, $m)) {
+    $cancelfn = $m[0];
+}
+check($cancelfn !== '' && strpos($cancelfn, 'ENROL_PENDING') === false, 'cancel does not set pending');
 check(strpos($prereq, 'user_has_issued_course_certificate') !== false, '3 issued certificate satisfies course completion');
 check(strpos($prereq, 'user_is_reservation_learner') !== false, 'co-bundle waiver is limited to reservation learners');
 check(strpos($prereq, 'COALESCE(e.attended, 0) <> :absent') !== false, 'absent enrolment is not a pre-hold');

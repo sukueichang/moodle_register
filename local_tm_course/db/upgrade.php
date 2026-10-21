@@ -2145,6 +2145,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102101, 'local', 'tm_course');
     }
 
+    // 2026102102 — Site admin batch prereq bypass + auto-approve (no schema).
+    if ($oldversion < 2026102102) {
+        upgrade_plugin_savepoint(true, 2026102102, 'local', 'tm_course');
+    }
+
     return true;
 }
 

@@ -128,7 +128,17 @@ if ($sessionid && $confirmed && confirm_sesskey()) {
                     redirect(new moodle_url('/local/tm_course/enrol_session_verification.php', ['submissionid' => $subid]));
                 }
             }
-            $msg = get_string('batch_success_processed', 'local_tm_course', (object)['n' => $result['processed']]);
+            if ($issiteadmin && (int) ($result['siteadmin_auto_approved'] ?? 0) > 0) {
+                $msg = get_string('batch_success_siteadmin_approved', 'local_tm_course', (object)[
+                    'n' => (int) $result['siteadmin_auto_approved'],
+                ]);
+                $pendingn = (int) $result['processed'] - (int) $result['siteadmin_auto_approved'];
+                if ($pendingn > 0) {
+                    $msg .= ' ' . get_string('batch_success_processed', 'local_tm_course', (object)['n' => $pendingn]);
+                }
+            } else {
+                $msg = get_string('batch_success_processed', 'local_tm_course', (object)['n' => $result['processed']]);
+            }
             if (!empty($result['capped'])) {
                 $msg .= ' ' . get_string('batch_cap_notice', 'local_tm_course', (object)[
                     'requested' => $result['requested'],

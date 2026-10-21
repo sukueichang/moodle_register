@@ -24,6 +24,15 @@
 
 ---
 
+## 2026-10-21 — Site Admin 先修豁免與代報直接核准
+
+- **盤點：**
+  1. Site Admin 先修豁免：5.29.0 曾關掉（`bypassprerequisite` 強制 false）。規格要恢復，且僅 `is_siteadmin()`。
+  2. Site Admin 代報：先前一律 pending。規格要直接核准。
+  3. 取消：`cancel`／`cancel_by_batch_submitter` 已直接寫入 `ENROL_CANCELLED`，不經待審；hold 同步不碰 cancelled。**符合，未改。**
+- **決策：** 批次路徑對 Site Admin 恢復先修豁免並直接核准＋LMS 同步；豁免／直接核准寫入 `notes` 與 debugging。`local/tm_course:manage` 不得借用。驗收 1.1／1.2 維持拒絕；1.3 改為允許並直接核准。
+- **版本／狀態：** 5.29.3 / 2026102102。不開 PR、不 merge。
+
 ## 2026-10-21 — 驗收 FAIL 修正（預卡位標示、缺席暫停恢復、無名卡位、逾時收件人）
 
 - **需求：** 測試站 5.29.1 有 9 項 FAIL。保留已通過功能，只修預卡位標示、A 缺席未暫停 B、失效後恢復被擋、無名卡位不算人、批改逾時收件人選錯。

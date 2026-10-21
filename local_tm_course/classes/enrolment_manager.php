@@ -1761,8 +1761,17 @@ class enrolment_manager {
      * @param array $entries   List of [ 'userid' => int, 'institution' => string optional, 'diet' => array ]
      * @param bool  $allowclosed When true, full / closed / deadline are allowed (admin manage paths).
      * @param string $batchsubmitternote Optional remark stored on each created/updated enrolment row.
-     * @param bool   $bypassprerequisite Ignored. Every real learner is checked on the server.
-     * @return array{ processed:int, capped:bool, requested:int, skipped:array<int,array{userid:int,reason:string,a?:mixed,message?:string}>, enrolment_ids:int[], prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}> }
+     * @param bool   $bypassprerequisite Only honoured when $actorid is a Moodle site admin
+     *                                   ({@see is_siteadmin()}). Manage / sales roles never bypass.
+     * @return array{
+     *   processed:int,
+     *   capped:bool,
+     *   requested:int,
+     *   skipped:array<int,array{userid:int,reason:string,a?:mixed,message?:string}>,
+     *   enrolment_ids:int[],
+     *   prereq_bypassed:array<int,array{userid:int,email:string,name:string,missing:array}>,
+     *   siteadmin_auto_approved:int
+     * }
      */
     public static function batch_enrol_pending(
         int $sessionid,
@@ -1826,10 +1835,15 @@ class enrolment_manager {
 
         $bnote = self::normalise_batch_submitter_note($batchsubmitternote);
 
+        // Only Moodle site administrators may skip prerequisite checks. Capability manage is not enough.
+        $siteadminactor = is_siteadmin($actorid);
+        $allowprereqbypass = $bypassprerequisite && $siteadminactor;
+
         $processed = 0;
         $skipped = [];
         $enrolmentids = [];
         $prereqbypassed = [];
+        $siteadminautoapproved = 0;
 
         foreach ($entries as $row) {
             $userid = (int) ($row['userid'] ?? 0);
@@ -1839,23 +1853,39 @@ class enrolment_manager {
             }
             $row['batch_submitter_note'] = $bnote;
             try {
-                $eid = self::enrol_one_pending_batch($sessionid, $session, $userid, $actorid, $row, false, $bypassprerequisite);
+                $preeval = null;
+                $isreallearner = empty($row['is_placeholder_holder']) && (int)($row['placeholder_seq'] ?? 0) <= 0
+                    && !self::is_placeholder_holder_userid($userid);
+                if ($allowprereqbypass && $isreallearner) {
+                    $preeval = self::evaluate_session_prerequisites($session, $userid);
+                }
+                $eid = self::enrol_one_pending_batch(
+                    $sessionid,
+                    $session,
+                    $userid,
+                    $actorid,
+                    $row,
+                    false,
+                    $allowprereqbypass
+                );
                 $enrolmentids[] = $eid;
                 $processed++;
-                if ($bypassprerequisite && empty($row['is_placeholder_holder']) && (int)($row['placeholder_seq'] ?? 0) <= 0
-                    && !self::is_placeholder_holder_userid($userid)) {
-                    $eval = self::evaluate_session_prerequisites($session, $userid);
-                    if (empty($eval['met'])) {
-                        $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], '*', IGNORE_MISSING);
-                        $missingdisplay = prerequisite_manager::format_missing_reason_list($eval['missing']);
-                        $prereqbypassed[] = [
-                            'userid' => $userid,
-                            'email' => $user ? (string)$user->email : '',
-                            'name' => $user ? fullname($user) : '',
-                            'missing' => $missingdisplay !== '' ? [$missingdisplay] : [],
-                            'missing_display' => $missingdisplay,
-                        ];
+                if ($siteadminactor && $isreallearner) {
+                    $fresh = $DB->get_record('local_tm_course_enrolments', ['id' => $eid], 'id,status', IGNORE_MISSING);
+                    if ($fresh && (int) $fresh->status === session_manager::ENROL_APPROVED) {
+                        $siteadminautoapproved++;
                     }
+                }
+                if ($preeval !== null && empty($preeval['met'])) {
+                    $user = $DB->get_record('user', ['id' => $userid, 'deleted' => 0], '*', IGNORE_MISSING);
+                    $missingdisplay = prerequisite_manager::format_missing_reason_list($preeval['missing'] ?? []);
+                    $prereqbypassed[] = [
+                        'userid' => $userid,
+                        'email' => $user ? (string)$user->email : '',
+                        'name' => $user ? fullname($user) : '',
+                        'missing' => $missingdisplay !== '' ? [$missingdisplay] : [],
+                        'missing_display' => $missingdisplay,
+                    ];
                 }
             } catch (\moodle_exception $ex) {
                 $skipped[] = [
@@ -1876,6 +1906,7 @@ class enrolment_manager {
             'skipped'   => $skipped,
             'enrolment_ids' => $enrolmentids,
             'prereq_bypassed' => $prereqbypassed,
+            'siteadmin_auto_approved' => $siteadminautoapproved,
         ];
     }
 
@@ -2658,12 +2689,19 @@ class enrolment_manager {
             $userobj->institution = $fallback;
         }
 
-        // Retained so existing callers still compile. It must not skip the server check.
-        if ($bypassprerequisite) {
-            $bypassprerequisite = false;
-        }
+        // Prerequisite bypass is restricted to Moodle site administrators (is_siteadmin).
+        // local/tm_course:manage alone must never skip the check.
+        $siteadminactor = is_siteadmin($actorid);
+        $didprereqbypass = false;
         if (!$skipchecks) {
-            self::assert_user_meets_prerequisites($session, $userid);
+            if ($bypassprerequisite && $siteadminactor) {
+                $eval = self::evaluate_session_prerequisites($session, $userid);
+                if (empty($eval['met'])) {
+                    $didprereqbypass = true;
+                }
+            } else {
+                self::assert_user_meets_prerequisites($session, $userid);
+            }
         }
 
         $activeStatuses = [
@@ -2736,7 +2774,29 @@ class enrolment_manager {
             'userid'    => $userid,
         ], '*', IGNORE_MISSING);
 
+        // Site admin proxy enrolments for real learners are approved immediately.
         $status = session_manager::ENROL_PENDING;
+        if ($siteadminactor && !$skipchecks) {
+            $status = session_manager::ENROL_APPROVED;
+        }
+
+        $auditnote = '';
+        if ($didprereqbypass) {
+            $auditnote = get_string('siteadmin_prereq_bypass_note', 'local_tm_course', (object) [
+                'adminid' => $actorid,
+                'time' => userdate(time(), get_string('strftimedatetimeshort')),
+            ]);
+            debugging(
+                'TM Course siteadmin prereq bypass: actor=' . $actorid
+                . ' learner=' . $userid . ' session=' . $sessionid,
+                DEBUG_NORMAL
+            );
+        } else if ($status === session_manager::ENROL_APPROVED && $siteadminactor) {
+            $auditnote = get_string('siteadmin_auto_approve_note', 'local_tm_course', (object) [
+                'adminid' => $actorid,
+                'time' => userdate(time(), get_string('strftimedatetimeshort')),
+            ]);
+        }
 
         if ($existing) {
             $st = (int) $existing->status;
@@ -2744,6 +2804,7 @@ class enrolment_manager {
                 throw new \moodle_exception('error_batch_already_active', 'local_tm_course');
             }
             $existing->status = $status;
+            $existing->prereq_absence_hold = 0;
             $existing->institution = $userobj->institution;
             $existing->desk_number = $desknumberdb;
             $existing->diet_choice = $dietchoice;
@@ -2757,6 +2818,9 @@ class enrolment_manager {
             $existing->placeholder_seq = $placeholderseq > 0 ? $placeholderseq : null;
             $existing->seat_company = $seatcompanydb;
             $existing->linked_email = $linkedpendingdb;
+            if ($auditnote !== '') {
+                $existing->notes = $auditnote;
+            }
             $existing->timemodified = time();
             $DB->update_record('local_tm_course_enrolments', $existing);
             $enrolid = (int)$existing->id;
@@ -2765,6 +2829,7 @@ class enrolment_manager {
             $record->sessionid = $sessionid;
             $record->userid = $userid;
             $record->status = $status;
+            $record->prereq_absence_hold = 0;
             $record->institution = $userobj->institution;
             $record->desk_number = $desknumberdb;
             $record->diet_choice = $dietchoice;
@@ -2778,15 +2843,53 @@ class enrolment_manager {
             $record->placeholder_seq = $placeholderseq > 0 ? $placeholderseq : null;
             $record->seat_company = $seatcompanydb;
             $record->linked_email = $linkedpendingdb;
+            if ($auditnote !== '') {
+                $record->notes = $auditnote;
+            }
             $record->timecreated = time();
             $record->timemodified = time();
             $enrolid = (int)$DB->insert_record('local_tm_course_enrolments', $record, true);
+        }
+
+        if ($status === session_manager::ENROL_APPROVED) {
+            self::finalize_siteadmin_batch_approval($enrolid, $session, $userid);
         }
 
         if ($recalc) {
             session_manager::recalculate_status($sessionid);
         }
         return $enrolid;
+    }
+
+    /**
+     * LMS sync + approval notice after a site-admin batch row is created as approved.
+     */
+    private static function finalize_siteadmin_batch_approval(int $enrolid, \stdClass $session, int $userid): void {
+        global $DB;
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', IGNORE_MISSING);
+        if (!$enrol) {
+            return;
+        }
+        $syncuserid = self::moodle_sync_subject_userid($enrol);
+        $learneruser = $DB->get_record('user', ['id' => $syncuserid, 'deleted' => 0], 'id,email', IGNORE_MISSING);
+        $skiplms = $learneruser && self::is_placeholder_holder_email((string) $learneruser->email);
+        if ($skiplms) {
+            self::clear_sync_health_state($enrolid);
+            return;
+        }
+        try {
+            self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'enrol');
+            attendance_manager::setup_session((int) $session->id);
+            attendance_manager::add_to_group((int) $session->id, $syncuserid);
+            self::audit_enrolment_sync_health($enrolid, false);
+        } catch (\Throwable $e) {
+            debugging('TM Course siteadmin auto-approve LMS sync failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
+        try {
+            notification_helper::notify_approval_result($enrolid, true, '');
+        } catch (\Throwable $e) {
+            debugging('TM Course siteadmin auto-approve notify failed: ' . $e->getMessage(), DEBUG_DEVELOPER);
+        }
     }
 
     /**

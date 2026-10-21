@@ -3,6 +3,11 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.29.3] - 2026-10-21 - Site admin prereq bypass and auto-approve
+
+### Changed
+- Moodle site administrators may again batch-enrol learners who lack prerequisites. Those rows are approved immediately (not pending). Bypass and auto-approve are written to enrolment notes. Non–site-admin manage and sales roles still cannot bypass. Cancel already went straight to cancelled; unchanged.
+
 ## [5.29.2] - 2026-10-21 - Pre-hold badge, absence-hold restore, void placeholders
 
 ### Fixed
