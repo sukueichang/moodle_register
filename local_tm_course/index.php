@@ -200,7 +200,8 @@ foreach ($sessions as $s) {
         ?? ['open', get_string('session_status_open', 'local_tm_course')];
     if ($my_enrol && !empty($my_enrol->prereq_absence_hold)) {
         $badge_cls = 'void';
-        $badge_lbl = get_string('prereq_absence_hold_reason', 'local_tm_course');
+        $badge_lbl = enrolment_manager::prereq_roster_flags($my_enrol, $s)['hold_reason']
+            ?: get_string('prereq_absence_hold_reason', 'local_tm_course');
     }
     $fill_class = $s->fill_percent >= 100 ? 'danger'
         : ($s->fill_percent >= 80 ? 'warning' : '');

@@ -65,10 +65,18 @@ check(strpos($prereq, 'COALESCE(e.attended, 0) <> :absent') !== false, 'absent e
 check(strpos($attend, 'sync_prereq_holds_after_attendance') !== false, 'attendance mark rechecks dependents');
 check(strpos($enrol, "set_field('local_tm_course_enrolments', 'prereq_absence_hold'") !== false, 'hold updates the flag only');
 check(strpos($enrol, 'ENROL_CANCELLED') !== false && strpos($enrol, 'e.status $statusinsql') !== false, '8 cancelled rows are outside the hold query');
+check(strpos($enrol, 'Do not exclude the source enrolment id') !== false, 'absence hold sync does not exclude source for restore');
 check(strpos($session, 'is_unattended_void($session)') !== false, '11 void blocks can_submit_enrolment');
 check(strpos($session, 'COALESCE(prereq_absence_hold, 0) = 0') !== false, '12 valid headcount excludes holds');
-check(strpos($zhtw, '先修課程未完成，已取消本場次上課資格') !== false, 'hold reason string');
+check(strpos($session, 'COALESCE(placeholder_seq, 0) = 0 OR COALESCE(linked_userid, 0) > 0') !== false, '3.6 unnamed placeholders are not valid learners');
+check(strpos($zhtw, '因先修課程 {$a} 缺席，已取消預卡位資格') !== false, 'hold reason names course A');
+check(strpos($zhtw, '先修預卡位') !== false, '1.6 pre-hold badge string');
 check(strpos($zhtw, '本課程無人報名，已失效') !== false, 'void label string');
+$prereqsrc = file_get_contents($root . '/classes/prerequisite_manager.php');
+check(is_string($prereqsrc) && strpos($prereqsrc, 'prehold_course_labels') !== false, 'pre-hold labels derived without new columns');
+$notify = file_get_contents($root . '/classes/notification_helper.php');
+check(is_string($notify) && strpos($notify, 'TARGET_ASSIGNEE') !== false, '5.1 assignee recipient target exists');
+check(is_string($notify) && strpos($notify, "eventkey === 'grading_overdue'") !== false, 'grading overdue has its own recipient options');
 
 if ($fail > 0) {
     echo "FAILED {$fail}\n";

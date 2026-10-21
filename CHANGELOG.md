@@ -3,6 +3,14 @@
 本檔案記錄 `local_tm_course`（TM Course Management Plugin）的版本變更。
 格式參考 [Keep a Changelog](https://keepachangelog.com/)，版本號對應 `local_tm_course/version.php` 的 `$plugin->release`。
 
+## [5.29.2] - 2026-10-21 - Pre-hold badge, absence-hold restore, void placeholders
+
+### Fixed
+- Marking prerequisite A absent now pauses B, and marking A present again clears that pause. The sync no longer excludes A’s enrolment id (that blocked restore). mod_attendance errors no longer skip the hold update.
+- Review desk board shows hold dimming and the named reason. Pre-hold rows show「先修預卡位」and the dependent course when qualification is only an approved earlier session.
+- Unnamed placeholder seats no longer count toward valid / confirmed headcount, so seat-only sessions lapse on class day.
+- Grading-overdue recipients are「被指派批改者」and approvers only; the assignee is not forced when unchecked.
+
 ## [5.29.1] - 2026-10-21 - Online roster count, grading overdue notice
 
 ### Fixed

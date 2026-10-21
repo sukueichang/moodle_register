@@ -33,7 +33,6 @@ $PAGE->set_title($str('nav_notifications', 'Notification settings'));
 $PAGE->requires->css('/local/tm_course/styles.css');
 
 $events = notification_helper::get_notification_events_config();
-$availabletargets = notification_helper::get_recipient_target_options();
 $eventdescriptions = [
     'new_enrolment' => $str('notify_event_new_enrolment_desc', 'Triggered when a learner submits a new enrolment request.'),
     'approval_result' => $str('notify_event_approval_result_desc', 'Triggered when an enrolment is approved or rejected.'),
@@ -469,6 +468,7 @@ if ($preclasspreviewrequested) {
         <?php foreach ($events as $eventkey => $eventmeta): ?>
             <?php
                 $targetsettings = notification_helper::get_event_target_settings($eventkey);
+                $eventtargets = notification_helper::get_recipient_target_options_for_event($eventkey);
                 $templatezhtw = notification_helper::get_event_template($eventkey, 'zh_tw');
                 $templateen = notification_helper::get_event_template($eventkey, 'en');
             ?>
@@ -537,7 +537,7 @@ if ($preclasspreviewrequested) {
                     <div class="mb-2">
                         <div class="font-weight-bold"><?php echo s(get_string('notifications_targets_label', 'local_tm_course')); ?></div>
                         <div class="d-flex flex-wrap" style="gap:1rem;">
-                            <?php foreach ($availabletargets as $targetkey => $targetlabel): ?>
+                            <?php foreach ($eventtargets as $targetkey => $targetlabel): ?>
                                 <label class="mb-0">
                                     <input type="checkbox"
                                            name="<?php echo s('targets_' . $eventkey); ?>[]"

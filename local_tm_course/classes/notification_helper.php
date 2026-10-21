@@ -13,6 +13,7 @@ class notification_helper {
     public const TARGET_BATCH_SUBMITTER = 'batch_submitter';
     public const TARGET_REQUESTER = 'requester';
     public const TARGET_APPROVER = 'approver';
+    public const TARGET_ASSIGNEE = 'assignee';
 
     /**
      * Notify learner and (optional) batch submitter about approval result.
@@ -721,14 +722,11 @@ class notification_helper {
         $tokens['days'] = (string) $days;
         $settings = self::get_event_target_settings('grading_overdue');
         $ids = [];
-        if ((int) $req->assigneeid > 0) {
+        if (in_array(self::TARGET_ASSIGNEE, $settings['targets'], true) && (int) $req->assigneeid > 0) {
             $ids[] = (int) $req->assigneeid;
         }
         if (in_array(self::TARGET_APPROVER, $settings['targets'], true)) {
             $ids = array_merge($ids, self::collect_grading_admin_ids());
-        }
-        if (in_array(self::TARGET_REQUESTER, $settings['targets'], true) && (int) $req->requesterid > 0) {
-            $ids[] = (int) $req->requesterid;
         }
         $ids = array_merge($ids, self::collect_role_user_ids($settings['roleids']));
         $recipients = self::normalise_user_ids($ids);
@@ -1015,7 +1013,26 @@ class notification_helper {
             self::TARGET_BATCH_SUBMITTER => get_string('notify_target_batch_submitter', 'local_tm_course'),
             self::TARGET_REQUESTER => get_string('notify_target_requester', 'local_tm_course'),
             self::TARGET_APPROVER => get_string('notify_target_approver', 'local_tm_course'),
+            self::TARGET_ASSIGNEE => get_string('notify_target_assignee', 'local_tm_course'),
         ];
+    }
+
+    /**
+     * Recipient checkboxes allowed for one notification event.
+     * grading_overdue must not offer dedicated-class requester / learner options.
+     *
+     * @return array<string,string> target key => label
+     */
+    public static function get_recipient_target_options_for_event(string $eventkey): array {
+        $all = self::get_recipient_target_options();
+        if ($eventkey === 'grading_overdue') {
+            return [
+                self::TARGET_ASSIGNEE => $all[self::TARGET_ASSIGNEE],
+                self::TARGET_APPROVER => $all[self::TARGET_APPROVER],
+            ];
+        }
+        unset($all[self::TARGET_ASSIGNEE]);
+        return $all;
     }
 
     public static function get_event_target_settings(string $eventkey): array {
@@ -1023,9 +1040,11 @@ class notification_helper {
         if (!$meta) {
             return ['targets' => [], 'roleids' => []];
         }
+        $allowed = array_keys(self::get_recipient_target_options_for_event($eventkey));
         $targetsraw = (string)get_config('local_tm_course', 'notifyrecips_' . $eventkey . '_targets');
         $rolesraw = (string)get_config('local_tm_course', 'notifyrecips_' . $eventkey . '_roleids');
         $targets = $targetsraw === '' ? self::get_default_targets($eventkey) : preg_split('/\s*,\s*/', $targetsraw, -1, PREG_SPLIT_NO_EMPTY);
+        $targets = array_values(array_intersect($targets, $allowed));
         $roleids = [];
         if ($rolesraw !== '') {
             $roleids = array_values(array_filter(array_map('intval', preg_split('/\s*,\s*/', $rolesraw, -1, PREG_SPLIT_NO_EMPTY))));
@@ -1072,7 +1091,7 @@ class notification_helper {
         set_config('notifytpl_' . $eventkey . '_body_zh_tw', trim($bodyzhtw), 'local_tm_course');
         set_config('notifytpl_' . $eventkey . '_subject_en', trim($subjecten), 'local_tm_course');
         set_config('notifytpl_' . $eventkey . '_body_en', trim($bodyen), 'local_tm_course');
-        $targets = array_values(array_intersect($targets, array_keys(self::get_recipient_target_options())));
+        $targets = array_values(array_intersect($targets, array_keys(self::get_recipient_target_options_for_event($eventkey))));
         set_config('notifyrecips_' . $eventkey . '_targets', implode(',', $targets), 'local_tm_course');
         $roleids = array_values(array_filter(array_map('intval', $roleids), static function(int $v): bool {
             return $v > 0;
@@ -1113,8 +1132,11 @@ class notification_helper {
         if ($eventkey === 'grading_submitted') {
             return [self::TARGET_APPROVER];
         }
-        if ($eventkey === 'grading_assigned' || $eventkey === 'grading_overdue') {
+        if ($eventkey === 'grading_assigned') {
             return [];
+        }
+        if ($eventkey === 'grading_overdue') {
+            return [self::TARGET_ASSIGNEE];
         }
         if ($eventkey === 'grading_closed') {
             return [self::TARGET_REQUESTER, self::TARGET_APPROVER];

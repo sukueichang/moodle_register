@@ -531,7 +531,8 @@ class session_manager {
 
     /**
      * Active enrolments that still count as learners (pending, approved, waitlisted).
-     * Prerequisite-absence holds and cancelled/rejected rows are excluded.
+     * Prerequisite-absence holds, cancelled/rejected rows, and unnamed placeholder
+     * seats (no linked learner yet) are excluded.
      */
     public static function count_valid_enrolments(int $sessionid): int {
         global $DB;
@@ -542,7 +543,8 @@ class session_manager {
                   FROM {local_tm_course_enrolments}
                  WHERE sessionid = :sid
                    AND status IN (:pending, :approved, :waitlisted)
-                   AND COALESCE(prereq_absence_hold, 0) = 0";
+                   AND COALESCE(prereq_absence_hold, 0) = 0
+                   AND (COALESCE(placeholder_seq, 0) = 0 OR COALESCE(linked_userid, 0) > 0)";
         return (int) $DB->count_records_sql($sql, [
             'sid' => $sessionid,
             'pending' => self::ENROL_PENDING,
@@ -703,6 +705,7 @@ class session_manager {
 
     /**
      * Count confirmed (approved) enrolments.
+     * Unnamed placeholder seats and prerequisite-absence holds do not count.
      */
     public static function confirmed_count(int $sessionid): int {
         global $DB;
@@ -710,7 +713,8 @@ class session_manager {
                   FROM {local_tm_course_enrolments}
                  WHERE sessionid = :sid
                    AND status = :approved
-                   AND COALESCE(prereq_absence_hold, 0) = 0";
+                   AND COALESCE(prereq_absence_hold, 0) = 0
+                   AND (COALESCE(placeholder_seq, 0) = 0 OR COALESCE(linked_userid, 0) > 0)";
         return (int) $DB->count_records_sql($sql, [
             'sid' => $sessionid,
             'approved' => self::ENROL_APPROVED,

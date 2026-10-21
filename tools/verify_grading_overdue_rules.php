@@ -45,6 +45,23 @@ check(is_string($enrol) && strpos($enrol, 'scope_approved') !== false, 'online e
 check(is_string($enrol) && strpos($enrol, 'enrolments_filter_empty') !== false, 'empty filter explains itself');
 check(is_string($enrol) && strpos($enrol, '$show_desk_board = !$session_is_online') !== false, 'online still has no desk board');
 
+$notify = file_get_contents(dirname(__DIR__) . '/local_tm_course/classes/notification_helper.php');
+check(is_string($notify) && strpos($notify, 'TARGET_ASSIGNEE') !== false, 'assignee target constant');
+check(is_string($notify) && strpos($notify, 'get_recipient_target_options_for_event') !== false, 'per-event recipient options');
+check(
+    is_string($notify)
+    && preg_match(
+        "/grading_overdue.*?TARGET_ASSIGNEE.*?TARGET_APPROVER/s",
+        $notify
+    ) === 1,
+    'grading overdue offers assignee and approver only'
+);
+check(
+    is_string($notify)
+    && strpos($notify, "in_array(self::TARGET_ASSIGNEE, \$settings['targets'], true)") !== false,
+    'assignee is optional, not forced'
+);
+
 if ($fail > 0) {
     echo "FAILED {$fail}\n";
     exit(1);

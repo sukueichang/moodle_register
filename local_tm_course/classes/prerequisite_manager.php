@@ -770,6 +770,182 @@ class prerequisite_manager {
     }
 
     /**
+     * Course-complete rules that this learner only satisfies via an approved earlier session
+     * (pre-hold), not certificate / Moodle completion / co-bundle.
+     *
+     * @return string[] course display names
+     */
+    public static function prehold_course_labels(int $userid, \stdClass $session, array $context = []): array {
+        if ($userid < 2 || !empty($context['skip'])) {
+            return [];
+        }
+        $rules = self::resolve_session_rules($session);
+        if ($rules === null || empty($rules['rules'])) {
+            return [];
+        }
+        $ctx = $context + [
+            'target_starttime' => (int) ($session->starttime ?? 0),
+            'coselected_courseids' => [],
+        ];
+        $labels = [];
+        foreach ($rules['rules'] as $rule) {
+            if (($rule['verify_type'] ?? self::VERIFY_COURSE) !== self::VERIFY_COURSE) {
+                continue;
+            }
+            $courseid = (int) ($rule['courseid'] ?? 0);
+            if ($courseid <= 0) {
+                continue;
+            }
+            $course = get_course($courseid, false, IGNORE_MISSING);
+            if (!$course) {
+                continue;
+            }
+            if (self::user_meets_course_complete_formally($userid, $courseid, $course, $ctx)) {
+                continue;
+            }
+            if (!self::user_has_approved_prereq_session($userid, $courseid, (int) $ctx['target_starttime'], $ctx)) {
+                continue;
+            }
+            $name = self::get_course_display_name($courseid);
+            if ($name !== '' && !in_array($name, $labels, true)) {
+                $labels[] = $name;
+            }
+        }
+        return $labels;
+    }
+
+    /**
+     * Certificate, Moodle completion, or co-bundle — not the approved-earlier-session pre-hold.
+     *
+     * @param array{
+     *   target_starttime?:int,
+     *   exclude_enrolment_ids?:int[],
+     *   coselected_courseids?:int[],
+     *   source_reservation_id?:int,
+     *   disqualify_absent_completion?:int[]
+     * } $context
+     */
+    public static function user_meets_course_complete_formally(
+        int $userid,
+        int $courseid,
+        \stdClass $course,
+        array $context = []
+    ): bool {
+        global $CFG;
+        require_once($CFG->dirroot . '/lib/completionlib.php');
+        require_once(__DIR__ . '/certificate_helper.php');
+        if (certificate_helper::user_has_issued_course_certificate($userid, $courseid)) {
+            return true;
+        }
+        $completion = new \completion_info($course);
+        $coursecomplete = $completion->is_enabled() && $completion->is_course_complete($userid);
+        $disqualify = in_array(
+            $courseid,
+            array_map('intval', (array) ($context['disqualify_absent_completion'] ?? [])),
+            true
+        );
+        if ($coursecomplete && !$disqualify) {
+            return true;
+        }
+        if ($coursecomplete && $disqualify && self::user_has_present_approved_session($userid, $courseid, $context)) {
+            return true;
+        }
+        $coselected = array_map('intval', (array) ($context['coselected_courseids'] ?? []));
+        if ($courseid > 0 && in_array($courseid, $coselected, true)) {
+            $rid = (int) ($context['source_reservation_id'] ?? 0);
+            if ($rid <= 0 || self::user_is_reservation_learner($userid, $rid)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Reason shown when prereq_absence_hold is set. Names courses that fail course-complete
+     * after an absent / held prerequisite session, preferring those with an absent mark.
+     */
+    public static function format_absence_hold_reason(int $userid, \stdClass $session): string {
+        $names = self::absence_hold_course_labels($userid, $session);
+        if ($names === []) {
+            return get_string('prereq_absence_hold_reason', 'local_tm_course');
+        }
+        return get_string('prereq_absence_hold_reason_named', 'local_tm_course', implode('、', $names));
+    }
+
+    /**
+     * @return string[]
+     */
+    public static function absence_hold_course_labels(int $userid, \stdClass $session): array {
+        if ($userid < 2) {
+            return [];
+        }
+        $rules = self::resolve_session_rules($session);
+        if ($rules === null || empty($rules['rules'])) {
+            return [];
+        }
+        $ctx = [
+            'target_starttime' => (int) ($session->starttime ?? 0),
+            'coselected_courseids' => [],
+        ];
+        $absentnames = [];
+        $unmetnames = [];
+        foreach ($rules['rules'] as $rule) {
+            if (($rule['verify_type'] ?? self::VERIFY_COURSE) !== self::VERIFY_COURSE) {
+                continue;
+            }
+            $courseid = (int) ($rule['courseid'] ?? 0);
+            if ($courseid <= 0) {
+                continue;
+            }
+            $name = self::get_course_display_name($courseid);
+            if ($name === '') {
+                continue;
+            }
+            if (self::user_has_absent_approved_session($userid, $courseid)) {
+                if (!in_array($name, $absentnames, true)) {
+                    $absentnames[] = $name;
+                }
+                continue;
+            }
+            $course = get_course($courseid, false, IGNORE_MISSING);
+            if (!$course) {
+                continue;
+            }
+            if (!self::user_meets_course_complete_rule($userid, $courseid, $course, $ctx)) {
+                if (!in_array($name, $unmetnames, true)) {
+                    $unmetnames[] = $name;
+                }
+            }
+        }
+        return $absentnames !== [] ? $absentnames : $unmetnames;
+    }
+
+    /**
+     * Approved enrolment of this course marked absent (drives hold reason naming).
+     */
+    public static function user_has_absent_approved_session(int $userid, int $courseid): bool {
+        global $DB;
+        if ($userid < 2 || $courseid <= 0) {
+            return false;
+        }
+        $sql = "SELECT e.id
+                  FROM {local_tm_course_enrolments} e
+                  JOIN {local_tm_course_sessions} s ON s.id = e.sessionid
+                 WHERE (e.userid = :uid
+                        OR (e.placeholder_seq > 0 AND e.linked_userid = :linkeduid))
+                   AND e.status = :st
+                   AND e.attended = :absent
+                   AND s.courseid = :cid";
+        return $DB->record_exists_sql($sql, [
+            'uid' => $userid,
+            'linkeduid' => $userid,
+            'st' => session_manager::ENROL_APPROVED,
+            'absent' => attendance_manager::ATTEND_ABSENT,
+            'cid' => $courseid,
+        ]);
+    }
+
+    /**
      * @return array<int,array{cmid:int,label:string}>
      */
     public static function get_completion_activities(int $courseid): array {

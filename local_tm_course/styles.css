@@ -198,6 +198,12 @@
     margin: -.25rem -.25rem .6rem;
 }
 .tm-prereq-absence-hold-body { opacity: .45; }
+.tm-badge-prehold {
+    background: #e8f4fc;
+    color: #0b5cad;
+    border: 1px solid #9cc9ea;
+    font-weight: 600;
+}
 .tm-prereq-absence-reason {
     color: #8a1c1c;
     font-weight: 700;

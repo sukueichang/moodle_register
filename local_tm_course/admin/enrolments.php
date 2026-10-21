@@ -290,11 +290,14 @@ if ($show_desk_board) {
             <?php foreach ($desk['learners'] as $learner):
                 $ispending = ((int) $learner['status'] === session_manager::ENROL_PENDING);
                 $isapproved = ((int) $learner['status'] === session_manager::ENROL_APPROVED);
+                $hold = !empty($learner['prereq_absence_hold']);
+                $preholdcourses = $learner['prehold_courses'] ?? [];
                 ?>
-                <div class="tm-admin-learner-card <?php echo $ispending ? 'is-pending' : 'is-approved'; ?>"
-                     draggable="true"
+                <div class="tm-admin-learner-card <?php echo $ispending ? 'is-pending' : 'is-approved'; ?><?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>"
+                     draggable="<?php echo $hold ? 'false' : 'true'; ?>"
                      data-enrolid="<?php echo (int) $learner['enrolid']; ?>"
                      data-desk="<?php echo (int) $desk['desk_number']; ?>">
+                    <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                     <div class="tm-admin-learner-head">
                         <strong><?php echo s($learner['displayname']); ?></strong>
                         <?php if ($ispending): ?>
@@ -302,7 +305,13 @@ if ($show_desk_board) {
                         <?php else: ?>
                             <span class="tm-badge tm-badge-approved"><?php echo get_string('admin_desk_approved_badge', 'local_tm_course'); ?></span>
                         <?php endif; ?>
+                        <?php if (!$hold && !empty($preholdcourses)): ?>
+                            <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
+                        <?php endif; ?>
                     </div>
+                    <?php if (!$hold && !empty($preholdcourses)): ?>
+                    <div class="small text-muted"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></div>
+                    <?php endif; ?>
                     <?php if ($learner['email'] !== ''): ?>
                     <div class="small text-muted"><?php echo s($learner['email']); ?></div>
                     <?php endif; ?>
@@ -331,7 +340,7 @@ if ($show_desk_board) {
                     <?php if ($learner['batch_submitter_note'] !== ''): ?>
                     <div class="small mt-1"><em><?php echo nl2br(s($learner['batch_submitter_note'])); ?></em></div>
                     <?php endif; ?>
-                    <?php if ($ispending): ?>
+                    <?php if (!$hold && $ispending): ?>
                     <div class="tm-admin-learner-actions mt-2">
                         <form method="post" action="" class="d-inline">
                             <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
@@ -363,7 +372,7 @@ if ($show_desk_board) {
                                 onclick="return confirm(<?php echo json_encode(get_string('confirm_reject_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('reject_enrolment', 'local_tm_course'); ?></button>
                         </form>
                     </div>
-                    <?php elseif ($isapproved): ?>
+                    <?php elseif (!$hold && $isapproved): ?>
                     <form method="post" action="" class="mt-2">
                         <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
                         <input type="hidden" name="action" value="unapprove">
@@ -377,6 +386,10 @@ if ($show_desk_board) {
                         <button type="submit" class="btn btn-sm btn-secondary"
                                 onclick="return confirm(<?php echo json_encode(get_string('confirm_unapprove_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('unapprove_enrolment', 'local_tm_course'); ?></button>
                     </form>
+                    <?php endif; ?>
+                    </div>
+                    <?php if ($hold): ?>
+                    <div class="tm-prereq-absence-reason"><?php echo s($learner['prereq_hold_reason'] ?? get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
                     <?php endif; ?>
                 </div>
             <?php endforeach; ?>
@@ -392,11 +405,14 @@ if ($show_desk_board) {
         <?php foreach ($deskboard['unassigned'] as $learner):
             $ispending = ((int) $learner['status'] === session_manager::ENROL_PENDING);
             $isapproved = ((int) $learner['status'] === session_manager::ENROL_APPROVED);
+            $hold = !empty($learner['prereq_absence_hold']);
+            $preholdcourses = $learner['prehold_courses'] ?? [];
             ?>
-            <div class="tm-admin-learner-card <?php echo $ispending ? 'is-pending' : 'is-approved'; ?>"
-                 draggable="<?php echo ($ispending || $isapproved) ? 'true' : 'false'; ?>"
+            <div class="tm-admin-learner-card <?php echo $ispending ? 'is-pending' : 'is-approved'; ?><?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>"
+                 draggable="<?php echo (!$hold && ($ispending || $isapproved)) ? 'true' : 'false'; ?>"
                  data-enrolid="<?php echo (int) $learner['enrolid']; ?>"
                  data-desk="0">
+                <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                 <div class="tm-admin-learner-head">
                     <strong><?php echo s($learner['displayname']); ?></strong>
                     <?php if ($ispending): ?>
@@ -404,7 +420,13 @@ if ($show_desk_board) {
                     <?php else: ?>
                         <span class="tm-badge tm-badge-approved"><?php echo get_string('admin_desk_approved_badge', 'local_tm_course'); ?></span>
                     <?php endif; ?>
+                    <?php if (!$hold && !empty($preholdcourses)): ?>
+                        <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
+                    <?php endif; ?>
                 </div>
+                <?php if (!$hold && !empty($preholdcourses)): ?>
+                <div class="small text-muted"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></div>
+                <?php endif; ?>
                 <?php if ($learner['email'] !== ''): ?>
                 <div class="small text-muted"><?php echo s($learner['email']); ?></div>
                 <?php endif; ?>
@@ -430,7 +452,7 @@ if ($show_desk_board) {
                     <span><?php echo s($dietlabel); ?></span>
                     <?php endif; ?>
                 </div>
-                <?php if ($ispending): ?>
+                <?php if (!$hold && $ispending): ?>
                 <p class="small text-warning mb-1"><?php echo get_string('error_desk_required_for_approval', 'local_tm_course'); ?></p>
                 <form method="post" action="" class="tm-admin-reject-form mt-1">
                     <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
@@ -447,6 +469,10 @@ if ($show_desk_board) {
                     <button type="submit" class="btn btn-sm btn-tm-danger"
                         onclick="return confirm(<?php echo json_encode(get_string('confirm_reject_enrolment', 'local_tm_course')); ?>)"><?php echo get_string('reject_enrolment', 'local_tm_course'); ?></button>
                 </form>
+                <?php endif; ?>
+                </div>
+                <?php if ($hold): ?>
+                <div class="tm-prereq-absence-reason"><?php echo s($learner['prereq_hold_reason'] ?? get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
                 <?php endif; ?>
             </div>
         <?php endforeach; ?>
@@ -563,11 +589,20 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
     } else {
         $emailhtml = s($holderemail);
     }
-    $hold = !empty($e->prereq_absence_hold);
+    $flags = enrolment_manager::prereq_roster_flags($e, $se);
+    $hold = !empty($flags['hold']);
+    $preholdcourses = $flags['prehold_courses'];
 ?>
 <tr class="<?php echo $hold ? 'tm-prereq-absence-hold' : ''; ?>">
     <td><?php echo $e->id; ?></td>
-    <td><?php echo s($e->firstname . ' ' . $e->lastname); ?></td>
+    <td>
+        <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>"><?php echo s($e->firstname . ' ' . $e->lastname); ?>
+        <?php if (!$hold && !empty($preholdcourses)): ?>
+            <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
+            <div class="small text-muted"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></div>
+        <?php endif; ?>
+        </div>
+    </td>
     <td><?php echo $emailhtml; ?></td>
     <td><?php echo s($e->institution ?: $e->profile_institution); ?></td>
     <td><?php echo userdate($e->timecreated, get_string('strftimedatetimeshort')); ?></td>
@@ -585,7 +620,7 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
             <span class="tm-badge tm-badge-<?php echo $badge_cls; ?>"><?php echo $badge_lbl; ?></span>
         </div>
         <?php if ($hold): ?>
-        <div class="tm-prereq-absence-reason"><?php echo s(get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+        <div class="tm-prereq-absence-reason"><?php echo s($flags['hold_reason']); ?></div>
         <?php endif; ?>
     </td>
     <td>
@@ -607,7 +642,9 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
     ?></td>
     <?php endif; ?>
     <td>
-        <?php if ((int)$e->status === session_manager::ENROL_PENDING): ?>
+        <?php if ($hold): ?>
+            <span class="text-muted">—</span>
+        <?php elseif ((int)$e->status === session_manager::ENROL_PENDING): ?>
             <form method="post" action="" style="display:inline-flex;align-items:center;gap:.35rem">
                 <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
                 <input type="hidden" name="action" value="approve">

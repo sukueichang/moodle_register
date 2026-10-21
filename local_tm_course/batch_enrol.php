@@ -311,12 +311,19 @@ echo $OUTPUT->header();
                                 ? $learner['diet_summary']
                                 : get_string('attendance_diet_no_choice_label', 'local_tm_course');
                             ?>
-                            <?php $hold = !empty($learner['prereq_absence_hold']); ?>
+                            <?php
+                            $hold = !empty($learner['prereq_absence_hold']);
+                            $preholdcourses = $learner['prehold_courses'] ?? [];
+                            ?>
                             <li class="tm-roster-learner-item <?php echo $ispending ? 'tm-batch-learner-pending' : ''; ?><?php echo $hold ? ' tm-prereq-absence-hold' : ''; ?>">
                                 <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
                                 <span class="tm-roster-learner-name"><?php echo s($learner['displayname']); ?></span><?php
                                 if ($ispending): ?>
                                 <span class="tm-batch-pending-mark"> — <?php echo get_string('admin_desk_pending_badge', 'local_tm_course'); ?></span>
+                                <?php endif; ?>
+                                <?php if (!$hold && !empty($preholdcourses)): ?>
+                                <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
+                                <span class="text-muted small d-block"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></span>
                                 <?php endif; ?>
                                 <?php if ($learner['institution'] !== ''): ?>
                                 <span class="text-muted small d-block"><?php echo s($learner['institution']); ?></span>
@@ -337,7 +344,7 @@ echo $OUTPUT->header();
                                 </span>
                                 </div>
                                 <?php if ($hold): ?>
-                                <div class="tm-prereq-absence-reason"><?php echo s(get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
+                                <div class="tm-prereq-absence-reason"><?php echo s($learner['prereq_hold_reason'] ?? get_string('prereq_absence_hold_reason', 'local_tm_course')); ?></div>
                                 <?php endif; ?>
                             </li>
                         <?php endforeach; ?>

@@ -154,9 +154,27 @@ $render_hold_reason = static function (array $learner): void {
     if (empty($learner['prereq_absence_hold'])) {
         return;
     }
-    echo '<div class="tm-prereq-absence-reason">'
-        . s(get_string('prereq_absence_hold_reason', 'local_tm_course'))
-        . '</div>';
+    $reason = trim((string) ($learner['prereq_hold_reason'] ?? ''));
+    if ($reason === '') {
+        $reason = get_string('prereq_absence_hold_reason', 'local_tm_course');
+    }
+    echo '<div class="tm-prereq-absence-reason">' . s($reason) . '</div>';
+};
+
+$render_prehold_badge = static function (array $learner): void {
+    if (!empty($learner['prereq_absence_hold'])) {
+        return;
+    }
+    $courses = $learner['prehold_courses'] ?? [];
+    if (empty($courses)) {
+        return;
+    }
+    echo ' <span class="tm-badge tm-badge-prehold">'
+        . s(get_string('prereq_prehold_badge', 'local_tm_course'))
+        . '</span>';
+    echo '<span class="text-muted small d-block">'
+        . s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $courses)))
+        . '</span>';
 };
 
 $render_learner_block = static function (array $learner) use (
@@ -164,7 +182,8 @@ $render_learner_block = static function (array $learner) use (
     $render_attendance_actions,
     $render_attendance_status,
     $render_diet_line,
-    $render_hold_reason
+    $render_hold_reason,
+    $render_prehold_badge
 ): void {
     $held = !empty($learner['prereq_absence_hold']);
     $holdclass = $held ? ' tm-prereq-absence-hold' : '';
@@ -175,6 +194,7 @@ $render_learner_block = static function (array $learner) use (
     $render_learner_name($learner);
     $render_attendance_actions($learner);
     echo '</div>';
+    $render_prehold_badge($learner);
     $render_diet_line($learner);
     $render_attendance_status($learner);
     if (!empty($learner['institution'])) {
@@ -210,6 +230,7 @@ if ((int) ($view['total'] ?? 0) === 0): ?>
                         <?php $render_learner_name($learner); ?>
                         <?php $render_attendance_actions($learner); ?>
                     </div>
+                    <?php $render_prehold_badge($learner); ?>
                     <?php $render_diet_line($learner); ?>
                     <?php $render_attendance_status($learner); ?>
                     </div>

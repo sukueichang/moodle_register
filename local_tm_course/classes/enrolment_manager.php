@@ -1019,6 +1019,48 @@ class enrolment_manager {
     }
 
     /**
+     * Learner userid for prerequisite display (linked learner on seat rows).
+     */
+    public static function enrolment_learner_userid(\stdClass $enrol): int {
+        $linked = (int) ($enrol->linked_userid ?? 0);
+        if ($linked > 1) {
+            return $linked;
+        }
+        $userid = (int) ($enrol->userid ?? 0);
+        if ($userid > 1 && !self::is_placeholder_holder_userid($userid)) {
+            return $userid;
+        }
+        return $userid > 1 ? $userid : 0;
+    }
+
+    /**
+     * Hold reason and optional pre-hold badge for roster / review UI.
+     *
+     * @return array{hold:bool,hold_reason:string,prehold_courses:string[]}
+     */
+    public static function prereq_roster_flags(\stdClass $enrol, \stdClass $session): array {
+        $hold = !empty($enrol->prereq_absence_hold);
+        $learnerid = self::enrolment_learner_userid($enrol);
+        $holdreason = '';
+        $prehold = [];
+        if ($learnerid > 1) {
+            if ($hold) {
+                $holdreason = prerequisite_manager::format_absence_hold_reason($learnerid, $session);
+            } else {
+                $prehold = prerequisite_manager::prehold_course_labels($learnerid, $session);
+            }
+        }
+        if ($hold && $holdreason === '') {
+            $holdreason = get_string('prereq_absence_hold_reason', 'local_tm_course');
+        }
+        return [
+            'hold' => $hold,
+            'hold_reason' => $holdreason,
+            'prehold_courses' => $prehold,
+        ];
+    }
+
+    /**
      * Guard against recursive prerequisite-absence hold updates.
      * @var array<int,bool>
      */
@@ -1110,10 +1152,12 @@ class enrolment_manager {
                     $learnerid = (int) $dep->userid;
                 }
 
+                // Do not exclude the source enrolment id. Absent / held rows are already
+                // ignored by user_has_approved_prereq_session. Excluding the source made
+                // restore impossible after A was marked present again.
                 $ctx = [
                     'target_starttime' => (int) ($depsession->starttime ?? 0),
                     'coselected_courseids' => [],
-                    'exclude_enrolment_ids' => [$sourceenrolid],
                 ];
                 if ($sourceinvalid) {
                     $ctx['disqualify_absent_completion'] = [$prereqcourseid];
@@ -1134,6 +1178,7 @@ class enrolment_manager {
                 }
 
                 // Flag only. Desk, status, and any attendance already stored on this row stay as they are.
+                // Clearing the flag is not a new enrolment, so void / closed session gates do not apply.
                 $DB->set_field('local_tm_course_enrolments', 'prereq_absence_hold', $target, ['id' => $depid]);
                 $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $depid]);
                 $dep->prereq_absence_hold = $target;
@@ -2224,13 +2269,16 @@ class enrolment_manager {
             if ($inst === '—') {
                 $inst = '';
             }
+            $flags = self::prereq_roster_flags($row, $session);
             $learners[] = [
                 'enrolid' => (int) $row->id,
                 'desk_number' => (int) ($row->desk_number ?? 0),
                 'displayname' => (string) ($cells['displayname'] ?? '—'),
                 'institution' => $inst,
                 'source_label' => self::format_enrol_source_label($row),
-                'prereq_absence_hold' => !empty($row->prereq_absence_hold) ? 1 : 0,
+                'prereq_absence_hold' => $flags['hold'] ? 1 : 0,
+                'prereq_hold_reason' => $flags['hold_reason'],
+                'prehold_courses' => $flags['prehold_courses'],
             ];
         }
 
@@ -2372,6 +2420,7 @@ class enrolment_manager {
             if ($email === '—') {
                 $email = '';
             }
+            $flags = self::prereq_roster_flags($row, $session);
             $learner = [
                 'enrolid' => (int) $row->id,
                 'status' => (int) $row->status,
@@ -2389,7 +2438,9 @@ class enrolment_manager {
                 'notes' => trim((string) ($row->notes ?? '')),
                 'vq_submission_id' => (int) ($row->vq_submission_id ?? 0),
                 'timecreated' => (int) ($row->timecreated ?? 0),
-                'prereq_absence_hold' => !empty($row->prereq_absence_hold) ? 1 : 0,
+                'prereq_absence_hold' => $flags['hold'] ? 1 : 0,
+                'prereq_hold_reason' => $flags['hold_reason'],
+                'prehold_courses' => $flags['prehold_courses'],
             ];
             $dn = (int) $learner['desk_number'];
             if ($dn >= 1 && $dn <= $numdesks) {

@@ -2140,6 +2140,11 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102100, 'local', 'tm_course');
     }
 
+    // 2026102101 — Acceptance fixes (no schema). Savepoint for version bump only.
+    if ($oldversion < 2026102101) {
+        upgrade_plugin_savepoint(true, 2026102101, 'local', 'tm_course');
+    }
+
     return true;
 }
 

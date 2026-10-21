@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.29.1
+ * Version: 5.29.2
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026102100;   // Online roster counts, grading overdue notice
-$plugin->release   = '5.29.1';
+$plugin->version   = 2026102101;   // Pre-hold badge, absence-hold restore, void placeholders
+$plugin->release   = '5.29.2';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;
