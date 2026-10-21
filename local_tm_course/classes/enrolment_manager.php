@@ -385,7 +385,10 @@ class enrolment_manager {
         // 6. Write record
         if ($existing) {
             // Re-activate a cancelled/rejected enrolment by updating the same row.
+            // Never inherit prior present/absent marks onto the new enrolment cycle.
             $existing->status = $status;
+            $existing->attended = attendance_manager::ATTEND_UNSET;
+            $existing->prereq_absence_hold = 0;
             $existing->institution = $userobj->institution;
             if (empty($existing->batch_submittedby)) {
                 // Keep source attribution from now on for self-service enrolments.
@@ -427,6 +430,8 @@ class enrolment_manager {
                 ], '*', IGNORE_MISSING);
                 if ($existing2) {
                     $existing2->status = $status;
+                    $existing2->attended = attendance_manager::ATTEND_UNSET;
+                    $existing2->prereq_absence_hold = 0;
                     $existing2->institution = $userobj->institution;
                     if (empty($existing2->batch_submittedby)) {
                         $existing2->batch_submittedby = (int) $userid;
@@ -620,6 +625,7 @@ class enrolment_manager {
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status($enrol->sessionid);
         try {
+            attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
             attendance_manager::remove_from_group((int)$enrol->sessionid, (int)$enrol->userid);
             self::clear_sync_health_state((int)$enrolid);
             notification_helper::notify_enrolment_cancelled((int)$enrolid);
@@ -668,6 +674,7 @@ class enrolment_manager {
         session_manager::recalculate_status((int) $enrol->sessionid);
 
         try {
+            attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
             if ($wasapproved) {
                 try {
                     self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
@@ -727,6 +734,7 @@ class enrolment_manager {
         session_manager::recalculate_status((int) $enrol->sessionid);
 
         try {
+            attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
             if ($wasapproved) {
                 try {
                     self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
@@ -1057,6 +1065,11 @@ class enrolment_manager {
         $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status((int)$enrol->sessionid);
 
+        try {
+            attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
+        } catch (\Throwable $e) {
+            // ignore — cascade must continue
+        }
         if ($wasapproved) {
             try {
                 self::sync_moodle_enrolment($syncuserid, (int)$session->courseid, 'unenrol');
@@ -2993,6 +3006,7 @@ class enrolment_manager {
                 throw new \moodle_exception('error_batch_already_active', 'local_tm_course');
             }
             $existing->status = $status;
+            $existing->attended = attendance_manager::ATTEND_UNSET;
             $existing->prereq_absence_hold = 0;
             $existing->institution = $userobj->institution;
             $existing->desk_number = $desknumberdb;
@@ -3018,6 +3032,7 @@ class enrolment_manager {
             $record->sessionid = $sessionid;
             $record->userid = $userid;
             $record->status = $status;
+            $record->attended = attendance_manager::ATTEND_UNSET;
             $record->prereq_absence_hold = 0;
             $record->institution = $userobj->institution;
             $record->desk_number = $desknumberdb;

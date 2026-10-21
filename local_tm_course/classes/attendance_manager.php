@@ -708,6 +708,115 @@ class attendance_manager {
     }
 
     /**
+     * After manual / admin / batch cancel: reset this enrolment's attendance to UNSET
+     * and remove the learner's mod_attendance log for this TM session slot only.
+     *
+     * Does not run on prerequisite hold/restore (those keep attended as-is).
+     * Does not call sync_prereq_holds_after_attendance — cancelled rows must not
+     * restore dependents via an accidental "no longer absent" signal.
+     * Course completion is revoked only when this row was Present and no other
+     * present session or issued certificate still justifies completion.
+     *
+     * @param int $enrolid local_tm_course_enrolments.id
+     */
+    public static function clear_attendance_after_enrolment_cancel(int $enrolid): void {
+        global $DB;
+
+        if ($enrolid <= 0) {
+            return;
+        }
+        $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', IGNORE_MISSING);
+        if (!$enrol) {
+            return;
+        }
+
+        $previous = (int) ($enrol->attended ?? self::ATTEND_UNSET);
+        if ($previous !== self::ATTEND_UNSET) {
+            $DB->set_field('local_tm_course_enrolments', 'attended', self::ATTEND_UNSET, ['id' => $enrolid]);
+            $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+            $enrol->attended = self::ATTEND_UNSET;
+        }
+
+        if (self::is_mod_attendance_installed()) {
+            try {
+                self::clear_mod_attendance_log_for_enrol($enrol);
+            } catch (\Throwable $t) {
+                error_log('TM Course clear mod_attendance on cancel failed: ' . $t->getMessage());
+            }
+        }
+
+        if ($previous === self::ATTEND_PRESENT) {
+            try {
+                $session = $DB->get_record('local_tm_course_sessions', ['id' => (int) $enrol->sessionid], '*', IGNORE_MISSING);
+                if ($session && !empty($session->courseid)) {
+                    self::revoke_completion_after_flipped_absence(
+                        self::attendance_log_userid($enrol),
+                        (int) $session->courseid,
+                        $enrolid
+                    );
+                }
+            } catch (\Throwable $t) {
+                error_log('TM Course completion revoke on cancel failed: ' . $t->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Delete this learner's attendance_log row for the TM session's mod_attendance slot.
+     */
+    private static function clear_mod_attendance_log_for_enrol(\stdClass $enrol): void {
+        global $DB;
+
+        $session = $DB->get_record('local_tm_course_sessions', ['id' => (int) $enrol->sessionid], '*', IGNORE_MISSING);
+        if (!$session) {
+            return;
+        }
+        $courseid = (int) ($session->courseid ?? 0);
+        if ($courseid <= 0) {
+            return;
+        }
+
+        $att_sessionid = (int) ($session->attendance_sessionid ?? 0);
+        $att_instance = 0;
+        if ($att_sessionid > 0) {
+            $attsess = $DB->get_record('attendance_sessions', ['id' => $att_sessionid], 'id,attendanceid', IGNORE_MISSING);
+            if ($attsess) {
+                $att_instance = (int) $attsess->attendanceid;
+            } else {
+                $att_sessionid = 0;
+            }
+        }
+        if ($att_sessionid <= 0) {
+            $resolved = self::resolve_attendance_slot_across_course($session, $courseid);
+            if ($resolved) {
+                $att_sessionid = (int) ($resolved['sessionid'] ?? 0);
+                $att_instance = (int) ($resolved['attendanceid'] ?? 0);
+            }
+        }
+        if ($att_sessionid <= 0) {
+            return;
+        }
+
+        $studentid = self::attendance_log_userid($enrol);
+        if ($studentid < 2) {
+            return;
+        }
+
+        $DB->delete_records('attendance_log', [
+            'sessionid' => $att_sessionid,
+            'studentid' => $studentid,
+        ]);
+
+        if ($att_instance > 0) {
+            try {
+                self::sync_binary_attendance_grade_for_user($att_instance, $courseid, $studentid);
+            } catch (\Throwable $t) {
+                error_log('TM Course binary grade sync after cancel clear failed: ' . $t->getMessage());
+            }
+        }
+    }
+
+    /**
      * Write course completion onto linked learners for seat-hold rows already marked present.
      *
      * Older marks stored completion on the placeholder userid. Call once on upgrade so
