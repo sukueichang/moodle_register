@@ -92,28 +92,38 @@ if ($sessionid) {
         $sql .= ' AND e.status = :st';
         $params['st'] = (int)$status_filter;
     }
+    // Dedicated-class review (from_resv): only application-brought learners.
+    // Existing-course review: full formal roster (includes reservation_initial_enrol).
     if ($fromresv > 0) {
         $sql .= ' AND COALESCE(e.reservation_initial_enrol, 0) = 1';
-    } else {
-        $sql .= ' AND COALESCE(e.reservation_initial_enrol, 0) = 0';
     }
     $sql .= ' ORDER BY e.timecreated ASC';
     $enrolments = $DB->get_records_sql($sql, $params);
-    $scopeinitial = $fromresv > 0 ? 1 : 0;
-    $scope_rows = $DB->get_records_sql(
-        "SELECT e.id, e.status, COALESCE(e.prereq_absence_hold, 0) AS prereq_absence_hold
-           FROM {local_tm_course_enrolments} e
-          WHERE e.sessionid = :sid
-            AND COALESCE(e.reservation_initial_enrol, 0) = :initial",
-        ['sid' => $sessionid, 'initial' => $scopeinitial]
-    );
-    $otherscope = (int) $DB->count_records_sql(
-        "SELECT COUNT(1)
-           FROM {local_tm_course_enrolments} e
-          WHERE e.sessionid = :sid
-            AND COALESCE(e.reservation_initial_enrol, 0) = :initial",
-        ['sid' => $sessionid, 'initial' => $scopeinitial ? 0 : 1]
-    );
+    if ($fromresv > 0) {
+        $scope_rows = $DB->get_records_sql(
+            "SELECT e.id, e.status, COALESCE(e.prereq_absence_hold, 0) AS prereq_absence_hold
+               FROM {local_tm_course_enrolments} e
+              WHERE e.sessionid = :sid
+                AND COALESCE(e.reservation_initial_enrol, 0) = 1",
+            ['sid' => $sessionid]
+        );
+        // Later batch / self enrolments on the same session (not on this dedicated view).
+        $otherscope = (int) $DB->count_records_sql(
+            "SELECT COUNT(1)
+               FROM {local_tm_course_enrolments} e
+              WHERE e.sessionid = :sid
+                AND COALESCE(e.reservation_initial_enrol, 0) = 0",
+            ['sid' => $sessionid]
+        );
+    } else {
+        $scope_rows = $DB->get_records_sql(
+            "SELECT e.id, e.status, COALESCE(e.prereq_absence_hold, 0) AS prereq_absence_hold
+               FROM {local_tm_course_enrolments} e
+              WHERE e.sessionid = :sid",
+            ['sid' => $sessionid]
+        );
+        $otherscope = 0;
+    }
     $scope_approved = 0;
     foreach ($scope_rows as $scoperow) {
         if ((int) $scoperow->status === session_manager::ENROL_APPROVED && empty($scoperow->prereq_absence_hold)) {
@@ -124,13 +134,12 @@ if ($sessionid) {
 } else {
     $session_is_online = false;
     $session_has_vq = false;
-    // Show all sessions with pending count
+    // Show all sessions with pending count (formal roster includes dedicated-class learners).
     $sessions_sql = "SELECT s.*, COUNT(e.id) AS pending_count
                        FROM {local_tm_course_sessions} s
                   LEFT JOIN {local_tm_course_enrolments} e
                          ON e.sessionid = s.id
                         AND e.status = 0
-                        AND COALESCE(e.reservation_initial_enrol, 0) = 0
                       GROUP BY s.id
                       ORDER BY s.starttime DESC";
     $all_sessions = $DB->get_records_sql($sessions_sql);
@@ -585,19 +594,15 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
                 'total' => $scope_total,
                 'approved' => $scope_approved,
             ]);
-        } else if ($scope_total === 0 && $otherscope > 0) {
-            echo $fromresv > 0
-                ? get_string('enrolments_other_scope_later', 'local_tm_course', $otherscope)
-                : get_string('enrolments_other_scope_initial', 'local_tm_course', $otherscope);
+        } else if ($fromresv > 0 && $scope_total === 0 && $otherscope > 0) {
+            echo get_string('enrolments_other_scope_later', 'local_tm_course', $otherscope);
         } else {
             echo get_string('enrolments_none_found', 'local_tm_course');
         }
     ?></div>
 <?php else: ?>
-<?php if ($session_is_online && $otherscope > 0): ?>
-<p class="small text-muted mb-2"><?php echo $fromresv > 0
-    ? get_string('enrolments_other_scope_later', 'local_tm_course', $otherscope)
-    : get_string('enrolments_other_scope_initial', 'local_tm_course', $otherscope); ?></p>
+<?php if ($session_is_online && $fromresv > 0 && $otherscope > 0): ?>
+<p class="small text-muted mb-2"><?php echo get_string('enrolments_other_scope_later', 'local_tm_course', $otherscope); ?></p>
 <?php endif; ?>
 <div class="tm-table-responsive">
 <table class="tm-table">
@@ -653,6 +658,9 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
     <td><?php echo $e->id; ?></td>
     <td>
         <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>"><?php echo s($e->firstname . ' ' . $e->lastname); ?>
+        <?php if (!empty($e->reservation_initial_enrol)): ?>
+            <span class="tm-badge tm-badge-pending"><?php echo get_string('enrol_source_dedicated', 'local_tm_course'); ?></span>
+        <?php endif; ?>
         <?php if (!$hold && !empty($preholdcourses)): ?>
             <span class="tm-badge tm-badge-prehold"><?php echo get_string('prereq_prehold_badge', 'local_tm_course'); ?></span>
             <div class="small text-muted"><?php echo s(get_string('prereq_prehold_depends', 'local_tm_course', implode('、', $preholdcourses))); ?></div>

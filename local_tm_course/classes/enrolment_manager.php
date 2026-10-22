@@ -2427,11 +2427,15 @@ class enrolment_manager {
     }
 
     /**
-     * Enrolment source label: self vs batch (business submitter).
+     * Enrolment source label: dedicated-class initial vs self vs batch (business submitter).
      *
      * Self-enrol stores batch_submittedby = learner userid; batch stores the business actor id.
+     * Dedicated-class application learners keep reservation_initial_enrol = 1 on the same row.
      */
     public static function format_enrol_source_label(\stdClass $row): string {
+        if (!empty($row->reservation_initial_enrol)) {
+            return get_string('enrol_source_dedicated', 'local_tm_course');
+        }
         $learnerid = (int) ($row->userid ?? 0);
         $submitterid = (int) ($row->batch_submittedby ?? 0);
         if ($submitterid <= 0 || $submitterid === $learnerid) {
@@ -2454,7 +2458,7 @@ class enrolment_manager {
 
         $sql = "SELECT e.id, e.userid, e.status, e.desk_number, e.institution,
                        e.attended, e.diet_choice, e.diet_meat_other, e.prereq_absence_hold,
-                       e.batch_submittedby, e.batch_submitter_note,
+                       e.batch_submittedby, e.batch_submitter_note, e.reservation_initial_enrol,
                        e.seat_company, e.placeholder_seq, e.linked_userid, e.linked_email, e.placeholder_name,
                        u.firstname, u.lastname, u.email, u.institution AS profile_institution,
                        lu.firstname AS lu_firstname, lu.lastname AS lu_lastname, lu.email AS lu_email,
@@ -2609,7 +2613,7 @@ class enrolment_manager {
 
         $sql = "SELECT e.id, e.userid, e.status, e.desk_number, e.institution, e.notes,
                        e.diet_choice, e.diet_meat_other, e.prereq_absence_hold,
-                       e.batch_submittedby, e.batch_submitter_note,
+                       e.batch_submittedby, e.batch_submitter_note, e.reservation_initial_enrol,
                        e.seat_company, e.placeholder_seq, e.linked_userid, e.linked_email, e.placeholder_name,
                        e.vq_submission_id, e.timecreated,
                        u.firstname, u.lastname, u.email, u.institution AS profile_institution,

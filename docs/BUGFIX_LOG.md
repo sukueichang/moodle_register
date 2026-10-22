@@ -18,12 +18,33 @@
 - [ ] 破壞性操作：二次確認 + 後端驗證
 - [ ] 視訊專屬開班：期望開始時間是否被改動？衝突應跳日而非改時分
 - [ ] 專屬開班學員數：是否只計「帳號存在且先修通過」者？
+- [ ] 專屬開班學員：正式名單／既有課程報名審核不得以 `reservation_initial_enrol=1` 排除；僅 `from_resv` 專屬審核可只列初審
 - [ ] 先修放寬：整課規則是否同時認「已完成／approved 且 end≤start／專班共包」？pending 不可算
 - [ ] 先修取消／駁回後：依賴之後課是否連帶取消並通知學員＋業務？
 - [ ] 同課程互斥：已結束場次（endtime 已過）的 approved 不應擋重報；駁回／取消本來就不擋
 - [ ] Windows 打包 zip：用 `tar.exe`，內部路徑必須是 `/` 而非 `\`（完整步驟見 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) §4）
 - [ ] 升級頁 `cURL`／遠端 plugin API 錯誤 ≠ DB 升級失敗，可繼續本地升級
 - [ ] 設備檢查 status：未選／正常不顯示備註、Checklist、ⓘ；僅異常展開。後台排除方法／外單位支援 textarea 必須用 `.value` 綁定，placeholder 不可長得像匯入內容
+
+---
+
+## 2026-10-21 — 專屬開班核准學員在既有課程報名審核顯示 0 人
+
+### 問題現象
+- 專屬開班申請核准、學員已核准且 Moodle 同步成功後，僅出現在「專屬開班審核」；同一場次「既有課程報名審核」顯示 0 人。
+- 案例：Maintenance Training (TM25S)／2026/11/3 13:00／申請 #70／4 人。
+
+### 根因判斷
+- 舊 SPEC §55 分流：`admin/enrolments.php`（無 `from_resv`）與 `review_center.php` 既有區塊以 `reservation_initial_enrol = 0` 排除申請帶入學員。
+- 報名列本身已存在且點名／`confirmed_count` 未排除；屬名單查詢範圍錯誤，非缺資料。
+
+### 解決方式
+- 既有課程報名審核改列全場次報名；`from_resv` 仍只列初審學員作申請追蹤。
+- 來源標籤「專屬開班」；不複製報名列、無 DB schema 變更。
+- version **5.29.7** / `2026102106`。
+
+### 預防準則
+- `reservation_initial_enrol` 只作來源標記與專屬審核追蹤篩選；正式名單／既有審核／統計不得排除。
 
 ---
 

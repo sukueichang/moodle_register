@@ -255,14 +255,12 @@ if ($action && confirm_sesskey() && $resvid > 0) {
         $msg ?? '', null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
+// Existing-course review block: full formal roster (includes dedicated-class initial enrolments).
 $allsessions = $DB->get_records_sql(
     "SELECT s.id, s.name, s.starttime,
-            SUM(CASE WHEN e.status = :pending AND COALESCE(e.reservation_initial_enrol, 0) = 0
-                THEN 1 ELSE 0 END) AS pending_count,
-            SUM(CASE WHEN e.status = :approved AND COALESCE(e.reservation_initial_enrol, 0) = 0
-                THEN 1 ELSE 0 END) AS approved_count,
-            SUM(CASE WHEN e.status = :rejected AND COALESCE(e.reservation_initial_enrol, 0) = 0
-                THEN 1 ELSE 0 END) AS rejected_count
+            SUM(CASE WHEN e.status = :pending THEN 1 ELSE 0 END) AS pending_count,
+            SUM(CASE WHEN e.status = :approved THEN 1 ELSE 0 END) AS approved_count,
+            SUM(CASE WHEN e.status = :rejected THEN 1 ELSE 0 END) AS rejected_count
        FROM {local_tm_course_sessions} s
   LEFT JOIN {local_tm_course_enrolments} e ON e.sessionid = s.id
    GROUP BY s.id, s.name, s.starttime

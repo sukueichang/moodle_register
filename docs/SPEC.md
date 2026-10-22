@@ -2048,22 +2048,23 @@ delivery_mode = onsite：
 - customcert 活動本身之 availability、requiredtime、模板內容等仍由 Moodle 管理；TM 不另建平行核發規則。
 - 除錯細節與部署踩雷記錄維護於 **`docs/BUGFIX_LOG.md`**（`get_records_sql` 首欄唯一、證書 course-level 語意等）。
 
-## 55. 已實作更新（2026-06-16，專班初審學員 vs 後續批次報名分流）
+## 55. 已實作更新（2026-06-16，專班初審學員標記；2026-10-21 納入正式名單）
 
 ### 55.1 背景
 
-專屬開班核准後建立的正式場次，可能同時帶入申請時填寫的學員名單（待審）。若後續業務再以「批次報名」加人，管理員不應在「專屬開班審核」再次看到這些後續報名，以免與開班審核流程混淆。
+專屬開班核准後建立的正式場次，可能同時帶入申請時填寫的學員名單。`reservation_initial_enrol` 用於標記「申請時帶入」來源，方便專屬開班審核追蹤申請名單；**不得**因此把學員排除在正式課程名單之外。
 
-### 55.2 規則
+### 55.2 規則（2026-10-21 起）
 
-| 報名來源 | 審核入口 |
-|----------|----------|
-| 專班申請表單／核准建場時一併寫入的學員 | **專屬開班審核** →「學員報名審核（申請時帶入）」 |
-| 場次建立後，再以批次報名加入的學員 | **既有課程報名審核**（與一般開課場次相同） |
+| 畫面 | 顯示範圍 |
+|------|----------|
+| **既有課程報名審核**／正式課程名單／點名／便當／有效人數 | **該場次全部報名列**（含 `reservation_initial_enrol = 1`） |
+| **專屬開班審核** →「學員報名審核（申請時帶入）」 | 僅 `reservation_initial_enrol = 1`（申請歷史追蹤） |
+| 場次建立後再以批次報名加入的學員 | 僅出現在既有課程報名審核／正式名單（`reservation_initial_enrol = 0`） |
 
-- 專班區塊的「學員報名審核」僅統計、列出 `reservation_initial_enrol = 1` 的報名。
-- 初審學員全部處理完（無待審）後，專班列不再展開場次審核清單；該專班申請可視為學員初審完成（仍可在「已核准」filter 查閱開班紀錄）。
-- 後續批次報名之待審僅出現在上方「既有課程報名審核」。
+- 同一學員只保留一筆 `local_tm_course_enrolments`；來源以旗標／「專屬開班」標籤區分，不複製報名列。
+- 專班區塊的「學員報名審核」仍僅統計、列出初審學員；初審完成後可隱藏子區塊（申請追蹤用途不變）。
+- 視訊場次不需桌次，正式名單仍須含專屬開班學員；實體場次維持原桌次機制。
 
 ### 55.3 資料模型
 
@@ -2071,12 +2072,14 @@ delivery_mode = onsite：
 - 核准建場時由 `batch_enrol_helper::pending_entries_from_reservation_learners()` 帶 `reservation_initial` 旗標寫入。
 - 一般 `batch_enrol.php` 路徑不設此旗標。
 - 升級 `2026061600`：依 `source_reservation_id` 場次 + `local_tm_course_resv_learner` 回填既有資料。
+- **2026-10-21（5.29.7）**：無 schema 變更；僅調整審核／名單查詢範圍與來源標籤。
 
 ### 55.4 相關檔案
 
-- `admin/review_center.php`：專班區塊計數／列表僅初審學員；初審完成後隱藏「學員報名審核」子區塊。
-- `admin/enrolments.php?from_resv=`：僅列出初審學員，並顯示提示文案。
-- 語系：`reservation_review_enrol_sessions_title`、`reservation_batch_full_hint`、`reservation_review_enrol_initial_only_hint`（`zh_tw` / `en`）。
+- `admin/review_center.php`：既有課程區塊計數含全部報名；專班區塊仍僅初審學員。
+- `admin/enrolments.php`：無 `from_resv` 時列正式全名單；`?from_resv=` 仍僅初審學員。
+- `enrolment_manager::format_enrol_source_label()`：初審學員顯示「專屬開班」。
+- 語系：`enrol_source_dedicated`、`reservation_review_enrol_*`、`reservation_batch_full_hint`（`zh_tw` / `en`）。
 
 ## 56. 已實作更新（2026-08-10，實體額滿改回人數制／Admin 可無視額滿）
 
