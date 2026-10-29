@@ -609,7 +609,11 @@ class notification_helper {
         $ctx = \context_system::instance();
         $ids = [];
         foreach ($roleids as $roleid) {
-            $users = get_role_users((int)$roleid, $ctx, false, 'u.id');
+            // Default $sort is users_order_by_sql (u.lastname, u.firstname, u.id).
+            // Name columns must already be in $fields; otherwise debugging() prints
+            // before redirect() and Moodle cancels the success redirect.
+            // u.id stays first so the result set is still keyed by user id.
+            $users = get_role_users((int)$roleid, $ctx, false, 'u.id, u.firstname, u.lastname');
             foreach ($users as $u) {
                 $ids[] = (int)$u->id;
             }
