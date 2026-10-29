@@ -25,6 +25,29 @@
 - [ ] Windows 打包 zip：用 `tar.exe`，內部路徑必須是 `/` 而非 `\`（完整步驟見 [`DEV_WORKFLOW.md`](DEV_WORKFLOW.md) §4）
 - [ ] 升級頁 `cURL`／遠端 plugin API 錯誤 ≠ DB 升級失敗，可繼續本地升級
 - [ ] 設備檢查 status：未選／正常不顯示備註、Checklist、ⓘ；僅異常展開。後台排除方法／外單位支援 textarea 必須用 `.value` 綁定，placeholder 不可長得像匯入內容
+- [ ] `get_role_users()` 沿用預設姓名排序時，`$fields` 必須含 `u.id`（第一欄）以及 `u.firstname`、`u.lastname`。只選 `u.id` 會在 `redirect()` 前印出 debugging
+
+---
+
+## 2026-10-29 — 批改人員指派成功後出現 get_role_users Debug，成功跳轉被取消
+
+### 問題現象
+批改申請指派成功後，畫面出現：
+
+`get_role_users() adding u.lastname, u.firstname to the query result because they were required by $sort but missing in $fields`
+
+呼叫堆疊：`notification_helper.php` `collect_role_user_ids()` → `notify_grading_assigned()` → `grading/request.php` `assign_to()`。開發者除錯開啟時，這段輸出發生在 `redirect()` 之前，成功頁被換成「已有輸出，因此取消自動重新導向」。
+
+### 根因判斷
+`collect_role_user_ids()` 呼叫 `get_role_users($roleid, $ctx, false, 'u.id')`，沒有傳 `$sort`。Moodle 因此使用 `users_order_by_sql()`（`u.lastname, u.firstname`，再加上已存在的 `u.id`）。排序欄位不在 `$fields` 裡時，核心會把它們補進查詢結果並 `debugging()`。
+
+同檔案的 `get_users_by_capability()` 預設排序是 `u.lastaccess`，不會走這段補姓名欄位的檢查，未改。
+
+### 解決方式
+`$fields` 改為 `u.id, u.firstname, u.lastname`。仍不傳 `$sort`，查詢條件與預設姓名排序不變；結果仍只用 `u.id`，`u.id` 維持第一欄。無 DB 變更。version **5.29.8** / `2026102900`。
+
+### 預防準則
+- 只要 `get_role_users()` 使用預設姓名排序，`$fields` 就要帶上該排序需要的姓名欄，且 `u.id` 放在第一欄。
 
 ---
 
