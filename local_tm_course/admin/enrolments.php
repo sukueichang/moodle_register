@@ -77,10 +77,13 @@ $filterable_statuses = [
     session_manager::ENROL_REJECTED,
 ];
 
+$session = null;
+$sessionremoved = false;
 if ($sessionid) {
-    $session = session_manager::get_session($sessionid);
-    $session_is_online = ((string)($session->delivery_mode ?? '') === session_manager::DELIVERY_ONLINE);
-    $session_has_vq = session_verification_manager::session_has_verification_questions($session);
+    $session = session_manager::get_session_if_exists($sessionid);
+    $sessionremoved = !$session || session_manager::is_removed($session);
+    $session_is_online = $session && ((string)($session->delivery_mode ?? '') === session_manager::DELIVERY_ONLINE);
+    $session_has_vq = $session ? session_verification_manager::session_has_verification_questions($session) : false;
     $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS profile_institution,
                    sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname
               FROM {local_tm_course_enrolments} e
@@ -134,15 +137,19 @@ if ($sessionid) {
 } else {
     $session_is_online = false;
     $session_has_vq = false;
-    // Show all sessions with pending count (formal roster includes dedicated-class learners).
-    $sessions_sql = "SELECT s.*, COUNT(e.id) AS pending_count
+    // Session picker. Application date is the newest enrolment timecreated.
+    // Removed sessions with applications stay visible.
+    $sessions_sql = "SELECT s.id, s.name, s.starttime, s.removed,
+                            SUM(CASE WHEN e.status = :pending THEN 1 ELSE 0 END) AS pending_count,
+                            MAX(e.timecreated) AS applied_at
                        FROM {local_tm_course_sessions} s
-                  LEFT JOIN {local_tm_course_enrolments} e
-                         ON e.sessionid = s.id
-                        AND e.status = 0
-                      GROUP BY s.id
-                      ORDER BY s.starttime DESC";
-    $all_sessions = $DB->get_records_sql($sessions_sql);
+                  LEFT JOIN {local_tm_course_enrolments} e ON e.sessionid = s.id
+                      GROUP BY s.id, s.name, s.starttime, s.removed
+                      ORDER BY CASE WHEN MAX(e.timecreated) IS NULL THEN 1 ELSE 0 END,
+                               MAX(e.timecreated) DESC, s.id DESC";
+    $all_sessions = $DB->get_records_sql($sessions_sql, [
+        'pending' => session_manager::ENROL_PENDING,
+    ]);
 }
 
 $status_labels = [
@@ -158,8 +165,14 @@ echo $OUTPUT->header();
 <div class="tm-page-header">
     <span class="tm-logo-dot"></span>
     <h2><?php echo get_string('nav_enrolments', 'local_tm_course'); ?>
-        <?php if ($sessionid && isset($session)): ?>
-            — <span style="font-weight:400"><?php echo s($session->name); ?></span>
+        <?php if ($sessionid): ?>
+            <?php $headingname = session_manager::session_history_name($session); ?>
+            <?php if ($headingname !== ''): ?>
+            — <span style="font-weight:400"><?php echo s($headingname); ?></span>
+            <?php endif; ?>
+            <?php if ($sessionremoved): ?>
+                <span class="text-muted">（<?php echo s(get_string('session_removed_label', 'local_tm_course')); ?>）</span>
+            <?php endif; ?>
             <?php if ($fromresv > 0): ?>
                 <span class="text-muted small">(<?php echo get_string('reservation_review_enrol_heading_suffix', 'local_tm_course', (object)['id' => $fromresv]); ?>)</span>
             <?php endif; ?>
@@ -174,16 +187,26 @@ echo $OUTPUT->header();
 <div class="tm-table-responsive">
 <table class="tm-table">
 <thead><tr>
-    <th>#</th><th><?php echo get_string('session_name', 'local_tm_course'); ?></th><th><?php echo get_string('label_start', 'local_tm_course'); ?></th><th><?php echo get_string('session_total_capacity', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_pending', 'local_tm_course'); ?></th><th><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th>
+    <th>#</th><th><?php echo get_string('session_name', 'local_tm_course'); ?></th><th><?php echo get_string('review_applied_date', 'local_tm_course'); ?></th><th><?php echo get_string('session_total_capacity', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_pending', 'local_tm_course'); ?></th><th><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th>
 </tr></thead>
 <tbody>
 <?php foreach ($all_sessions as $s):
-    $se = session_manager::get_session($s->id); ?>
+    $se = session_manager::get_session_if_exists((int) $s->id);
+    $pickername = session_manager::session_history_name($s);
+    $pickerapplied = (int) ($s->applied_at ?? 0);
+    ?>
 <tr>
     <td><?php echo $s->id; ?></td>
-    <td><?php echo s($s->name); ?></td>
-    <td><?php echo userdate($s->starttime, get_string('strftimedatetimeshort')); ?></td>
-    <td><?php echo $se->confirmed_count; ?>/<?php echo $se->total_capacity; ?></td>
+    <td><?php
+        if ($pickername !== '') {
+            echo s($pickername);
+        }
+        if (!empty($s->removed)) {
+            echo '<div class="text-muted">' . s(get_string('session_removed_label', 'local_tm_course')) . '</div>';
+        }
+    ?></td>
+    <td><?php echo $pickerapplied > 0 ? userdate($pickerapplied, get_string('strftimedatetimeshort')) : '—'; ?></td>
+    <td><?php echo $se ? ((int) $se->confirmed_count . '/' . (int) $se->total_capacity) : '—'; ?></td>
     <td>
         <?php if ($s->pending_count > 0): ?>
             <span class="tm-badge tm-badge-pending">
@@ -241,7 +264,8 @@ echo $OUTPUT->header();
 <?php endif; ?>
 
 <!-- Session summary card -->
-<?php $se = session_manager::get_session($sessionid); ?>
+<?php $se = $session; ?>
+<?php if ($se): ?>
 <div class="row mb-3">
     <div class="col-md-3"><strong><?php echo get_string('label_start', 'local_tm_course'); ?>:</strong><br><?php echo userdate($se->starttime, get_string('strftimedatetimeshort')); ?></div>
     <div class="col-md-3"><strong><?php echo get_string('label_location', 'local_tm_course'); ?>:</strong><br><?php echo s($se->location); ?></div>
@@ -264,13 +288,16 @@ echo $OUTPUT->header();
     }
     ?></div>
 </div>
+<?php endif; ?>
+<?php if (!$sessionremoved): ?>
 <p class="mb-3">
     <a href="<?php echo (new moodle_url('/local/tm_course/batch_enrol.php', ['sessionid' => $sessionid]))->out(); ?>"
        class="btn btn-sm btn-tm-primary"><?php echo get_string('admin_batch_enrol_open', 'local_tm_course'); ?></a>
 </p>
+<?php endif; ?>
 
 <?php
-$show_desk_board = !$session_is_online && $status_filter === '';
+$show_desk_board = !$sessionremoved && !$session_is_online && $status_filter === '' && $se;
 if ($show_desk_board) {
     $deskboard = enrolment_manager::build_session_desk_board($sessionid, ['include_pending' => true]);
 }
@@ -650,7 +677,17 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
     } else {
         $emailhtml = s($holderemail);
     }
-    $flags = enrolment_manager::prereq_roster_flags($e, $se);
+    if ($se) {
+        $flags = enrolment_manager::prereq_roster_flags($e, $se);
+    } else {
+        $flags = [
+            'hold' => !empty($e->prereq_absence_hold),
+            'hold_reason' => !empty($e->prereq_absence_hold)
+                ? get_string('prereq_absence_hold_reason', 'local_tm_course')
+                : '',
+            'prehold_courses' => [],
+        ];
+    }
     $hold = !empty($flags['hold']);
     $preholdcourses = $flags['prehold_courses'];
 ?>
@@ -706,7 +743,13 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
     ?></td>
     <?php endif; ?>
     <td>
-        <?php if ($hold && in_array((int)$e->status, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true)): ?>
+        <?php if ($sessionremoved): ?>
+            <?php if (!empty($e->notes)): ?>
+            <span class="text-muted" title="<?php echo s($e->notes); ?>">ℹ <?php echo get_string('reject_reason_label', 'local_tm_course'); ?>: <?php echo s($e->notes); ?></span>
+            <?php else: ?>
+            <span class="text-muted">—</span>
+            <?php endif; ?>
+        <?php elseif ($hold && in_array((int)$e->status, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true)): ?>
             <form method="post" action="" style="display:inline-flex;align-items:center;gap:.35rem">
                 <input type="hidden" name="sessionid" value="<?php echo (int)$sessionid; ?>">
                 <input type="hidden" name="action" value="cancel">

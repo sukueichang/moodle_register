@@ -305,7 +305,8 @@ $existing = $DB->get_records_sql(
     "SELECT id, classroomid, starttime, endtime
        FROM {local_tm_course_sessions}
       WHERE classroomid IS NOT NULL
-        AND classroomid > 0"
+        AND classroomid > 0
+        AND " . \local_tm_course\session_manager::sql_not_removed()
 );
 foreach ($existing as $row) {
     $rid = (int)$row->classroomid;

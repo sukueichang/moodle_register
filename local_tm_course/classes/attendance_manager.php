@@ -652,6 +652,7 @@ class attendance_manager {
         global $DB;
 
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
 
         if (!empty($enrol->prereq_absence_hold)) {
             throw new \moodle_exception('error_prereq_absence_hold_attendance', 'local_tm_course');

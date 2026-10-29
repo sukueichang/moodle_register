@@ -61,6 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && confirm_sesskey()) {
     $action = optional_param('action', '', PARAM_ALPHANUMEXT);
     if ($action === 'archive_batch' || $action === 'restore_batch') {
         $sid = required_param('sessionid', PARAM_INT);
+        \local_tm_course\session_manager::assert_enrolment_writable($sid);
         $DB->set_field('local_tm_course_enrolments', 'batch_archived', $action === 'archive_batch' ? 1 : 0, [
             'sessionid' => $sid,
             'batch_submittedby' => $uid,

@@ -111,6 +111,8 @@
                COMMENT="FK local_tm_course_reservation.id when session created from dedicated-class approval"/>
         <FIELD NAME="session_kind" TYPE="char" LENGTH="32" NOTNULL="true" DEFAULT="standard"
                COMMENT="standard | room_closed (classroom block, no enrolment)"/>
+        <FIELD NAME="removed" TYPE="int" LENGTH="1" NOTNULL="true" DEFAULT="0"
+               COMMENT="1=admin removed this session; row and enrolments are kept for review"/>
         <FIELD NAME="tcms_session_id" TYPE="char" LENGTH="64" NOTNULL="false"
                COMMENT="TCMS sessions.id mirror when synced"/>
         <FIELD NAME="tcms_sync_status" TYPE="char" LENGTH="16" NOTNULL="false"

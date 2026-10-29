@@ -2150,6 +2150,16 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102102, 'local', 'tm_course');
     }
 
+    // 2026102910 — Keep enrolment rows when an admin removes a session.
+    if ($oldversion < 2026102910) {
+        $table = new xmldb_table('local_tm_course_sessions');
+        $field = new xmldb_field('removed', XMLDB_TYPE_INTEGER, '1', null, XMLDB_NOTNULL, null, '0', 'session_kind');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+        upgrade_plugin_savepoint(true, 2026102910, 'local', 'tm_course');
+    }
+
     return true;
 }
 
