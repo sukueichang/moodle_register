@@ -26,6 +26,25 @@
 - [ ] 升級頁 `cURL`／遠端 plugin API 錯誤 ≠ DB 升級失敗，可繼續本地升級
 - [ ] 設備檢查 status：未選／正常不顯示備註、Checklist、ⓘ；僅異常展開。後台排除方法／外單位支援 textarea 必須用 `.value` 綁定，placeholder 不可長得像匯入內容
 - [ ] 報名審核清單的申請日期用報名列 `timecreated`，不用場次 `starttime`、不用 `timemodified`。刪除仍有報名的場次只設 `removed=1`，不得刪報名列，也不得把報名狀態改成拒絕
+- [ ] `get_role_users()` 沿用預設姓名排序時，`$fields` 必須含 `u.id`（第一欄）以及 `u.firstname`、`u.lastname`。只選 `u.id` 會在 `redirect()` 前印出 debugging
+
+---
+
+## 2026-10-30 — 批改指派 Debug 修復併入審核場次保留分支
+
+### 問題現象
+5.29.9 測試包（PR #16）從 `main` 開出，沒有帶上 PR #15 的批改指派修復。指派成功後，`get_role_users()` 仍可能在 `redirect()` 前印出 debugging。
+
+### 根因判斷
+PR #15 只改 `notification_helper.php` 的 `$fields`。PR #16 的版本與資料庫升級是另一條線，不能用 5.29.8 的 `version.php` 蓋掉。
+
+### 解決方式
+- `collect_role_user_ids()` 的 `get_role_users()` `$fields` 改為 `u.id, u.firstname, u.lastname`。不傳 `$sort`，收件人仍只用 `u.id`。
+- 申請日期、`removed=1`、唯讀拒絕，以及 `upgrade.php` 的 `2026102910` 欄位升級維持不變。無新增資料表欄位。
+- version **5.29.10** / `2026103000`。高於 5.29.8 與 5.29.9，已裝任一版的站可再升級。
+
+### 預防準則
+- 合併未驗收分支時只取必要程式，不取較舊的 `version.php`。
 
 ---
 
@@ -41,7 +60,7 @@
 - 清單欄改「申請日期」，值為該篩選狀態下最新的 `timecreated`；同一場次多人仍各計入待審／核准／拒絕人數。
 - 仍有報名列的場次改為 `removed=1`，保留場次名稱與全部報名列，狀態不變。清單以灰色「場次已取消」標示。
 - 已取消或場次列已不在時，核准、拒絕、取消報名、改狀態、改場次與其他寫入在後端拒絕。營運日曆與教室占用排除 `removed=1`。
-- version **5.29.9** / `2026102910`。此分支從 `main`（5.29.7）開出，不含尚未驗收的 PR #15（5.29.8）。
+- version **5.29.9** / `2026102910` 引入申請日期與 `sessions.removed`。2026-10-30 起與批改指派修復同包，版本為 **5.29.10** / `2026103000`。
 
 ### 預防準則
 - 審核清單日期只讀報名 `timecreated`。有報名的場次不可硬刪場次列或報名列。
