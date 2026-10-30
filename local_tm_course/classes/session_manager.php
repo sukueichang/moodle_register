@@ -58,6 +58,70 @@ class session_manager {
         return isset($session->session_kind) && (string)$session->session_kind === self::SESSION_KIND_ROOM_CLOSED;
     }
 
+    /**
+     * Admin removed this session. A missing row is treated as already gone.
+     *
+     * @param \stdClass|null $session
+     */
+    public static function is_removed($session): bool {
+        if (!$session) {
+            return true;
+        }
+        return !empty($session->removed);
+    }
+
+    /**
+     * SQL fragment for sessions that are still on the operational calendar.
+     *
+     * @param string $alias table alias, or empty when the column is unqualified
+     */
+    public static function sql_not_removed(string $alias = ''): string {
+        $col = $alias === '' ? 'removed' : $alias . '.removed';
+        return 'COALESCE(' . $col . ', 0) = 0';
+    }
+
+    /**
+     * Refuse any write to a removed session, including when the session row is already gone.
+     *
+     * @throws \moodle_exception
+     */
+    public static function assert_enrolment_writable(int $sessionid): void {
+        global $DB;
+        if ($sessionid <= 0) {
+            throw new \moodle_exception('error_session_removed_readonly', 'local_tm_course');
+        }
+        $session = $DB->get_record('local_tm_course_sessions', ['id' => $sessionid], 'id, removed', IGNORE_MISSING);
+        if (!$session || self::is_removed($session)) {
+            throw new \moodle_exception('error_session_removed_readonly', 'local_tm_course');
+        }
+    }
+
+    /**
+     * Historical session title. Empty when the name was never stored.
+     *
+     * @param \stdClass|null $session
+     */
+    public static function session_history_name($session): string {
+        if (!$session) {
+            return '';
+        }
+        return trim((string) ($session->name ?? ''));
+    }
+
+    /**
+     * Newest enrolment submission time for the review-list status filter.
+     * Uses timecreated only, never session start or timemodified.
+     */
+    public static function review_row_applied_at(int $enrolstatus, \stdClass $row): int {
+        if ($enrolstatus === self::ENROL_APPROVED) {
+            return (int) ($row->approved_applied_at ?? 0);
+        }
+        if ($enrolstatus === self::ENROL_REJECTED) {
+            return (int) ($row->rejected_applied_at ?? 0);
+        }
+        return (int) ($row->pending_applied_at ?? 0);
+    }
+
     // ----------------------------------------------------------------
     // Session CRUD
     // ----------------------------------------------------------------
@@ -90,6 +154,7 @@ class session_manager {
         self::apply_prerequisite_fields($record, $data);
         $record->status             = isset($data['status']) ? (int)$data['status'] : self::STATUS_OPEN;
         $record->auto_close_exempt  = !empty($data['auto_close_exempt']) ? 1 : 0;
+        $record->removed            = 0;
         $record->timecreated        = time();
         $record->timemodified       = time();
         $record->createdby          = $USER->id;
@@ -124,6 +189,7 @@ class session_manager {
     public static function update_session(int $id, array $data): void {
         global $DB;
 
+        self::assert_enrolment_writable($id);
         self::normalize_session_data($data);
         self::validate_session_data($data, false);
         self::validate_classroom_time_conflict($data, $id);
@@ -220,25 +286,108 @@ class session_manager {
     }
 
     /**
-     * Delete a session and all its enrolments.
+     * Remove a session from the operational calendar.
+     *
+     * Sessions that still have enrolment rows are kept, with their name and
+     * every application record. Enrolment status is not changed. Sessions with
+     * no applications are deleted as before.
      */
     public static function delete_session(int $id): void {
         global $DB;
         $session = $DB->get_record('local_tm_course_sessions', ['id' => $id], '*', IGNORE_MISSING);
-        if ($session) {
-            try {
-                tcms_sync_manager::delete_remote_for_session($session);
-            } catch (\Throwable $t) {
-                debugging('TCMS sync failed on delete: ' . $t->getMessage(), DEBUG_DEVELOPER);
+        if (!$session) {
+            return;
+        }
+        $enrolcount = $DB->count_records('local_tm_course_enrolments', ['sessionid' => $id]);
+        if ($enrolcount > 0) {
+            if (empty($session->removed)) {
+                try {
+                    tcms_sync_manager::delete_remote_for_session($session);
+                } catch (\Throwable $t) {
+                    debugging('TCMS sync failed on delete: ' . $t->getMessage(), DEBUG_DEVELOPER);
+                }
+                try {
+                    attendance_manager::cleanup_session_resources($session);
+                } catch (\Throwable $t) {
+                    debugging('TM Course cleanup_session_resources failed: ' . $t->getMessage(), DEBUG_DEVELOPER);
+                }
+                $DB->set_field('local_tm_course_sessions', 'removed', 1, ['id' => $id]);
+                $DB->set_field('local_tm_course_sessions', 'timemodified', time(), ['id' => $id]);
             }
-            try {
-                attendance_manager::cleanup_session_resources($session);
-            } catch (\Throwable $t) {
-                debugging('TM Course cleanup_session_resources failed: ' . $t->getMessage(), DEBUG_DEVELOPER);
-            }
+            return;
+        }
+        try {
+            tcms_sync_manager::delete_remote_for_session($session);
+        } catch (\Throwable $t) {
+            debugging('TCMS sync failed on delete: ' . $t->getMessage(), DEBUG_DEVELOPER);
+        }
+        try {
+            attendance_manager::cleanup_session_resources($session);
+        } catch (\Throwable $t) {
+            debugging('TM Course cleanup_session_resources failed: ' . $t->getMessage(), DEBUG_DEVELOPER);
         }
         $DB->delete_records('local_tm_course_enrolments', ['sessionid' => $id]);
-        $DB->delete_records('local_tm_course_sessions',   ['id'        => $id]);
+        $DB->delete_records('local_tm_course_sessions', ['id' => $id]);
+    }
+
+    /**
+     * Existing-course review list: one row per session that has applications
+     * in $enrolstatus. applied_at is the newest matching timecreated.
+     * Removed sessions stay in the list. Counts include every matching applicant.
+     *
+     * @return \stdClass[]
+     */
+    public static function get_enrolment_review_rows(int $enrolstatus): array {
+        global $DB;
+        if (!in_array($enrolstatus, [self::ENROL_PENDING, self::ENROL_APPROVED, self::ENROL_REJECTED], true)) {
+            $enrolstatus = self::ENROL_PENDING;
+        }
+        $rows = $DB->get_records_sql(
+            "SELECT s.id, s.name, s.starttime, s.removed,
+                    SUM(CASE WHEN e.status = :pending THEN 1 ELSE 0 END) AS pending_count,
+                    SUM(CASE WHEN e.status = :approved THEN 1 ELSE 0 END) AS approved_count,
+                    SUM(CASE WHEN e.status = :rejected THEN 1 ELSE 0 END) AS rejected_count,
+                    MAX(CASE WHEN e.status = :pendingat THEN e.timecreated ELSE NULL END) AS pending_applied_at,
+                    MAX(CASE WHEN e.status = :approvedat THEN e.timecreated ELSE NULL END) AS approved_applied_at,
+                    MAX(CASE WHEN e.status = :rejectedat THEN e.timecreated ELSE NULL END) AS rejected_applied_at
+               FROM {local_tm_course_sessions} s
+          LEFT JOIN {local_tm_course_enrolments} e ON e.sessionid = s.id
+           GROUP BY s.id, s.name, s.starttime, s.removed",
+            [
+                'pending' => self::ENROL_PENDING,
+                'approved' => self::ENROL_APPROVED,
+                'rejected' => self::ENROL_REJECTED,
+                'pendingat' => self::ENROL_PENDING,
+                'approvedat' => self::ENROL_APPROVED,
+                'rejectedat' => self::ENROL_REJECTED,
+            ]
+        );
+        $filtered = [];
+        foreach ($rows as $row) {
+            $pending = (int) $row->pending_count;
+            $approved = (int) $row->approved_count;
+            $rejected = (int) $row->rejected_count;
+            if ($enrolstatus === self::ENROL_APPROVED && $approved <= 0) {
+                continue;
+            }
+            if ($enrolstatus === self::ENROL_REJECTED && $rejected <= 0) {
+                continue;
+            }
+            if ($enrolstatus === self::ENROL_PENDING && $pending <= 0) {
+                continue;
+            }
+            $row->removed = (int) ($row->removed ?? 0);
+            $row->applied_at = self::review_row_applied_at($enrolstatus, $row);
+            $filtered[] = $row;
+        }
+        usort($filtered, static function(\stdClass $a, \stdClass $b): int {
+            $cmp = ((int) $b->applied_at) <=> ((int) $a->applied_at);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return ((int) $b->id) <=> ((int) $a->id);
+        });
+        return $filtered;
     }
 
     /**
@@ -292,6 +441,7 @@ class session_manager {
         $record->status = self::STATUS_CLOSED;
         $record->auto_close_exempt = 0;
         $record->session_kind = self::SESSION_KIND_ROOM_CLOSED;
+        $record->removed = 0;
         $record->timecreated = $now;
         $record->timemodified = $now;
         $record->createdby = (!empty($USER->id)) ? (int)$USER->id : 0;
@@ -317,6 +467,7 @@ class session_manager {
         if (!self::is_room_closed_session($session)) {
             throw new \moodle_exception('error_room_closed_not_this_kind', 'local_tm_course');
         }
+        self::assert_enrolment_writable($id);
 
         $classroomid = (int)($data['classroomid'] ?? 0);
         $start = (int)($data['starttime'] ?? 0);
@@ -415,6 +566,23 @@ class session_manager {
     }
 
     /**
+     * Session for review screens. Null when the row is gone, so the page can
+     * still list leftover applications instead of failing.
+     */
+    public static function get_session_if_exists(int $id): ?\stdClass {
+        global $DB;
+        if ($id <= 0) {
+            return null;
+        }
+        $session = $DB->get_record('local_tm_course_sessions', ['id' => $id], '*', IGNORE_MISSING);
+        if (!$session) {
+            return null;
+        }
+        self::preload_classroom_location_cache([$session]);
+        return self::enrich_session($session);
+    }
+
+    /**
      * Get all sessions (with optional filters).
      */
     public static function get_sessions(array $filters = []): array {
@@ -441,6 +609,9 @@ class session_manager {
             $conditions[] = 'starttime <= :to';
             $params['to'] = (int)$filters['to'];
         }
+        if (empty($filters['include_removed'])) {
+            $conditions[] = self::sql_not_removed();
+        }
 
         $where = $conditions ? 'WHERE ' . implode(' AND ', $conditions) : '';
         $sql   = "SELECT * FROM {local_tm_course_sessions} $where ORDER BY starttime ASC";
@@ -462,7 +633,7 @@ class session_manager {
         global $DB;
         $candidates = $DB->get_records_select(
             'local_tm_course_sessions',
-            'status IN (:openstatus, :fullstatus) AND auto_close_exempt = 0',
+            'status IN (:openstatus, :fullstatus) AND auto_close_exempt = 0 AND ' . self::sql_not_removed(),
             ['openstatus' => self::STATUS_OPEN, 'fullstatus' => self::STATUS_FULL],
             '',
             'id, status, starttime'
@@ -636,7 +807,7 @@ class session_manager {
      */
     public static function can_submit_enrolment(\stdClass $session, bool $adminoverride = false): bool {
         // Empty class-day sessions are closed to every entry, including admin override.
-        if (self::is_unattended_void($session)) {
+        if (self::is_removed($session) || self::is_unattended_void($session)) {
             return false;
         }
         if (!self::is_online_session($session)
@@ -816,7 +987,7 @@ class session_manager {
         global $DB;
         $session = $DB->get_record('local_tm_course_sessions', ['id' => $sessionid], '*', MUST_EXIST);
 
-        if (self::is_room_closed_session($session)) {
+        if (self::is_removed($session) || self::is_room_closed_session($session)) {
             return;
         }
 
@@ -870,6 +1041,7 @@ class session_manager {
             'classroomid = :classroomid',
             'starttime < :endtime',
             'endtime > :starttime',
+            self::sql_not_removed(),
         ];
         $params = [
             'classroomid' => $classroomid,
@@ -911,6 +1083,7 @@ class session_manager {
             'starttime >= :daystart',
             'starttime <= :dayend',
             "(COALESCE(session_kind, 'standard') = 'standard')",
+            self::sql_not_removed(),
         ];
         $sameDayParams = [
             'classroomid2' => $classroomid,
@@ -1318,7 +1491,8 @@ class session_manager {
                   FROM {local_tm_course_sessions}
                  WHERE classroomid = :classroomid
                    AND starttime >= :daystart
-                   AND starttime <= :dayend";
+                   AND starttime <= :dayend
+                   AND " . self::sql_not_removed();
         $params = [
             'classroomid' => $classroomid,
             'daystart' => (int) $daystart,
@@ -1667,7 +1841,8 @@ class session_manager {
                       FROM {local_tm_course_sessions}
                      WHERE classroomid = :classroomid
                        AND starttime >= :daystart
-                       AND starttime <= :dayend";
+                       AND starttime <= :dayend
+                       AND " . self::sql_not_removed();
             $params = [
                 'classroomid' => $classroomid,
                 'daystart' => (int) $daystart,

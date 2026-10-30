@@ -257,6 +257,7 @@ class enrolment_manager {
     public static function enrol(int $sessionid, int $userid, string $institution = '', array $diet = []): int {
         global $DB, $USER;
 
+        session_manager::assert_enrolment_writable($sessionid);
         $session = session_manager::get_session($sessionid);
 
         if (session_manager::is_unattended_void($session)) {
@@ -476,6 +477,7 @@ class enrolment_manager {
     public static function approve(int $enrolid, ?int $deskno = null): void {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
 
         $session = session_manager::get_session($enrol->sessionid);
         session_verification_manager::assert_enrol_verification_allows_approval($enrol, $session);
@@ -542,6 +544,7 @@ class enrolment_manager {
     public static function reject(int $enrolid, string $reason = ''): void {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         $wasapproved = ((int)$enrol->status === session_manager::ENROL_APPROVED);
         $syncuserid = self::moodle_sync_subject_userid($enrol);
         $DB->set_field('local_tm_course_enrolments', 'status',
@@ -566,6 +569,7 @@ class enrolment_manager {
     public static function unapprove(int $enrolid): void {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         if ((int) $enrol->status !== session_manager::ENROL_APPROVED) {
             return;
         }
@@ -587,6 +591,7 @@ class enrolment_manager {
     public static function change_desk_assignment(int $enrolid, int $deskno): void {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         $status = (int) $enrol->status;
         if (!in_array($status, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true)) {
             throw new \moodle_exception('error_desk_move_status', 'local_tm_course');
@@ -609,6 +614,7 @@ class enrolment_manager {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments',
             ['id' => $enrolid, 'userid' => $userid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         $reasoncode = clean_param($reasoncode, PARAM_ALPHANUMEXT);
         $allowed = ['work', 'other_session', 'other'];
         if (!in_array($reasoncode, $allowed, true)) {
@@ -652,6 +658,7 @@ class enrolment_manager {
             throw new \moodle_exception('nopermissions', 'error');
         }
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         $status = (int) $enrol->status;
         $terminal = [
             session_manager::ENROL_CANCELLED,
@@ -710,6 +717,7 @@ class enrolment_manager {
             throw new \moodle_exception('error_batch_cancel_not_owner', 'local_tm_course');
         }
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         if ((int) ($enrol->batch_submittedby ?? 0) !== $submitterid) {
             throw new \moodle_exception('error_batch_cancel_not_owner', 'local_tm_course');
         }
@@ -809,6 +817,7 @@ class enrolment_manager {
     public static function update_diet_by_actor(int $enrolid, int $actorid, array $diet): array {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         if (!self::user_can_edit_diet($enrol, $actorid)) {
             throw new \moodle_exception('nopermissions', 'error');
         }
@@ -852,6 +861,7 @@ class enrolment_manager {
             'sessionid' => $sessionid,
             'status' => session_manager::ENROL_APPROVED,
         ], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable($sessionid);
 
         $choice = strtoupper(trim((string) ($diet['choice'] ?? '')));
         if (!in_array($choice, ['A', 'B'], true)) {
@@ -1055,6 +1065,9 @@ class enrolment_manager {
         } catch (\Throwable $e) {
             return;
         }
+        if (session_manager::is_removed($session)) {
+            return;
+        }
         $syncuserid = self::moodle_sync_subject_userid($enrol);
 
         $DB->set_field('local_tm_course_enrolments', 'status',
@@ -1213,6 +1226,9 @@ class enrolment_manager {
                 try {
                     $depsession = session_manager::get_session((int) $dep->sessionid);
                 } catch (\Throwable $e) {
+                    continue;
+                }
+                if (session_manager::is_removed($depsession)) {
                     continue;
                 }
                 $rules = prerequisite_manager::resolve_session_rules($depsession);
@@ -1983,6 +1999,7 @@ class enrolment_manager {
     ): array {
         global $DB;
 
+        session_manager::assert_enrolment_writable($sessionid);
         $session = session_manager::get_session($sessionid);
         if (session_manager::is_unattended_void($session)) {
             throw new \moodle_exception('error_session_void_unattended', 'local_tm_course');
@@ -2162,6 +2179,7 @@ class enrolment_manager {
             'id' => $enrolid,
             'batch_submittedby' => $submitterid,
         ], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         $session = session_manager::get_session((int)$enrol->sessionid);
 
         $email = \core_text::strtolower(trim($email));
@@ -2312,6 +2330,7 @@ class enrolment_manager {
             'id' => $enrolid,
             'batch_submittedby' => $submitterid,
         ], '*', MUST_EXIST);
+        session_manager::assert_enrolment_writable((int) $enrol->sessionid);
 
         $active = [
             session_manager::ENROL_PENDING,

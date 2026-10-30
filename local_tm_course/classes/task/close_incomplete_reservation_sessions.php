@@ -31,6 +31,7 @@ class close_incomplete_reservation_sessions extends \core\task\scheduled_task {
                FROM {local_tm_course_sessions} s
               WHERE s.source_reservation_id IS NOT NULL
                 AND s.source_reservation_id > 0
+                AND COALESCE(s.removed, 0) = 0
                 AND s.status IN (:openstatus, :fullstatus)
                 AND s.starttime > :nowts
                 AND s.starttime <= :deadline

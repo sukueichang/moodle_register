@@ -86,7 +86,8 @@ class reservation_plan_validator {
             $existing = $DB->get_records_sql(
                 "SELECT id, classroomid, starttime, endtime
                    FROM {local_tm_course_sessions}
-                  WHERE classroomid IS NOT NULL AND classroomid > 0"
+                  WHERE classroomid IS NOT NULL AND classroomid > 0
+                    AND " . session_manager::sql_not_removed()
             );
             foreach ($existing as $row) {
                 $rid = (int) $row->classroomid;
@@ -272,7 +273,8 @@ class reservation_plan_validator {
             $rows = $DB->get_records_sql(
                 "SELECT id, starttime, endtime
                    FROM {local_tm_course_sessions}
-                  WHERE classroomid = :rid AND classroomid > 0",
+                  WHERE classroomid = :rid AND classroomid > 0
+                    AND " . session_manager::sql_not_removed(),
                 ['rid' => $rid]
             );
             foreach ($rows as $row) {

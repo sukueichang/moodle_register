@@ -33,7 +33,7 @@ class tcms_sync_manager {
         if (!self::is_enabled()) {
             return false;
         }
-        if (session_manager::is_room_closed_session($session)) {
+        if (session_manager::is_room_closed_session($session) || session_manager::is_removed($session)) {
             return false;
         }
         $kind = (string) ($session->session_kind ?? session_manager::SESSION_KIND_STANDARD);

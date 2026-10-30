@@ -255,32 +255,12 @@ if ($action && confirm_sesskey() && $resvid > 0) {
         $msg ?? '', null, \core\output\notification::NOTIFY_SUCCESS);
 }
 
-// Existing-course review block: full formal roster (includes dedicated-class initial enrolments).
-$allsessions = $DB->get_records_sql(
-    "SELECT s.id, s.name, s.starttime,
-            SUM(CASE WHEN e.status = :pending THEN 1 ELSE 0 END) AS pending_count,
-            SUM(CASE WHEN e.status = :approved THEN 1 ELSE 0 END) AS approved_count,
-            SUM(CASE WHEN e.status = :rejected THEN 1 ELSE 0 END) AS rejected_count
-       FROM {local_tm_course_sessions} s
-  LEFT JOIN {local_tm_course_enrolments} e ON e.sessionid = s.id
-   GROUP BY s.id, s.name, s.starttime
-   ORDER BY s.starttime DESC",
-    [
-        'pending' => session_manager::ENROL_PENDING,
-        'approved' => session_manager::ENROL_APPROVED,
-        'rejected' => session_manager::ENROL_REJECTED,
-    ]
-);
-$filteredallsessions = [];
-foreach ($allsessions as $s) {
-    $pc = (int)$s->pending_count;
-    $ac = (int)$s->approved_count;
-    $rc = (int)$s->rejected_count;
-    if ($enrolstatus === 1 && $ac <= 0) { continue; }
-    if ($enrolstatus === 2 && $rc <= 0) { continue; }
-    if ($enrolstatus === 0 && $pc <= 0) { continue; }
-    $filteredallsessions[] = $s;
+// Existing-course review block: one row per session, date is the newest
+// matching applicant's timecreated (not the session start). Removed sessions stay.
+if (!in_array($enrolstatus, [0, 1, 2], true)) {
+    $enrolstatus = 0;
 }
+$filteredallsessions = session_manager::get_enrolment_review_rows($enrolstatus);
 
 $resvwhere = '';
 $resvparams = [];
@@ -328,14 +308,14 @@ if (!empty($reservationids)) {
         'approved' => session_manager::ENROL_APPROVED,
     ];
     $sessrows = $DB->get_records_sql(
-        "SELECT s.id, s.source_reservation_id, s.name, s.starttime,
+        "SELECT s.id, s.source_reservation_id, s.name, s.starttime, s.removed,
                 SUM(CASE WHEN e.status = :pending AND COALESCE(e.reservation_initial_enrol, 0) = 1 THEN 1 ELSE 0 END) AS initial_pending_count,
                 SUM(CASE WHEN e.status = :approved AND COALESCE(e.reservation_initial_enrol, 0) = 1 THEN 1 ELSE 0 END) AS initial_approved_count,
                 SUM(CASE WHEN COALESCE(e.reservation_initial_enrol, 0) = 1 THEN 1 ELSE 0 END) AS initial_total_count
            FROM {local_tm_course_sessions} s
       LEFT JOIN {local_tm_course_enrolments} e ON e.sessionid = s.id
           WHERE s.source_reservation_id $sinsql
-       GROUP BY s.id, s.source_reservation_id, s.name, s.starttime
+       GROUP BY s.id, s.source_reservation_id, s.name, s.starttime, s.removed
        ORDER BY s.starttime ASC",
         $sessparams
     );
@@ -456,13 +436,27 @@ echo $OUTPUT->header();
         <button type="submit" class="btn btn-sm btn-tm-primary"><?php echo get_string('filter'); ?></button>
     </form>
     <table class="tm-table" data-sort-table="admin-enrol-list">
-        <thead><tr><th>#</th><th><?php echo get_string('session_name', 'local_tm_course'); ?></th><th data-sortable="datetime"><?php echo get_string('label_start', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_pending', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_approved', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_rejected', 'local_tm_course'); ?></th><th><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th></tr></thead>
+        <thead><tr><th>#</th><th><?php echo get_string('session_name', 'local_tm_course'); ?></th><th data-sortable="datetime"><?php echo get_string('review_applied_date', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_pending', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_approved', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_rejected', 'local_tm_course'); ?></th><th><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th></tr></thead>
         <tbody>
-        <?php foreach ($filteredallsessions as $s): ?>
+        <?php foreach ($filteredallsessions as $s):
+            $appliedat = (int) ($s->applied_at ?? 0);
+            $histname = session_manager::session_history_name($s);
+            ?>
             <tr>
                 <td><?php echo (int)$s->id; ?></td>
-                <td><?php echo s($s->name); ?></td>
-                <td data-sort-value="<?php echo (int)$s->starttime; ?>"><?php echo userdate((int)$s->starttime, get_string('strftimedatetimeshort')); ?></td>
+                <td><?php
+                    if ($histname !== '') {
+                        echo s($histname);
+                    }
+                    if (!empty($s->removed)) {
+                        echo '<div class="text-muted">' . s(get_string('session_removed_label', 'local_tm_course')) . '</div>';
+                    }
+                ?></td>
+                <td data-sort-value="<?php echo $appliedat; ?>"><?php
+                    echo $appliedat > 0
+                        ? userdate($appliedat, get_string('strftimedatetimeshort'))
+                        : '—';
+                ?></td>
                 <td><?php echo (int)$s->pending_count; ?></td>
                 <td><?php echo (int)$s->approved_count; ?></td>
                 <td><?php echo (int)$s->rejected_count; ?></td>
@@ -671,8 +665,16 @@ echo $OUTPUT->header();
                                 ?>
                                     <li class="mb-1 tm-resv-enrol-session-row">
                                         <a class="btn btn-sm btn-tm-primary tm-resv-enrol-session-btn" href="<?php echo $enrollink->out(); ?>"><?php echo s(get_string('reservation_review_enrol_session_button', 'local_tm_course')); ?></a>
-                                        <span class="tm-resv-enrol-session-label"><?php echo s((string)$ressess->name); ?>
+                                        <span class="tm-resv-enrol-session-label"><?php
+                                            $reshist = session_manager::session_history_name($ressess);
+                                            if ($reshist !== '') {
+                                                echo s($reshist);
+                                            }
+                                        ?>
                                             <span class="text-muted">(<?php echo userdate((int)$ressess->starttime, get_string('strftimedatetimeshort')); ?>)</span>
+                                            <?php if (!empty($ressess->removed)): ?>
+                                                <span class="text-muted"><?php echo s(get_string('session_removed_label', 'local_tm_course')); ?></span>
+                                            <?php endif; ?>
                                         </span>
                                         <?php if ($initialpendingn > 0): ?>
                                             <span class="tm-badge tm-badge-pending"><?php echo get_string('enrol_pending', 'local_tm_course'); ?> <?php echo $initialpendingn; ?></span>
