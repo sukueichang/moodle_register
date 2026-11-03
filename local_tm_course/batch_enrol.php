@@ -115,78 +115,52 @@ if ($sessionid && $confirmed && confirm_sesskey()) {
             $afteradd = session_manager::get_session($sessionid);
             $stillvoid = $isadminmanage && $wasvoid && session_manager::is_unattended_void($afteradd);
             $restored = $isadminmanage && $wasvoid && !session_manager::is_unattended_void($afteradd);
-            if ((int)$result['processed'] > 0) {
+            $forcenames = [];
+            foreach ((array) ($result['prereq_bypassed'] ?? []) as $pb) {
+                $label = trim((string) ($pb['name'] ?? ''));
+                if ($label === '') {
+                    $label = trim((string) ($pb['email'] ?? ''));
+                }
+                if ($label !== '') {
+                    $forcenames[] = $label;
+                }
+            }
+            $processed = (int) ($result['processed'] ?? 0);
+            $msg = enrolment_manager::format_batch_result_notice(
+                $processed,
+                $restored,
+                $stillvoid,
+                (array) ($result['skipped'] ?? []),
+                $forcenames,
+                !empty($result['capped']),
+                (int) ($result['requested'] ?? 0)
+            );
+            $notify = \core\output\notification::NOTIFY_SUCCESS;
+            if ($processed < 1) {
+                $notify = \core\output\notification::NOTIFY_ERROR;
+            } else if ($stillvoid || !empty($result['skipped'])) {
+                $notify = \core\output\notification::NOTIFY_WARNING;
+            }
+            if ($processed > 0) {
                 notification_helper::notify_batch_enrol_completed(
                     (int)$sessionid,
                     (int)$USER->id,
-                    (int)$result['processed'],
+                    $processed,
                     enrolment_manager::normalise_batch_submitter_note($batchsubmitternote)
                 );
-                $sesscheck = $afteradd;
-                if (session_verification_manager::session_has_verification_questions($sesscheck)) {
-                    if ($stillvoid) {
-                        \core\notification::warning(get_string('admin_void_unattended_still_void', 'local_tm_course'));
-                    } else if ($restored) {
-                        \core\notification::success(get_string('admin_void_unattended_restored', 'local_tm_course'));
-                    }
+                if (session_verification_manager::session_has_verification_questions($afteradd)) {
                     $subid = session_verification_manager::create_batch_submission($sessionid, (int)$USER->id);
                     foreach ($result['enrolment_ids'] as $eid) {
                         if ((int)$eid > 0) {
                             $DB->set_field('local_tm_course_enrolments', 'vq_submission_id', $subid, ['id' => (int)$eid]);
                         }
                     }
-                    redirect(new moodle_url('/local/tm_course/enrol_session_verification.php', ['submissionid' => $subid]));
+                    redirect(new moodle_url('/local/tm_course/enrol_session_verification.php', ['submissionid' => $subid]),
+                        $msg, null, $notify);
                 }
-            }
-            if ($issiteadmin && (int) ($result['siteadmin_auto_approved'] ?? 0) > 0) {
-                $msg = get_string('batch_success_siteadmin_approved', 'local_tm_course', (object)[
-                    'n' => (int) $result['siteadmin_auto_approved'],
-                ]);
-                $pendingn = (int) $result['processed'] - (int) $result['siteadmin_auto_approved'];
-                if ($pendingn > 0) {
-                    $msg .= ' ' . get_string('batch_success_processed', 'local_tm_course', (object)['n' => $pendingn]);
-                }
-            } else {
-                $msg = get_string('batch_success_processed', 'local_tm_course', (object)['n' => $result['processed']]);
-            }
-            if (!empty($result['capped'])) {
-                $msg .= ' ' . get_string('batch_cap_notice', 'local_tm_course', (object)[
-                    'requested' => $result['requested'],
-                    'processed' => $result['processed'],
-                ]);
-            }
-            if (!empty($result['skipped'])) {
-                $msg .= ' ' . get_string('batch_skipped_count', 'local_tm_course', (object)['n' => count($result['skipped'])]);
-                $reasonstext = enrolment_manager::format_batch_skipped_reasons_text($result['skipped']);
-                if ($reasonstext !== '') {
-                    $msg .= ' ' . $reasonstext;
-                }
-            }
-            if ($stillvoid) {
-                $msg .= ' ' . get_string('admin_void_unattended_still_void', 'local_tm_course');
-            } else if ($restored) {
-                $msg .= ' ' . get_string('admin_void_unattended_restored', 'local_tm_course');
-            }
-            if ($issiteadmin && !empty($result['prereq_bypassed'])) {
-                $lines = [];
-                foreach ($result['prereq_bypassed'] as $pb) {
-                    $label = trim((string)($pb['name'] ?? ''));
-                    if ($label === '') {
-                        $label = (string)($pb['email'] ?? '');
-                    }
-                    $missing = trim((string)($pb['missing_display'] ?? ''));
-                    if ($missing === '') {
-                        $missing = implode('; ', (array)($pb['missing'] ?? []));
-                    }
-                    $lines[] = $label . ($missing !== '' ? ' — ' . $missing : '');
-                }
-                $msg .= ' ' . get_string('batch_prereq_bypass_summary', 'local_tm_course', (object)[
-                    'n' => count($result['prereq_bypassed']),
-                    'list' => implode(' | ', $lines),
-                ]);
             }
             redirect(new moodle_url('/local/tm_course/batch_enrol.php', ['sessionid' => $sessionid]),
-                $msg, null, \core\output\notification::NOTIFY_SUCCESS);
+                $msg, null, $notify);
         } catch (moodle_exception $ex) {
             \core\notification::error($ex->getMessage());
         }
@@ -304,10 +278,6 @@ echo $OUTPUT->header();
         </div>
 
         <p class="text-muted" id="tm-batch-cap-hint"></p>
-<?php if ($isadminmanage && $selectedsession && !session_manager::is_removed($selectedsession)
-    && session_manager::is_unattended_void($selectedsession)): ?>
-        <div class="tm-alert tm-alert-info"><?php echo get_string('admin_void_unattended_add_hint', 'local_tm_course'); ?></div>
-<?php endif; ?>
 
 <?php if ($needsdeskpick && $deskboard): ?>
         <div class="tm-batch-desk-pick mt-4" id="tm-batch-desk-pick">

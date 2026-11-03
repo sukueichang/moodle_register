@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.29.11
+ * Version: 5.29.12
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026110300;   // 5.29.11 manager may add learners to an empty class-day lapse
-$plugin->release   = '5.29.11';
+$plugin->version   = 2026110301;   // 5.29.12 shorter batch and lapse messages
+$plugin->release   = '5.29.12';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

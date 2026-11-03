@@ -1335,6 +1335,98 @@ class enrolment_manager {
     }
 
     /**
+     * One single-line batch result. Names only for forced prerequisite adds.
+     * Skip reasons stay specific; they are not replaced with a generic failure.
+     *
+     * @param array<int,array{reason?:string,a?:mixed,message?:string}> $skipped
+     * @param string[] $forcenames
+     */
+    public static function format_batch_result_notice(
+        int $processed,
+        bool $restored,
+        bool $stillvoid,
+        array $skipped,
+        array $forcenames,
+        bool $capped = false,
+        int $requested = 0
+    ): string {
+        $parts = [];
+        if ($processed > 0 && $restored) {
+            $parts[] = get_string('batch_result_added_restored', 'local_tm_course', $processed);
+        } else if ($processed > 0 && $stillvoid) {
+            $parts[] = get_string('batch_result_added_still_void', 'local_tm_course', $processed);
+        } else if ($processed > 0) {
+            $parts[] = get_string('batch_result_added', 'local_tm_course', $processed);
+        } else if ($stillvoid && $skipped === []) {
+            $parts[] = get_string('batch_result_none_still_void', 'local_tm_course');
+        } else if ($skipped === []) {
+            $parts[] = get_string('batch_result_none', 'local_tm_course');
+        }
+
+        $names = [];
+        foreach ($forcenames as $name) {
+            $name = trim((string) $name);
+            if ($name !== '') {
+                $names[$name] = true;
+            }
+        }
+        if ($names) {
+            $sep = get_string('batch_result_name_sep', 'local_tm_course');
+            $parts[] = get_string(
+                'batch_result_force_prereq',
+                'local_tm_course',
+                implode($sep, array_keys($names))
+            );
+        }
+        if ($capped && $requested > $processed) {
+            $parts[] = get_string('batch_result_capped', 'local_tm_course', (object) [
+                'processed' => $processed,
+                'requested' => $requested,
+            ]);
+        }
+        $failed = count($skipped);
+        if ($failed > 0) {
+            $reasons = self::format_batch_skip_reason_list($skipped);
+            $parts[] = $reasons === ''
+                ? get_string('batch_result_failed_count', 'local_tm_course', $failed)
+                : get_string('batch_result_failed', 'local_tm_course', (object) [
+                    'n' => $failed,
+                    'reasons' => $reasons,
+                ]);
+        }
+        $clause = get_string('batch_result_clause_sep', 'local_tm_course');
+        return implode($clause, $parts);
+    }
+
+    /**
+     * Deduped skip reasons on one line. Prefers the error code string over the raw exception.
+     *
+     * @param array<int,array{reason?:string,a?:mixed,message?:string}> $skipped
+     */
+    public static function format_batch_skip_reason_list(array $skipped): string {
+        $counts = [];
+        $unknown = get_string('batch_skipped_reason_unknown', 'local_tm_course');
+        foreach ($skipped as $row) {
+            $code = trim((string) ($row['reason'] ?? ''));
+            $label = self::format_batch_skip_reason($code, $row['a'] ?? null);
+            $message = trim((string) preg_replace('/\s+/u', ' ', (string) ($row['message'] ?? '')));
+            if (($code === '' || $label === $unknown) && $message !== '') {
+                $label = $message;
+            }
+            $label = trim((string) preg_replace('/\s+/u', ' ', $label));
+            if ($label === '') {
+                continue;
+            }
+            $counts[$label] = ($counts[$label] ?? 0) + 1;
+        }
+        $parts = [];
+        foreach ($counts as $label => $count) {
+            $parts[] = $count > 1 ? ($label . ' ×' . $count) : $label;
+        }
+        return implode(get_string('batch_result_name_sep', 'local_tm_course'), $parts);
+    }
+
+    /**
      * Audit whether an approved enrolment has completed required Moodle sync steps.
      * Steps checked: account active, enrolled in course, added to group, attendance slot ready.
      *

@@ -303,11 +303,8 @@ foreach ($sessions as $s) {
         : $closed_str;
     $show_batch_open = $can_batch_enrol && $can_submit_batch;
     $show_batch_closed = $can_batch_enrol && !$show_batch_open;
-    $admin_void_add_hint = '';
     if ($is_void_unattended && $is_admin && $show_batch_open) {
-        // The disabled learner button would contradict the manager batch action.
         $show_closed_btn = false;
-        $admin_void_add_hint = get_string('admin_void_unattended_add_hint', 'local_tm_course');
     }
     $batch_disabled_label = $session_closed_label;
     if ($show_batch_closed && !session_manager::is_online_session($s)
@@ -422,7 +419,6 @@ foreach ($sessions as $s) {
         'show_contact_notice' => $show_contact_notice,
         'contact_notice_text' => $self_enrol_contact_notice_str,
         'show_batch_open' => $show_batch_open,
-        'admin_void_add_hint' => $admin_void_add_hint,
         'batch_url' => (new moodle_url('/local/tm_course/batch_enrol.php', ['sessionid' => (int) $s->id]))->out(false),
         'batch_label' => $batch_str,
         'show_batch_closed' => $show_batch_closed,

@@ -103,7 +103,16 @@ check(strpos($session, 'COALESCE(placeholder_seq, 0) = 0 OR COALESCE(linked_user
 check(strpos($zhtw, '因先修課程 {$a} 缺席，已取消預卡位資格') !== false, 'hold reason names course A');
 check(strpos($zhtw, '先修預卡位') !== false, '1.6 pre-hold badge string');
 check(strpos($zhtw, '本課程無人報名，已失效') !== false, 'void label string');
-check(strpos($zhtw, 'admin_void_unattended_add_hint') !== false, 'manager hint explains forced add and restore');
+check(strpos($zhtw, 'admin_void_unattended_add_hint') === false, 'long manager lapse essay is removed');
+check(strpos($zhtw, 'batch_result_added_restored') !== false, 'restore result is one short line');
+check(strpos($zhtw, '已新增 {$a} 筆報名，場次已恢復有效') !== false, 'restore wording stays one sentence');
+check(strpos($zhtw, '未完成先修，已強制加入') !== false, 'force-add names the learner only');
+$batchpage = file_get_contents($root . '/batch_enrol.php');
+$batchjs = file_get_contents($root . '/batch_enrol.js');
+check(is_string($batchpage) && strpos($batchpage, 'format_batch_result_notice') !== false, 'batch result is one notice');
+check(is_string($batchpage) && strpos($batchpage, 'missing_display') === false, 'batch notice does not list missing courses');
+check(is_string($batchjs) && strpos($batchjs, 'batch_prereq_siteadmin_force_hint') !== false, 'site-admin force hint remains one line');
+check(is_string($batchjs) && strpos($batchjs, '<ul class="small text-muted mb-0 mt-1 pl-3">') === false, 'preview does not list each unmet course');
 check(strpos($enrol, 'is_unattended_void($session) && !$allowclosed') !== false, 'batch void bypass requires the manage flag');
 $selffn = '';
 if (preg_match('/public static function enrol\(int \$sessionid.*?public static function /s', $enrol, $m)) {

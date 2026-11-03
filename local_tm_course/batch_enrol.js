@@ -146,24 +146,7 @@
             if (row._prereqMet) {
                 return '<span class="text-success">' + esc(S.batch_prereq_met) + '</span>';
             }
-            var html = '<span class="text-warning">' + esc(S.batch_prereq_not_met) + '</span>';
-            var reasons = Array.isArray(row._prereqReasons) ? row._prereqReasons : [];
-            if (!reasons.length && row._prereqMissing) {
-                reasons = String(row._prereqMissing).split(/\s*[;；]\s*/).filter(function (part) {
-                    return part.trim() !== '';
-                });
-            }
-            if (reasons.length) {
-                html += '<ul class="small text-muted mb-0 mt-1 pl-3">';
-                reasons.forEach(function (reason) {
-                    html += '<li>' + esc(reason) + '</li>';
-                });
-                html += '</ul>';
-            }
-            if (cfg.isSiteAdmin && S.batch_prereq_siteadmin_force_hint) {
-                html += '<div class="small text-info mt-1">' + esc(S.batch_prereq_siteadmin_force_hint) + '</div>';
-            }
-            return html;
+            return '<span class="text-warning">' + esc(S.batch_prereq_not_met) + '</span>';
         }
 
         function remaining() {
@@ -506,6 +489,17 @@
                             '<div class="mt-1 small" style="white-space:pre-wrap">' + esc(noteRawf) + '</div></div>';
                     }
                     htmlf += '<div class="mb-2 small text-muted">' + esc(S.batch_modal_full_rows) + ': ' + esc(String(data.length)) + '</div>';
+                    if (showPrereq && cfg.isSiteAdmin && S.batch_prereq_siteadmin_force_hint) {
+                        var anyUnmet = false;
+                        rows.forEach(function (row) {
+                            if (!row._prereqMet) {
+                                anyUnmet = true;
+                            }
+                        });
+                        if (anyUnmet) {
+                            htmlf += '<p class="mb-2">' + esc(S.batch_prereq_siteadmin_force_hint) + '</p>';
+                        }
+                    }
                     htmlf += '<table class="tm-table"><thead><tr><th>' + esc(S.label_learner) + '</th><th>' + esc(S.label_email) +
                         '</th><th>' + esc(S.batch_user_type) + '</th>';
                     if (showPrereq) {
@@ -637,24 +631,7 @@
             if (row._prereqMet) {
                 return '<span class="text-success">' + esc(S.batch_prereq_met) + '</span>';
             }
-            var html = '<span class="text-warning">' + esc(S.batch_prereq_not_met) + '</span>';
-            var reasons = Array.isArray(row._prereqReasons) ? row._prereqReasons : [];
-            if (!reasons.length && row._prereqMissing) {
-                reasons = String(row._prereqMissing).split(/\s*[;；]\s*/).filter(function (part) {
-                    return part.trim() !== '';
-                });
-            }
-            if (reasons.length) {
-                html += '<ul class="small text-muted mb-0 mt-1 pl-3">';
-                reasons.forEach(function (reason) {
-                    html += '<li>' + esc(reason) + '</li>';
-                });
-                html += '</ul>';
-            }
-            if (cfg.isSiteAdmin && S.batch_prereq_siteadmin_force_hint) {
-                html += '<div class="small text-info mt-1">' + esc(S.batch_prereq_siteadmin_force_hint) + '</div>';
-            }
-            return html;
+            return '<span class="text-warning">' + esc(S.batch_prereq_not_met) + '</span>';
         }
 
         function getSelectedCourseIds() {
@@ -841,11 +818,6 @@
                         .replace(/\{\{unmet\}\}/g, String(unmetCount));
                     htmlf += '<div class="mb-2 p-2 border rounded tm-alert tm-alert-info">' + esc(summaryText) + '</div>';
                 }
-                if (S.reservation_batch_prereq_excluded_hint) {
-                    htmlf += '<div class="mb-2 small text-muted">' + esc(S.reservation_batch_prereq_excluded_hint) + '</div>';
-                }
-                htmlf += '<div class="mb-2 small text-muted">' + esc(S.batch_modal_full_rows) + ': ' + esc(String(data.length)) +
-                    ' → ' + esc(S.reservation_batch_prereq_will_include || '') + ' ' + esc(String(metCount)) + '</div>';
                 htmlf += '<table class="tm-table"><thead><tr><th>' + esc(S.label_learner) + '</th><th>' + esc(S.label_email) +
                     '</th><th>' + esc(S.batch_user_type) + '</th><th>' + esc(S.batch_prereq_warning_title) +
                     '</th><th>' + esc(S.institution) + '</th><th>' + esc(S.diet_survey_title) +
