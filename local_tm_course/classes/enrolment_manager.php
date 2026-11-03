@@ -260,6 +260,7 @@ class enrolment_manager {
         session_manager::assert_enrolment_writable($sessionid);
         $session = session_manager::get_session($sessionid);
 
+        // Self-enrol has no admin override. Managers add learners through batch_enrol_pending().
         if (session_manager::is_unattended_void($session)) {
             throw new \moodle_exception('error_session_void_unattended', 'local_tm_course');
         }
@@ -1975,7 +1976,7 @@ class enrolment_manager {
      * @param int   $sessionid
      * @param int   $actorid   User submitting the batch (stored as batch_submittedby)
      * @param array $entries   List of [ 'userid' => int, 'institution' => string optional, 'diet' => array ]
-     * @param bool  $allowclosed When true, full / closed / deadline are allowed (admin manage paths).
+     * @param bool  $allowclosed When true, full / closed / deadline / class-day lapse are allowed (admin manage paths).
      * @param string $batchsubmitternote Optional remark stored on each created/updated enrolment row.
      * @param bool   $bypassprerequisite Only honoured when $actorid is a Moodle site admin
      *                                   ({@see is_siteadmin()}). Manage / sales roles never bypass.
@@ -2001,7 +2002,10 @@ class enrolment_manager {
 
         session_manager::assert_enrolment_writable($sessionid);
         $session = session_manager::get_session($sessionid);
-        if (session_manager::is_unattended_void($session)) {
+        // Learners and sales stay blocked. Manage paths pass $allowclosed.
+        // A later valid row clears the derived lapse; this method does not reopen
+        // STATUS_CLOSED, clear removed, or change a classroom block.
+        if (session_manager::is_unattended_void($session) && !$allowclosed) {
             throw new \moodle_exception('error_session_void_unattended', 'local_tm_course');
         }
         if (!session_manager::can_submit_enrolment($session, $allowclosed)) {
@@ -2114,6 +2118,8 @@ class enrolment_manager {
             }
         }
 
+        // Recalculate capacity only. A closed status is left closed, so a manual
+        // or scheduled close is not cleared when the class-day lapse lifts.
         session_manager::recalculate_status($sessionid);
 
         return [

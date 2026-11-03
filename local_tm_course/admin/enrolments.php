@@ -290,6 +290,9 @@ echo $OUTPUT->header();
 </div>
 <?php endif; ?>
 <?php if (!$sessionremoved): ?>
+<?php if ($se && session_manager::is_unattended_void($se)): ?>
+<p class="tm-alert tm-alert-info mb-3"><?php echo get_string('admin_void_unattended_add_hint', 'local_tm_course'); ?></p>
+<?php endif; ?>
 <p class="mb-3">
     <a href="<?php echo (new moodle_url('/local/tm_course/batch_enrol.php', ['sessionid' => $sessionid]))->out(); ?>"
        class="btn btn-sm btn-tm-primary"><?php echo get_string('admin_batch_enrol_open', 'local_tm_course'); ?></a>

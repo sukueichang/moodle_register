@@ -761,6 +761,9 @@ echo $OUTPUT->header();
 <div class="tm-form-section mb-3" style="border-left-color:var(--tm-green)">
     <div class="section-title" style="color:var(--tm-green)">👥 <?php echo get_string('admin_batch_enrol_section', 'local_tm_course'); ?></div>
     <div class="tm-form-hint mb-2"><?php echo get_string('admin_batch_enrol_section_desc', 'local_tm_course'); ?></div>
+    <?php if ($session && !session_manager::is_removed($session) && session_manager::is_unattended_void($session)): ?>
+    <div class="tm-alert tm-alert-info mb-2"><?php echo get_string('admin_void_unattended_add_hint', 'local_tm_course'); ?></div>
+    <?php endif; ?>
     <a class="btn btn-sm btn-tm-primary"
        href="<?php echo (new moodle_url('/local/tm_course/batch_enrol.php', ['sessionid' => (int)$id]))->out(); ?>">
         <?php echo get_string('admin_batch_enrol_open', 'local_tm_course'); ?>

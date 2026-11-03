@@ -133,6 +133,9 @@
       {{#show_batch_open}}
       <a class="btn btn-sm btn-secondary w-100 mt-2" href="{{batch_url}}">{{batch_label}}</a>
       {{/show_batch_open}}
+      {{#admin_void_add_hint}}
+      <p class="small tm-session-muted mt-1 mb-0">{{admin_void_add_hint}}</p>
+      {{/admin_void_add_hint}}
       {{#show_batch_closed}}
       <button type="button" class="btn btn-sm btn-secondary w-100 mt-2" disabled>{{batch_disabled_label}}</button>
       {{/show_batch_closed}}

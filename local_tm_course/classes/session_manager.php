@@ -704,6 +704,7 @@ class session_manager {
      * Active enrolments that still count as learners (pending, approved, waitlisted).
      * Prerequisite-absence holds, cancelled/rejected rows, and unnamed placeholder
      * seats (no linked learner yet) are excluded.
+     * Keep this SQL aligned with {@see prereq_hold_rules::enrolment_counts_as_valid()}.
      */
     public static function count_valid_enrolments(int $sessionid): int {
         global $DB;
@@ -801,13 +802,19 @@ class session_manager {
      * Onsite: blocked when person capacity is full unless $adminoverride.
      * Online: never blocked by full.
      * Closed / registration deadline: blocked unless $adminoverride (manage paths).
+     * Class-day lapse (no valid learner): blocked unless $adminoverride. The lapse
+     * itself is derived from the valid count and is not stored. Override does not
+     * clear removed, room-closed, or a manual/automatic closed status.
      *
      * @param \stdClass $session
-     * @param bool $adminoverride allow full + closed/deadline for admin (manage) paths
+     * @param bool $adminoverride allow full + closed/deadline/unattended-void for admin (manage) paths
      */
     public static function can_submit_enrolment(\stdClass $session, bool $adminoverride = false): bool {
-        // Empty class-day sessions are closed to every entry, including admin override.
-        if (self::is_removed($session) || self::is_unattended_void($session)) {
+        // Deleted sessions stay closed to every caller, including admin override.
+        if (self::is_removed($session)) {
+            return false;
+        }
+        if (prereq_hold_rules::unattended_void_blocks_submit(self::is_unattended_void($session), $adminoverride)) {
             return false;
         }
         if (!self::is_online_session($session)

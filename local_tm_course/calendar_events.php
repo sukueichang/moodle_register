@@ -185,6 +185,7 @@ foreach ($sessions as $s) {
             'fillPercent' => $fillpercent,
             'isNearlyFull' => $nearlyfull,
             'isEnrolled' => $isenrolled,
+            // Learner calendar only. Managers add to a lapsed session from batch enrolment, not here.
             'isEnrollable' => (session_manager::can_submit_enrolment($s, false)
                 && $canenrolcapability
                 && $canselfenrolbyrole),

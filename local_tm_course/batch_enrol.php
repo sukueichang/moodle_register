@@ -102,6 +102,8 @@ if ($sessionid && $confirmed && confirm_sesskey()) {
             }
         }
         try {
+            $beforeadd = session_manager::get_session($sessionid);
+            $wasvoid = session_manager::is_unattended_void($beforeadd);
             $result = enrolment_manager::batch_enrol_pending(
                 $sessionid,
                 $USER->id,
@@ -110,6 +112,9 @@ if ($sessionid && $confirmed && confirm_sesskey()) {
                 $batchsubmitternote,
                 $issiteadmin
             );
+            $afteradd = session_manager::get_session($sessionid);
+            $stillvoid = $isadminmanage && $wasvoid && session_manager::is_unattended_void($afteradd);
+            $restored = $isadminmanage && $wasvoid && !session_manager::is_unattended_void($afteradd);
             if ((int)$result['processed'] > 0) {
                 notification_helper::notify_batch_enrol_completed(
                     (int)$sessionid,
@@ -117,8 +122,13 @@ if ($sessionid && $confirmed && confirm_sesskey()) {
                     (int)$result['processed'],
                     enrolment_manager::normalise_batch_submitter_note($batchsubmitternote)
                 );
-                $sesscheck = session_manager::get_session($sessionid);
+                $sesscheck = $afteradd;
                 if (session_verification_manager::session_has_verification_questions($sesscheck)) {
+                    if ($stillvoid) {
+                        \core\notification::warning(get_string('admin_void_unattended_still_void', 'local_tm_course'));
+                    } else if ($restored) {
+                        \core\notification::success(get_string('admin_void_unattended_restored', 'local_tm_course'));
+                    }
                     $subid = session_verification_manager::create_batch_submission($sessionid, (int)$USER->id);
                     foreach ($result['enrolment_ids'] as $eid) {
                         if ((int)$eid > 0) {
@@ -151,6 +161,11 @@ if ($sessionid && $confirmed && confirm_sesskey()) {
                 if ($reasonstext !== '') {
                     $msg .= ' ' . $reasonstext;
                 }
+            }
+            if ($stillvoid) {
+                $msg .= ' ' . get_string('admin_void_unattended_still_void', 'local_tm_course');
+            } else if ($restored) {
+                $msg .= ' ' . get_string('admin_void_unattended_restored', 'local_tm_course');
             }
             if ($issiteadmin && !empty($result['prereq_bypassed'])) {
                 $lines = [];
@@ -289,6 +304,10 @@ echo $OUTPUT->header();
         </div>
 
         <p class="text-muted" id="tm-batch-cap-hint"></p>
+<?php if ($isadminmanage && $selectedsession && !session_manager::is_removed($selectedsession)
+    && session_manager::is_unattended_void($selectedsession)): ?>
+        <div class="tm-alert tm-alert-info"><?php echo get_string('admin_void_unattended_add_hint', 'local_tm_course'); ?></div>
+<?php endif; ?>
 
 <?php if ($needsdeskpick && $deskboard): ?>
         <div class="tm-batch-desk-pick mt-4" id="tm-batch-desk-pick">
