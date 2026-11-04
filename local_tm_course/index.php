@@ -303,6 +303,9 @@ foreach ($sessions as $s) {
         : $closed_str;
     $show_batch_open = $can_batch_enrol && $can_submit_batch;
     $show_batch_closed = $can_batch_enrol && !$show_batch_open;
+    if ($is_void_unattended && $is_admin && $show_batch_open) {
+        $show_closed_btn = false;
+    }
     $batch_disabled_label = $session_closed_label;
     if ($show_batch_closed && !session_manager::is_online_session($s)
         && ((int) $s->status === session_manager::STATUS_FULL

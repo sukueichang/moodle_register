@@ -69,4 +69,38 @@ class prereq_hold_rules {
         }
         return $validcount <= 0;
     }
+
+    /**
+     * Learner paths stay blocked while the class-day lapse applies.
+     * Admin manage override may pass this gate only. Removed sessions, classroom
+     * blocks, manual close, and the registration deadline are separate checks.
+     */
+    public static function unattended_void_blocks_submit(bool $isvoid, bool $adminoverride): bool {
+        return $isvoid && !$adminoverride;
+    }
+
+    /**
+     * Rows that count as a real learner for the class-day lapse.
+     *
+     * Status values match session_manager: 0 pending, 1 approved, 4 waitlisted.
+     * Cancelled (3), rejected (2), prerequisite-absence holds, and unnamed
+     * placeholder seats do not count. A linked placeholder does.
+     */
+    public static function enrolment_counts_as_valid(
+        int $status,
+        bool $absencehold,
+        int $placeholderseq,
+        int $linkeduserid
+    ): bool {
+        if ($absencehold) {
+            return false;
+        }
+        if ($status !== 0 && $status !== 1 && $status !== 4) {
+            return false;
+        }
+        if ($placeholderseq > 0 && $linkeduserid <= 0) {
+            return false;
+        }
+        return true;
+    }
 }
