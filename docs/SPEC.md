@@ -1652,6 +1652,7 @@ delivery_mode = onsite：
 | 項目 | 說明 |
 |------|------|
 | 審核中心 | `admin/review_center.php`：既有課程報名審核 + 客製需求審核；預設 filter 待審；既有課程另可篩選已核准、已拒絕、已取消（已取消只查閱）；表頭可排序。候補不提供篩選。 |
+| 狀態詳情 | `admin/enrolments.php`：點狀態標籤開彈窗，只顯示目前這一次的操作者、時間與拒絕／取消原因。升級前沒有紀錄的顯示「未記錄」。不回填，不加表格欄位。 |
 | 場次管理 | `admin/sessions.php`：批次勾選刪除；視訊場次不強制桌次（`approve()` 等路徑一致）；**座次總覽**見 §48 `session_roster.php`。 |
 | 出缺席 | `attendance_manager`：優先綁定場次 `attendance_cmid`、具名活動、必要時新建；點名連結補齊 `sessionid`/`grouptype`；同步 `attendance_log` 與 slot 對應規則。 |
 | 搜尋權限 | `search.php`：`manage` 或 `user_can_batch_enrol()`；證書區塊見 §54（已核發 + 可領取未核發；`certificate_download.php` 代為核發並下載）。 |

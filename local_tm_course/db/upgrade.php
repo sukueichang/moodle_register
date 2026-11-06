@@ -2160,6 +2160,28 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102910, 'local', 'tm_course');
     }
 
+    // 2026110601 — Current-status actor, time, and dedicated reject reason. No backfill.
+    if ($oldversion < 2026110601) {
+        $table = new xmldb_table('local_tm_course_enrolments');
+
+        $field = new xmldb_field('status_actorid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'timemodified');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('status_time', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'status_actorid');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('reject_reason', XMLDB_TYPE_TEXT, null, null, null, null, null, 'status_time');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026110601, 'local', 'tm_course');
+    }
+
     return true;
 }
 

@@ -8,7 +8,7 @@
 
 /**
  * TM Course Management Plugin
- * Version: 5.29.13
+ * Version: 5.29.14
  * @package    local_tm_course
  * @copyright  2024 Techman Robot
  * @license    GNU GPL v3 or later
@@ -16,8 +16,8 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version   = 2026110600;   // 5.29.13 cancelled enrolment review filter
-$plugin->release   = '5.29.13';
+$plugin->version   = 2026110601;   // 5.29.14 enrolment status detail
+$plugin->release   = '5.29.14';
 $plugin->requires  = 2020060900;   // Moodle 3.9+ (compatible with 3.10.x)
 $plugin->component = 'local_tm_course';
 $plugin->maturity  = MATURITY_BETA;

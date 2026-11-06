@@ -245,6 +245,81 @@ class enrolment_manager {
     }
 
     /**
+     * Web actor for a status change. Null when no user is logged in.
+     * Pass 0 explicitly for a system action; this helper is not used for that.
+     */
+    private static function resolve_actor_id(?int $actorid): ?int {
+        global $USER;
+        if ($actorid !== null) {
+            return $actorid > 0 ? $actorid : null;
+        }
+        $current = (int) ($USER->id ?? 0);
+        return $current > 0 ? $current : null;
+    }
+
+    /**
+     * Stamp the current status episode onto a row that is about to be inserted or updated.
+     * Clears rejection and cancellation reasons so a new episode cannot show the previous one.
+     */
+    private static function apply_episode_stamp(\stdClass $record, int $status, ?int $actorid, int $now): void {
+        $record->status = $status;
+        $record->status_actorid = $actorid;
+        $record->status_time = $now;
+        $record->timemodified = $now;
+        $record->reject_reason = null;
+        $record->cancel_reason_code = '';
+        $record->cancel_reason_text = null;
+    }
+
+    /**
+     * Write status, actor, time, and the reason fields that belong to that status.
+     * Returns false when the status is unchanged so a repeat action cannot replace the original episode.
+     *
+     * @param array<string,mixed> $patch Extra columns written in the same UPDATE.
+     */
+    private static function commit_status_change(\stdClass $enrol, int $newstatus, ?int $actorid, array $patch = []): bool {
+        global $DB;
+        if ((int) $enrol->status === $newstatus) {
+            return false;
+        }
+        $now = time();
+        $update = new \stdClass();
+        $update->id = (int) $enrol->id;
+        $update->status = $newstatus;
+        $update->status_actorid = $actorid;
+        $update->status_time = $now;
+        $update->timemodified = $now;
+        if ($newstatus === session_manager::ENROL_REJECTED) {
+            $update->reject_reason = array_key_exists('reject_reason', $patch) ? $patch['reject_reason'] : null;
+            $update->cancel_reason_code = '';
+            $update->cancel_reason_text = null;
+        } else if ($newstatus === session_manager::ENROL_CANCELLED) {
+            $update->reject_reason = null;
+            $update->cancel_reason_code = (string) ($patch['cancel_reason_code'] ?? '');
+            $update->cancel_reason_text = $patch['cancel_reason_text'] ?? null;
+        } else {
+            $update->reject_reason = null;
+            $update->cancel_reason_code = '';
+            $update->cancel_reason_text = null;
+        }
+        foreach ($patch as $key => $value) {
+            if (in_array($key, ['reject_reason', 'cancel_reason_code', 'cancel_reason_text'], true)) {
+                continue;
+            }
+            $update->{$key} = $value;
+        }
+        $DB->update_record('local_tm_course_enrolments', $update);
+        $enrol->status = $newstatus;
+        $enrol->status_actorid = $actorid;
+        $enrol->status_time = $now;
+        $enrol->timemodified = $now;
+        $enrol->reject_reason = $update->reject_reason;
+        $enrol->cancel_reason_code = $update->cancel_reason_code;
+        $enrol->cancel_reason_text = $update->cancel_reason_text;
+        return true;
+    }
+
+    /**
      * Attempt to enrol a user in a session.
      * Runs all validation checks first.
      *
@@ -388,7 +463,9 @@ class enrolment_manager {
         if ($existing) {
             // Re-activate a cancelled/rejected enrolment by updating the same row.
             // Never inherit prior present/absent marks onto the new enrolment cycle.
-            $existing->status = $status;
+            $now = time();
+            $episodeactor = ((int) $status === session_manager::ENROL_APPROVED) ? 0 : (int) $userid;
+            self::apply_episode_stamp($existing, (int) $status, $episodeactor, $now);
             $existing->attended = attendance_manager::ATTEND_UNSET;
             $existing->prereq_absence_hold = 0;
             $existing->institution = $userobj->institution;
@@ -401,7 +478,6 @@ class enrolment_manager {
             $existing->diet_avoid_seafood = $diet_avoid_seafood;
             $existing->diet_meat_other = $diet_meat_other;
             $existing->diet_vegetarian_notes = $diet_vegetarian_notes;
-            $existing->timemodified = time();
 
             $DB->update_record('local_tm_course_enrolments', $existing);
             $id = (int)$existing->id;
@@ -409,11 +485,12 @@ class enrolment_manager {
             $record = new \stdClass();
             $record->sessionid    = $sessionid;
             $record->userid       = $userid;
-            $record->status       = $status;
+            $now = time();
+            $episodeactor = ((int) $status === session_manager::ENROL_APPROVED) ? 0 : (int) $userid;
+            self::apply_episode_stamp($record, (int) $status, $episodeactor, $now);
             $record->institution  = $userobj->institution;
             $record->batch_submittedby = (int) $userid;
-            $record->timecreated  = time();
-            $record->timemodified = time();
+            $record->timecreated  = $now;
 
             // Diet survey (optional)
             $record->diet_choice = $diet_choice;
@@ -431,7 +508,13 @@ class enrolment_manager {
                     'userid' => $userid,
                 ], '*', IGNORE_MISSING);
                 if ($existing2) {
-                    $existing2->status = $status;
+                    if ((int) $existing2->status !== (int) $status) {
+                        $now = time();
+                        $episodeactor = ((int) $status === session_manager::ENROL_APPROVED) ? 0 : (int) $userid;
+                        self::apply_episode_stamp($existing2, (int) $status, $episodeactor, $now);
+                    } else {
+                        $existing2->timemodified = time();
+                    }
                     $existing2->attended = attendance_manager::ATTEND_UNSET;
                     $existing2->prereq_absence_hold = 0;
                     $existing2->institution = $userobj->institution;
@@ -443,7 +526,6 @@ class enrolment_manager {
                     $existing2->diet_avoid_seafood = $diet_avoid_seafood;
                     $existing2->diet_meat_other = $diet_meat_other;
                     $existing2->diet_vegetarian_notes = $diet_vegetarian_notes;
-                    $existing2->timemodified = time();
                     $DB->update_record('local_tm_course_enrolments', $existing2);
                     $id = (int)$existing2->id;
                 } else {
@@ -475,7 +557,7 @@ class enrolment_manager {
     /**
      * Approve a pending enrolment.
      */
-    public static function approve(int $enrolid, ?int $deskno = null): void {
+    public static function approve(int $enrolid, ?int $deskno = null, ?int $actorid = null): void {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
         session_manager::assert_enrolment_writable((int) $enrol->sessionid);
@@ -517,8 +599,14 @@ class enrolment_manager {
             }
         }
 
-        $DB->set_field('local_tm_course_enrolments', 'status', session_manager::ENROL_APPROVED, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        $changed = self::commit_status_change(
+            $enrol,
+            session_manager::ENROL_APPROVED,
+            self::resolve_actor_id($actorid)
+        );
+        if (!$changed) {
+            $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        }
 
         session_manager::recalculate_status($enrol->sessionid);
 
@@ -542,18 +630,21 @@ class enrolment_manager {
     /**
      * Reject an enrolment.
      */
-    public static function reject(int $enrolid, string $reason = ''): void {
+    public static function reject(int $enrolid, string $reason = '', ?int $actorid = null): void {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
         session_manager::assert_enrolment_writable((int) $enrol->sessionid);
         $wasapproved = ((int)$enrol->status === session_manager::ENROL_APPROVED);
         $syncuserid = self::moodle_sync_subject_userid($enrol);
-        $DB->set_field('local_tm_course_enrolments', 'status',
-                       session_manager::ENROL_REJECTED, ['id' => $enrolid]);
+        $changed = self::commit_status_change($enrol, session_manager::ENROL_REJECTED, self::resolve_actor_id($actorid), [
+            'reject_reason' => $reason ? $reason : null,
+        ]);
         if ($reason) {
             $DB->set_field('local_tm_course_enrolments', 'notes', $reason, ['id' => $enrolid]);
         }
-        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        if (!$changed) {
+            $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        }
         session_manager::recalculate_status($enrol->sessionid);
         // If this enrolment was previously approved, keep Moodle group sync consistent.
         if ($wasapproved) {
@@ -567,7 +658,7 @@ class enrolment_manager {
     /**
      * Revert an approved enrolment back to pending review.
      */
-    public static function unapprove(int $enrolid): void {
+    public static function unapprove(int $enrolid, ?int $actorid = null): void {
         global $DB;
         $enrol = $DB->get_record('local_tm_course_enrolments', ['id' => $enrolid], '*', MUST_EXIST);
         session_manager::assert_enrolment_writable((int) $enrol->sessionid);
@@ -576,9 +667,8 @@ class enrolment_manager {
         }
         $session = session_manager::get_session((int) $enrol->sessionid);
         $syncuserid = self::moodle_sync_subject_userid($enrol);
-        $DB->set_field('local_tm_course_enrolments', 'status', session_manager::ENROL_PENDING, ['id' => $enrolid]);
+        self::commit_status_change($enrol, session_manager::ENROL_PENDING, self::resolve_actor_id($actorid));
         // Keep desk_number so the learner stays on the desk board while pending again.
-        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
         session_manager::recalculate_status((int) $enrol->sessionid);
         self::sync_moodle_enrolment($syncuserid, (int) $session->courseid, 'unenrol');
         attendance_manager::remove_from_group((int)$enrol->sessionid, $syncuserid);
@@ -625,11 +715,12 @@ class enrolment_manager {
         if ($reasoncode === 'other' && $reasontext === '') {
             throw new \moodle_exception('error_cancel_reason_other_required', 'local_tm_course');
         }
-        $DB->set_field('local_tm_course_enrolments', 'status',
-                       session_manager::ENROL_CANCELLED, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_code', $reasoncode, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $reasontext, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        if ((int) $enrol->status !== session_manager::ENROL_CANCELLED) {
+            self::commit_status_change($enrol, session_manager::ENROL_CANCELLED, (int) $userid, [
+                'cancel_reason_code' => $reasoncode,
+                'cancel_reason_text' => $reasontext,
+            ]);
+        }
         session_manager::recalculate_status($enrol->sessionid);
         try {
             attendance_manager::clear_attendance_after_enrolment_cancel((int) $enrolid);
@@ -673,12 +764,11 @@ class enrolment_manager {
         $syncuserid = self::moodle_sync_subject_userid($enrol);
         $reasontext = clean_param(trim($reasontext), PARAM_TEXT);
 
-        $DB->set_field('local_tm_course_enrolments', 'status',
-            session_manager::ENROL_CANCELLED, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_code', 'admin', ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $reasontext, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        self::commit_status_change($enrol, session_manager::ENROL_CANCELLED, (int) $actorid, [
+            'cancel_reason_code' => 'admin',
+            'cancel_reason_text' => $reasontext,
+            'desk_number' => null,
+        ]);
         session_manager::recalculate_status((int) $enrol->sessionid);
 
         try {
@@ -734,12 +824,11 @@ class enrolment_manager {
         $session = session_manager::get_session((int) $enrol->sessionid);
         $syncuserid = self::moodle_sync_subject_userid($enrol);
 
-        $DB->set_field('local_tm_course_enrolments', 'status',
-            session_manager::ENROL_CANCELLED, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_code', 'batch_submitter', ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', '', ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        self::commit_status_change($enrol, session_manager::ENROL_CANCELLED, (int) $submitterid, [
+            'cancel_reason_code' => 'batch_submitter',
+            'cancel_reason_text' => '',
+            'desk_number' => null,
+        ]);
         session_manager::recalculate_status((int) $enrol->sessionid);
 
         try {
@@ -1071,12 +1160,11 @@ class enrolment_manager {
         }
         $syncuserid = self::moodle_sync_subject_userid($enrol);
 
-        $DB->set_field('local_tm_course_enrolments', 'status',
-            session_manager::ENROL_CANCELLED, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_code', 'prereq_cascade', ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'cancel_reason_text', $prereqsessionname, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'desk_number', null, ['id' => $enrolid]);
-        $DB->set_field('local_tm_course_enrolments', 'timemodified', time(), ['id' => $enrolid]);
+        self::commit_status_change($enrol, session_manager::ENROL_CANCELLED, 0, [
+            'cancel_reason_code' => 'prereq_cascade',
+            'cancel_reason_text' => $prereqsessionname,
+            'desk_number' => null,
+        ]);
         session_manager::recalculate_status((int)$enrol->sessionid);
 
         try {
@@ -3126,7 +3214,8 @@ class enrolment_manager {
             if (in_array($st, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED, session_manager::ENROL_WAITLISTED], true)) {
                 throw new \moodle_exception('error_batch_already_active', 'local_tm_course');
             }
-            $existing->status = $status;
+            $now = time();
+            self::apply_episode_stamp($existing, (int) $status, $actorid > 0 ? (int) $actorid : null, $now);
             $existing->attended = attendance_manager::ATTEND_UNSET;
             $existing->prereq_absence_hold = 0;
             $existing->institution = $userobj->institution;
@@ -3145,14 +3234,14 @@ class enrolment_manager {
             if ($auditnote !== '') {
                 $existing->notes = $auditnote;
             }
-            $existing->timemodified = time();
             $DB->update_record('local_tm_course_enrolments', $existing);
             $enrolid = (int)$existing->id;
         } else {
             $record = new \stdClass();
             $record->sessionid = $sessionid;
             $record->userid = $userid;
-            $record->status = $status;
+            $now = time();
+            self::apply_episode_stamp($record, (int) $status, $actorid > 0 ? (int) $actorid : null, $now);
             $record->attended = attendance_manager::ATTEND_UNSET;
             $record->prereq_absence_hold = 0;
             $record->institution = $userobj->institution;
@@ -3171,8 +3260,7 @@ class enrolment_manager {
             if ($auditnote !== '') {
                 $record->notes = $auditnote;
             }
-            $record->timecreated = time();
-            $record->timemodified = time();
+            $record->timecreated = $now;
             $enrolid = (int)$DB->insert_record('local_tm_course_enrolments', $record, true);
         }
 

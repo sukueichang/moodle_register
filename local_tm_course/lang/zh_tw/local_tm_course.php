@@ -1638,3 +1638,25 @@ $string['survey_export_empty'] = '沒有可匯出的資料。';
 $string['survey_export_write_failed'] = '寫入 Excel 檔案失敗。';
 $string['task_pin_session_surveys'] = 'TM 課程問卷：釘選已開始場次';
 
+$string['statusdetail_open'] = '查看狀態詳情';
+$string['statusdetail_close'] = '關閉';
+$string['statusdetail_not_recorded'] = '未記錄';
+$string['statusdetail_system_approved'] = '系統自動核准';
+$string['statusdetail_system_cancelled'] = '系統自動取消';
+$string['statusdetail_submitter'] = '提交者';
+$string['statusdetail_approver'] = '核准者';
+$string['statusdetail_rejector'] = '拒絕者';
+$string['statusdetail_canceller'] = '取消者';
+$string['statusdetail_applied_at'] = '申請時間';
+$string['statusdetail_approved_at'] = '核准時間';
+$string['statusdetail_rejected_at'] = '拒絕時間';
+$string['statusdetail_cancelled_at'] = '取消時間';
+$string['statusdetail_reject_reason'] = '拒絕原因';
+$string['statusdetail_cancel_reason'] = '取消原因';
+$string['cancel_detail_admin'] = '管理員取消';
+$string['cancel_detail_work'] = '工作因素';
+$string['cancel_detail_other_session'] = '改報其他場次';
+$string['cancel_detail_other'] = '其他原因';
+$string['cancel_detail_batch_submitter'] = '批次提交者取消';
+$string['cancel_detail_prereq'] = '先修條件失效，自動取消';
+

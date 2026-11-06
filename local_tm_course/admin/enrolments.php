@@ -36,13 +36,13 @@ $deskno    = optional_param('desk_number', 0, PARAM_INT);
 if ($action && $enrolid && confirm_sesskey()) {
     try {
         if ($action === 'approve') {
-            enrolment_manager::approve($enrolid, $deskno);
+            enrolment_manager::approve($enrolid, $deskno, (int) $USER->id);
             $msg = get_string('enrol_approved_notice', 'local_tm_course');
         } elseif ($action === 'cancel') {
             enrolment_manager::cancel_by_admin($enrolid, (int) $USER->id, $reason);
             $msg = get_string('enrol_cancelled_notice', 'local_tm_course');
         } elseif ($action === 'reject') {
-            enrolment_manager::reject($enrolid, $reason);
+            enrolment_manager::reject($enrolid, $reason, (int) $USER->id);
             $msg = get_string('enrol_rejected_notice', 'local_tm_course');
         }
         // Note: action=unapprove intentionally not handled — UI removed (Owner 5.29.5).
@@ -86,10 +86,12 @@ if ($sessionid) {
     $session_is_online = $session && ((string)($session->delivery_mode ?? '') === session_manager::DELIVERY_ONLINE);
     $session_has_vq = $session ? session_verification_manager::session_has_verification_questions($session) : false;
     $sql = "SELECT e.*, u.firstname, u.lastname, u.email, u.institution AS profile_institution,
-                   sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname
+                   sb.firstname AS submitter_firstname, sb.lastname AS submitter_lastname,
+                   sa.firstname AS status_actor_firstname, sa.lastname AS status_actor_lastname
               FROM {local_tm_course_enrolments} e
               JOIN {user} u ON u.id = e.userid
          LEFT JOIN {user} sb ON sb.id = e.batch_submittedby
+         LEFT JOIN {user} sa ON sa.id = e.status_actorid AND sa.deleted = 0
              WHERE e.sessionid = :sid";
     $params = ['sid' => $sessionid];
     if ($status_filter !== '' && in_array((int) $status_filter, $filterable_statuses, true)) {
@@ -718,8 +720,27 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
         echo $bnote !== '' ? nl2br(s($bnote)) : '—';
     ?></td>
     <td>
+        <?php
+            $statusactorname = trim((string) ($e->status_actor_firstname ?? '') . ' ' . (string) ($e->status_actor_lastname ?? ''));
+            $statusdetail = \local_tm_course\enrolment_status_detail::present($e, $statusactorname);
+        ?>
         <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
-            <span class="tm-badge tm-badge-<?php echo $badge_cls; ?>"><?php echo $badge_lbl; ?></span>
+            <button type="button"
+                    class="tm-badge tm-badge-<?php echo s($badge_cls); ?> tm-status-detail-trigger"
+                    aria-haspopup="dialog"
+                    aria-controls="tm-status-detail-modal"
+                    aria-label="<?php echo \local_tm_course\enrolment_status_detail::escape(
+                        get_string('statusdetail_open', 'local_tm_course') . '：' . $statusdetail['statuslabel']
+                    ); ?>"
+                    data-status-label="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['statuslabel']); ?>"
+                    data-actor-label="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['actorlabel']); ?>"
+                    data-actor="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['actor']); ?>"
+                    data-time-label="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['timelabel']); ?>"
+                    data-time="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['time']); ?>"
+                    data-reason-label="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['reasonlabel']); ?>"
+                    data-reason="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['reason']); ?>">
+                <?php echo \local_tm_course\enrolment_status_detail::escape($badge_lbl); ?>
+            </button>
         </div>
         <?php if ($hold): ?>
         <div class="tm-prereq-absence-reason"><?php echo s($flags['hold_reason']); ?></div>
@@ -850,5 +871,29 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
 
 </div><!-- .tm-card-body -->
 </div><!-- .tm-card -->
+
+<div id="tm-status-detail-modal" class="tm-status-detail-backdrop" hidden aria-hidden="true">
+    <div id="tm-status-detail-panel" class="tm-status-detail-panel" role="dialog" aria-modal="true" aria-labelledby="tm-status-detail-title">
+        <h4 id="tm-status-detail-title"></h4>
+        <p class="tm-status-detail-row">
+            <span class="tm-status-detail-k" id="tm-status-detail-actor-label"></span>
+            <span id="tm-status-detail-actor"></span>
+        </p>
+        <p class="tm-status-detail-row">
+            <span class="tm-status-detail-k" id="tm-status-detail-time-label"></span>
+            <span id="tm-status-detail-time"></span>
+        </p>
+        <p class="tm-status-detail-row" id="tm-status-detail-reason-row" hidden>
+            <span class="tm-status-detail-k" id="tm-status-detail-reason-label"></span>
+            <span id="tm-status-detail-reason"></span>
+        </p>
+        <div class="tm-status-detail-actions">
+            <button type="button" class="btn btn-secondary" id="tm-status-detail-close"><?php
+                echo \local_tm_course\enrolment_status_detail::escape(get_string('statusdetail_close', 'local_tm_course'));
+            ?></button>
+        </div>
+    </div>
+</div>
+<script src="<?php echo (new moodle_url('/local/tm_course/admin/enrolment_status_detail.js'))->out(false); ?>"></script>
 
 <?php echo $OUTPUT->footer(); ?>
