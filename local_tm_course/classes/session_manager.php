@@ -119,6 +119,9 @@ class session_manager {
         if ($enrolstatus === self::ENROL_REJECTED) {
             return (int) ($row->rejected_applied_at ?? 0);
         }
+        if ($enrolstatus === self::ENROL_CANCELLED) {
+            return (int) ($row->cancelled_applied_at ?? 0);
+        }
         return (int) ($row->pending_applied_at ?? 0);
     }
 
@@ -339,7 +342,12 @@ class session_manager {
      */
     public static function get_enrolment_review_rows(int $enrolstatus): array {
         global $DB;
-        if (!in_array($enrolstatus, [self::ENROL_PENDING, self::ENROL_APPROVED, self::ENROL_REJECTED], true)) {
+        if (!in_array($enrolstatus, [
+            self::ENROL_PENDING,
+            self::ENROL_APPROVED,
+            self::ENROL_REJECTED,
+            self::ENROL_CANCELLED,
+        ], true)) {
             $enrolstatus = self::ENROL_PENDING;
         }
         $rows = $DB->get_records_sql(
@@ -347,9 +355,11 @@ class session_manager {
                     SUM(CASE WHEN e.status = :pending THEN 1 ELSE 0 END) AS pending_count,
                     SUM(CASE WHEN e.status = :approved THEN 1 ELSE 0 END) AS approved_count,
                     SUM(CASE WHEN e.status = :rejected THEN 1 ELSE 0 END) AS rejected_count,
+                    SUM(CASE WHEN e.status = :cancelled THEN 1 ELSE 0 END) AS cancelled_count,
                     MAX(CASE WHEN e.status = :pendingat THEN e.timecreated ELSE NULL END) AS pending_applied_at,
                     MAX(CASE WHEN e.status = :approvedat THEN e.timecreated ELSE NULL END) AS approved_applied_at,
-                    MAX(CASE WHEN e.status = :rejectedat THEN e.timecreated ELSE NULL END) AS rejected_applied_at
+                    MAX(CASE WHEN e.status = :rejectedat THEN e.timecreated ELSE NULL END) AS rejected_applied_at,
+                    MAX(CASE WHEN e.status = :cancelledat THEN e.timecreated ELSE NULL END) AS cancelled_applied_at
                FROM {local_tm_course_sessions} s
           LEFT JOIN {local_tm_course_enrolments} e ON e.sessionid = s.id
            GROUP BY s.id, s.name, s.starttime, s.removed",
@@ -357,9 +367,11 @@ class session_manager {
                 'pending' => self::ENROL_PENDING,
                 'approved' => self::ENROL_APPROVED,
                 'rejected' => self::ENROL_REJECTED,
+                'cancelled' => self::ENROL_CANCELLED,
                 'pendingat' => self::ENROL_PENDING,
                 'approvedat' => self::ENROL_APPROVED,
                 'rejectedat' => self::ENROL_REJECTED,
+                'cancelledat' => self::ENROL_CANCELLED,
             ]
         );
         $filtered = [];
@@ -367,10 +379,14 @@ class session_manager {
             $pending = (int) $row->pending_count;
             $approved = (int) $row->approved_count;
             $rejected = (int) $row->rejected_count;
+            $cancelled = (int) $row->cancelled_count;
             if ($enrolstatus === self::ENROL_APPROVED && $approved <= 0) {
                 continue;
             }
             if ($enrolstatus === self::ENROL_REJECTED && $rejected <= 0) {
+                continue;
+            }
+            if ($enrolstatus === self::ENROL_CANCELLED && $cancelled <= 0) {
                 continue;
             }
             if ($enrolstatus === self::ENROL_PENDING && $pending <= 0) {

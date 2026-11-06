@@ -75,6 +75,7 @@ $filterable_statuses = [
     session_manager::ENROL_PENDING,
     session_manager::ENROL_APPROVED,
     session_manager::ENROL_REJECTED,
+    session_manager::ENROL_CANCELLED,
 ];
 
 $session = null;

@@ -29,11 +29,14 @@ class session_removal_review_test extends \advanced_testcase {
             'pending_applied_at' => 100,
             'approved_applied_at' => 300,
             'rejected_applied_at' => 50,
+            'cancelled_applied_at' => 70,
         ];
         $this->assertSame(100, session_manager::review_row_applied_at(session_manager::ENROL_PENDING, $row));
         $this->assertSame(300, session_manager::review_row_applied_at(session_manager::ENROL_APPROVED, $row));
         $this->assertSame(50, session_manager::review_row_applied_at(session_manager::ENROL_REJECTED, $row));
+        $this->assertSame(70, session_manager::review_row_applied_at(session_manager::ENROL_CANCELLED, $row));
         $this->assertNotSame(9000, session_manager::review_row_applied_at(session_manager::ENROL_PENDING, $row));
+        $this->assertNotSame(100, session_manager::review_row_applied_at(session_manager::ENROL_CANCELLED, $row));
     }
 
     public function test_aggregated_row_keeps_every_applicant_and_sorts_by_newest_submission(): void {
@@ -115,6 +118,63 @@ class session_removal_review_test extends \advanced_testcase {
         $this->assertSame('Kept historical name', (string) $session->name);
     }
 
+    public function test_cancelled_filter_keeps_status_counts_separate(): void {
+        $this->resetAfterTest(true);
+        $mixed = $this->insert_session('Mixed statuses', 1000);
+        $cancelledonly = $this->insert_session('Cancelled only', 2000);
+        $pendingonly = $this->insert_session('Pending only', 3000);
+        $waitonly = $this->insert_session('Waitlisted only', 4000);
+        $this->insert_session('No enrolments', 5000);
+
+        $users = [];
+        for ($i = 0; $i < 7; $i++) {
+            $users[] = $this->getDataGenerator()->create_user();
+        }
+        $this->insert_enrol($mixed, (int) $users[0]->id, session_manager::ENROL_PENDING, 10, 900);
+        $this->insert_enrol($mixed, (int) $users[1]->id, session_manager::ENROL_APPROVED, 20, 900);
+        $this->insert_enrol($mixed, (int) $users[2]->id, session_manager::ENROL_REJECTED, 30, 900);
+        $this->insert_enrol($mixed, (int) $users[3]->id, session_manager::ENROL_CANCELLED, 40, 999);
+        $this->insert_enrol($mixed, (int) $users[4]->id, session_manager::ENROL_CANCELLED, 70, 100);
+        $this->insert_enrol($mixed, (int) $users[5]->id, session_manager::ENROL_WAITLISTED, 90, 900);
+        $this->insert_enrol($cancelledonly, (int) $users[6]->id, session_manager::ENROL_CANCELLED, 55, 800);
+        $extra = $this->getDataGenerator()->create_user();
+        $this->insert_enrol($pendingonly, (int) $extra->id, session_manager::ENROL_PENDING, 15, 15);
+        $waiter = $this->getDataGenerator()->create_user();
+        $this->insert_enrol($waitonly, (int) $waiter->id, session_manager::ENROL_WAITLISTED, 80, 80);
+
+        $pending = session_manager::get_enrolment_review_rows(session_manager::ENROL_PENDING);
+        $this->assertSame([$pendingonly, $mixed], $this->row_ids($pending));
+        $mixedpending = $pending[1];
+        $this->assertSame($mixed, (int) $mixedpending->id);
+        $this->assertSame(1, (int) $mixedpending->pending_count);
+        $this->assertSame(1, (int) $mixedpending->approved_count);
+        $this->assertSame(1, (int) $mixedpending->rejected_count);
+        $this->assertSame(2, (int) $mixedpending->cancelled_count);
+
+        $approved = session_manager::get_enrolment_review_rows(session_manager::ENROL_APPROVED);
+        $this->assertSame([$mixed], $this->row_ids($approved));
+        $this->assertSame(20, (int) $approved[0]->applied_at);
+
+        $rejected = session_manager::get_enrolment_review_rows(session_manager::ENROL_REJECTED);
+        $this->assertSame([$mixed], $this->row_ids($rejected));
+        $this->assertSame(30, (int) $rejected[0]->applied_at);
+
+        $cancelled = session_manager::get_enrolment_review_rows(session_manager::ENROL_CANCELLED);
+        $this->assertSame([$mixed, $cancelledonly], $this->row_ids($cancelled));
+        $this->assertSame(70, (int) $cancelled[0]->applied_at);
+        $this->assertSame(2, (int) $cancelled[0]->cancelled_count);
+        $this->assertSame(1, (int) $cancelled[0]->pending_count);
+        $this->assertSame(1, (int) $cancelled[1]->cancelled_count);
+        $this->assertSame(0, (int) $cancelled[1]->pending_count);
+        $this->assertSame(0, (int) $cancelled[1]->approved_count);
+        $this->assertSame(0, (int) $cancelled[1]->rejected_count);
+        $this->assertNotContains($waitonly, $this->row_ids($cancelled));
+        $this->assertNotContains($pendingonly, $this->row_ids($cancelled));
+
+        $aspending = session_manager::get_enrolment_review_rows(session_manager::ENROL_WAITLISTED);
+        $this->assertSame($this->row_ids($pending), $this->row_ids($aspending));
+    }
+
     public function test_delete_without_enrolments_removes_the_session_row(): void {
         global $DB;
         $this->resetAfterTest(true);
@@ -131,6 +191,16 @@ class session_removal_review_test extends \advanced_testcase {
         $this->assert_write_refused(function() {
             session_manager::assert_enrolment_writable(999999);
         });
+    }
+
+    /**
+     * @param \stdClass[] $rows
+     * @return int[]
+     */
+    private function row_ids(array $rows): array {
+        return array_map(static function(\stdClass $row): int {
+            return (int) $row->id;
+        }, array_values($rows));
     }
 
     private function insert_session(string $name, int $starttime): int {
