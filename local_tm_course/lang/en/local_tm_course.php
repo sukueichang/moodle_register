@@ -1638,4 +1638,35 @@ $string['survey_export_empty'] = 'Nothing to export.';
 $string['survey_export_write_failed'] = 'Failed to write the Excel file.';
 $string['task_pin_session_surveys'] = 'TM course survey: pin started sessions';
 
+$string['statusdetail_open'] = 'View status details';
+$string['statusdetail_close'] = 'Close';
+$string['statusdetail_not_recorded'] = 'Not recorded';
+$string['statusdetail_system_approved'] = 'Approved automatically by the system';
+$string['statusdetail_system_cancelled'] = 'Cancelled automatically by the system';
+$string['statusdetail_submitter'] = 'Submitted by';
+$string['statusdetail_approver'] = 'Approved by';
+$string['statusdetail_rejector'] = 'Rejected by';
+$string['statusdetail_canceller'] = 'Cancelled by';
+$string['statusdetail_applied_at'] = 'Submitted at';
+$string['statusdetail_approved_at'] = 'Approved at';
+$string['statusdetail_rejected_at'] = 'Rejected at';
+$string['statusdetail_cancelled_at'] = 'Cancelled at';
+$string['statusdetail_reject_reason'] = 'Rejection reason';
+$string['statusdetail_cancel_reason'] = 'Cancellation reason';
+$string['cancel_detail_admin'] = 'Cancelled by an administrator';
+$string['cancel_detail_work'] = 'Work commitment';
+$string['cancel_detail_other_session'] = 'Moving to another session';
+$string['cancel_detail_other'] = 'Other reason';
+$string['cancel_detail_batch_submitter'] = 'Cancelled by the batch submitter';
+$string['cancel_detail_prereq'] = 'Prerequisite no longer met; cancelled automatically';
+$string['statusdetail_system'] = 'System';
+$string['enrol_log_heading'] = 'Action history';
+$string['enrol_log_empty'] = 'No action history yet';
+$string['enrol_log_apply'] = 'Applied';
+$string['enrol_log_approve'] = 'Approved';
+$string['enrol_log_reject'] = 'Rejected';
+$string['enrol_log_cancel'] = 'Cancelled';
+$string['enrol_log_reenrol'] = 'Re-enrolled';
+$string['enrol_log_unapprove'] = 'Returned to pending';
+
 

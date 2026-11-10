@@ -213,6 +213,69 @@
 .tm-badge-approved { background: var(--tm-green-light);  color: var(--tm-green-dark); }
 .tm-badge-rejected { background: #f8d7da;                 color: #721c24; }
 
+button.tm-status-detail-trigger {
+    border: 0;
+    cursor: pointer;
+    font: inherit;
+    line-height: inherit;
+    appearance: none;
+    -webkit-appearance: none;
+}
+button.tm-status-detail-trigger:focus {
+    outline: 2px solid #0b5cad;
+    outline-offset: 2px;
+}
+.tm-status-detail-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(0, 0, 0, .45);
+    overflow-y: auto;
+}
+.tm-status-detail-backdrop[hidden] {
+    display: none !important;
+}
+.tm-status-detail-panel {
+    width: min(95vw, 28rem);
+    max-height: calc(100dvh - 2rem);
+    overflow: auto;
+    background: #fff;
+    border: 1px solid var(--tm-border);
+    border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .2);
+    padding: 1rem 1.2rem;
+}
+.tm-status-detail-row {
+    margin: 0 0 .75rem;
+}
+.tm-status-detail-k {
+    display: block;
+    font-weight: 700;
+}
+.tm-status-detail-history {
+    margin: 0 0 .75rem;
+    overflow-wrap: anywhere;
+}
+.tm-status-detail-history ol {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+.tm-status-detail-history li + li {
+    margin-top: .35rem;
+}
+.tm-status-detail-actions {
+    display: flex;
+    justify-content: flex-end;
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding-top: .5rem;
+}
+
 /* ---- Sync audit pills (admin enrolments) ---- */
 .tm-sync-pill {
     display: inline-flex;

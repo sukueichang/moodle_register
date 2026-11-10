@@ -2160,6 +2160,52 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026102910, 'local', 'tm_course');
     }
 
+    // 2026110601 — Current-status actor, time, and dedicated reject reason. No backfill.
+    if ($oldversion < 2026110601) {
+        $table = new xmldb_table('local_tm_course_enrolments');
+
+        $field = new xmldb_field('status_actorid', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'timemodified');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('status_time', XMLDB_TYPE_INTEGER, '10', null, null, null, null, 'status_actorid');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        $field = new xmldb_field('reject_reason', XMLDB_TYPE_TEXT, null, null, null, null, null, 'status_time');
+        if ($dbman->table_exists($table) && !$dbman->field_exists($table, $field)) {
+            $dbman->add_field($table, $field);
+        }
+
+        upgrade_plugin_savepoint(true, 2026110601, 'local', 'tm_course');
+    }
+
+    if ($oldversion < 2026111000) {
+        // New history only. Do not copy current status columns into a fake past action.
+        // The first 5.29.15 ZIP used a 30-character name. Moodle rejects that inside
+        // create_table, before CREATE TABLE and before the savepoint below, so this
+        // same step is the retry. Skip creation when the table is already present.
+        $table = new xmldb_table('local_tm_course_enrol_logs');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('enrolmentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('actorid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('action', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('oldstatus', XMLDB_TYPE_INTEGER, '2', null, null, null, null);
+            $table->add_field('newstatus', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('reason_code', XMLDB_TYPE_CHAR, '30', null, null, null, null);
+            $table->add_field('reason_text', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('idx_enlog_enrol_time', XMLDB_INDEX_NOTUNIQUE, ['enrolmentid', 'timecreated']);
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026111000, 'local', 'tm_course');
+    }
+
     return true;
 }
 

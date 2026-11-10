@@ -257,8 +257,13 @@ if ($action && confirm_sesskey() && $resvid > 0) {
 
 // Existing-course review block: one row per session, date is the newest
 // matching applicant's timecreated (not the session start). Removed sessions stay.
-if (!in_array($enrolstatus, [0, 1, 2], true)) {
-    $enrolstatus = 0;
+if (!in_array($enrolstatus, [
+    session_manager::ENROL_PENDING,
+    session_manager::ENROL_APPROVED,
+    session_manager::ENROL_REJECTED,
+    session_manager::ENROL_CANCELLED,
+], true)) {
+    $enrolstatus = session_manager::ENROL_PENDING;
 }
 $filteredallsessions = session_manager::get_enrolment_review_rows($enrolstatus);
 
@@ -432,11 +437,12 @@ echo $OUTPUT->header();
             <option value="0"<?php echo ($enrolstatus === 0 ? ' selected' : ''); ?>><?php echo get_string('enrol_pending', 'local_tm_course'); ?></option>
             <option value="1"<?php echo ($enrolstatus === 1 ? ' selected' : ''); ?>><?php echo get_string('enrol_approved', 'local_tm_course'); ?></option>
             <option value="2"<?php echo ($enrolstatus === 2 ? ' selected' : ''); ?>><?php echo get_string('enrol_rejected', 'local_tm_course'); ?></option>
+            <option value="3"<?php echo ($enrolstatus === session_manager::ENROL_CANCELLED ? ' selected' : ''); ?>><?php echo get_string('enrol_cancelled', 'local_tm_course'); ?></option>
         </select>
         <button type="submit" class="btn btn-sm btn-tm-primary"><?php echo get_string('filter'); ?></button>
     </form>
     <table class="tm-table" data-sort-table="admin-enrol-list">
-        <thead><tr><th>#</th><th><?php echo get_string('session_name', 'local_tm_course'); ?></th><th data-sortable="datetime"><?php echo get_string('review_applied_date', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_pending', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_approved', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_rejected', 'local_tm_course'); ?></th><th><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th></tr></thead>
+        <thead><tr><th>#</th><th><?php echo get_string('session_name', 'local_tm_course'); ?></th><th data-sortable="datetime"><?php echo get_string('review_applied_date', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_pending', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_approved', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_rejected', 'local_tm_course'); ?></th><th><?php echo get_string('enrol_cancelled', 'local_tm_course'); ?></th><th><?php echo get_string('sessions_actions', 'local_tm_course'); ?></th></tr></thead>
         <tbody>
         <?php foreach ($filteredallsessions as $s):
             $appliedat = (int) ($s->applied_at ?? 0);
@@ -460,7 +466,14 @@ echo $OUTPUT->header();
                 <td><?php echo (int)$s->pending_count; ?></td>
                 <td><?php echo (int)$s->approved_count; ?></td>
                 <td><?php echo (int)$s->rejected_count; ?></td>
-                <td><a class="btn btn-sm btn-tm-primary" href="<?php echo (new moodle_url('/local/tm_course/admin/enrolments.php', ['sessionid' => (int)$s->id]))->out(); ?>"><?php echo get_string('view'); ?></a></td>
+                <td><?php echo (int)$s->cancelled_count; ?></td>
+                <td><a class="btn btn-sm btn-tm-primary" href="<?php
+                    $viewparams = ['sessionid' => (int) $s->id];
+                    if ((int) $enrolstatus === session_manager::ENROL_CANCELLED) {
+                        $viewparams['filter_status'] = session_manager::ENROL_CANCELLED;
+                    }
+                    echo (new moodle_url('/local/tm_course/admin/enrolments.php', $viewparams))->out();
+                ?>"><?php echo get_string('view'); ?></a></td>
             </tr>
         <?php endforeach; ?>
         </tbody>

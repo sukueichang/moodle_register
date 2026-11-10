@@ -174,6 +174,12 @@
                COMMENT="Free-text cancellation reason when code is other"/>
         <FIELD NAME="timecreated"   TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
         <FIELD NAME="timemodified"  TYPE="int"  LENGTH="10" NOTNULL="true" DEFAULT="0"/>
+        <FIELD NAME="status_actorid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="User id who caused the current status. 0=system, NULL=not recorded"/>
+        <FIELD NAME="status_time" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Unix time the enrolment entered its current status. NULL=not recorded"/>
+        <FIELD NAME="reject_reason" TYPE="text" NOTNULL="false"
+               COMMENT="Reason for the current rejection. Separate from notes"/>
         <FIELD NAME="batch_submittedby" TYPE="int" LENGTH="10" NOTNULL="false"
                COMMENT="User id of business user who submitted batch enrolment (M4)"/>
         <FIELD NAME="batch_submitter_note" TYPE="text" NOTNULL="false"
@@ -832,6 +838,34 @@
       </KEYS>
       <INDEXES>
         <INDEX NAME="idx_bento_log_sess" UNIQUE="false" FIELDS="sessionid"/>
+      </INDEXES>
+    </TABLE>
+
+    <TABLE NAME="local_tm_course_enrol_logs" COMMENT="Forward-only history of enrolment status changes">
+      <FIELDS>
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
+        <FIELD NAME="enrolmentid" TYPE="int" LENGTH="10" NOTNULL="true"
+               COMMENT="local_tm_course_enrolments.id"/>
+        <FIELD NAME="actorid" TYPE="int" LENGTH="10" NOTNULL="false"
+               COMMENT="Moodle user id. 0=system, NULL=not recorded"/>
+        <FIELD NAME="action" TYPE="char" LENGTH="20" NOTNULL="true"
+               COMMENT="apply, approve, reject, cancel, reenrol, or unapprove"/>
+        <FIELD NAME="oldstatus" TYPE="int" LENGTH="2" NOTNULL="false"
+               COMMENT="Status before this change. NULL for a new row"/>
+        <FIELD NAME="newstatus" TYPE="int" LENGTH="2" NOTNULL="true"
+               COMMENT="Status after this change"/>
+        <FIELD NAME="reason_code" TYPE="char" LENGTH="30" NOTNULL="false"
+               COMMENT="Cancel reason code for this change"/>
+        <FIELD NAME="reason_text" TYPE="text" NOTNULL="false"
+               COMMENT="Reject or cancel reason text for this change"/>
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true"
+               COMMENT="Unix time of this status change"/>
+      </FIELDS>
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+      <INDEXES>
+        <INDEX NAME="idx_enlog_enrol_time" UNIQUE="false" FIELDS="enrolmentid, timecreated"/>
       </INDEXES>
     </TABLE>
 
