@@ -841,7 +841,7 @@
       </INDEXES>
     </TABLE>
 
-    <TABLE NAME="local_tm_course_enrolment_logs" COMMENT="Forward-only history of enrolment status changes">
+    <TABLE NAME="local_tm_course_enrol_logs" COMMENT="Forward-only history of enrolment status changes">
       <FIELDS>
         <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true"/>
         <FIELD NAME="enrolmentid" TYPE="int" LENGTH="10" NOTNULL="true"

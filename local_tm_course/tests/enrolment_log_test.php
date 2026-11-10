@@ -269,7 +269,7 @@ class enrolment_log_test extends \advanced_testcase {
         if ($still) {
             $this->assertSame(session_manager::ENROL_PENDING, (int) $still->status);
         }
-        $this->assertSame([], $DB->get_records('local_tm_course_enrolment_logs', ['enrolmentid' => $enrolid]));
+        $this->assertSame([], $DB->get_records('local_tm_course_enrol_logs', ['enrolmentid' => $enrolid]));
     }
 
     public function test_old_rows_have_no_invented_history(): void {
@@ -334,7 +334,7 @@ class enrolment_log_test extends \advanced_testcase {
         $end = strpos($upgrade, 'return true;', $start);
         $block = substr($upgrade, $start, $end - $start);
         $this->assertStringContainsString('create_table', $block);
-        $this->assertStringContainsString('local_tm_course_enrolment_logs', $block);
+        $this->assertStringContainsString('local_tm_course_enrol_logs', $block);
         $this->assertStringNotContainsString('UPDATE', $block);
         $this->assertStringNotContainsString('SET status_actorid', $block);
 
@@ -405,7 +405,7 @@ class enrolment_log_test extends \advanced_testcase {
     private function logs(int $enrolid): array {
         global $DB;
         return array_values($DB->get_records(
-            'local_tm_course_enrolment_logs',
+            'local_tm_course_enrol_logs',
             ['enrolmentid' => $enrolid],
             'timecreated ASC, id ASC'
         ));

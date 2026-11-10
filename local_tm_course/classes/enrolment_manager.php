@@ -334,7 +334,7 @@ class enrolment_manager {
         $log->reason_code = ($reasoncode === null || $reasoncode === '') ? null : $reasoncode;
         $log->reason_text = ($reasontext === null || $reasontext === '') ? null : $reasontext;
         $log->timecreated = $timecreated;
-        $DB->insert_record('local_tm_course_enrolment_logs', $log);
+        $DB->insert_record('local_tm_course_enrol_logs', $log);
     }
 
     /**

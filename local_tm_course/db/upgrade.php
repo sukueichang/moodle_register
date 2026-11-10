@@ -2184,7 +2184,10 @@ function xmldb_local_tm_course_upgrade($oldversion) {
 
     if ($oldversion < 2026111000) {
         // New history only. Do not copy current status columns into a fake past action.
-        $table = new xmldb_table('local_tm_course_enrolment_logs');
+        // The first 5.29.15 ZIP used a 30-character name. Moodle rejects that inside
+        // create_table, before CREATE TABLE and before the savepoint below, so this
+        // same step is the retry. Skip creation when the table is already present.
+        $table = new xmldb_table('local_tm_course_enrol_logs');
         if (!$dbman->table_exists($table)) {
             $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
             $table->add_field('enrolmentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);

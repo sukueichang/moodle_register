@@ -3,7 +3,7 @@
  * Current-status detail for one enrolment row.
  *
  * The current-status view shows only the latest episode. History comes from
- * local_tm_course_enrolment_logs and is never inferred from the current columns,
+ * local_tm_course_enrol_logs and is never inferred from the current columns,
  * timecreated, timemodified, notes, or Moodle logs.
  *
  * @package    local_tm_course
@@ -186,7 +186,7 @@ class enrolment_status_detail {
         list($insql, $params) = $DB->get_in_or_equal($enrolids, SQL_PARAMS_NAMED, 'eid');
         $logs = $DB->get_records_sql(
             "SELECT *
-               FROM {local_tm_course_enrolment_logs}
+               FROM {local_tm_course_enrol_logs}
               WHERE enrolmentid $insql
            ORDER BY timecreated DESC, id DESC",
             $params
