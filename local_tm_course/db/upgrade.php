@@ -2182,6 +2182,27 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026110601, 'local', 'tm_course');
     }
 
+    if ($oldversion < 2026111000) {
+        // New history only. Do not copy current status columns into a fake past action.
+        $table = new xmldb_table('local_tm_course_enrolment_logs');
+        if (!$dbman->table_exists($table)) {
+            $table->add_field('id', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, XMLDB_SEQUENCE, null);
+            $table->add_field('enrolmentid', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('actorid', XMLDB_TYPE_INTEGER, '10', null, null, null, null);
+            $table->add_field('action', XMLDB_TYPE_CHAR, '20', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('oldstatus', XMLDB_TYPE_INTEGER, '2', null, null, null, null);
+            $table->add_field('newstatus', XMLDB_TYPE_INTEGER, '2', null, XMLDB_NOTNULL, null, null);
+            $table->add_field('reason_code', XMLDB_TYPE_CHAR, '30', null, null, null, null);
+            $table->add_field('reason_text', XMLDB_TYPE_TEXT, null, null, null, null, null);
+            $table->add_field('timecreated', XMLDB_TYPE_INTEGER, '10', null, XMLDB_NOTNULL, null, null);
+            $table->add_key('primary', XMLDB_KEY_PRIMARY, ['id']);
+            $table->add_index('idx_enlog_enrol_time', XMLDB_INDEX_NOTUNIQUE, ['enrolmentid', 'timecreated']);
+            $dbman->create_table($table);
+        }
+
+        upgrade_plugin_savepoint(true, 2026111000, 'local', 'tm_course');
+    }
+
     return true;
 }
 

@@ -1659,4 +1659,13 @@ $string['cancel_detail_other_session'] = '改報其他場次';
 $string['cancel_detail_other'] = '其他原因';
 $string['cancel_detail_batch_submitter'] = '批次提交者取消';
 $string['cancel_detail_prereq'] = '先修條件失效，自動取消';
+$string['statusdetail_system'] = '系統';
+$string['enrol_log_heading'] = '操作歷程';
+$string['enrol_log_empty'] = '尚無操作歷程紀錄';
+$string['enrol_log_apply'] = '申請';
+$string['enrol_log_approve'] = '核准';
+$string['enrol_log_reject'] = '拒絕';
+$string['enrol_log_cancel'] = '取消';
+$string['enrol_log_reenrol'] = '重新報名';
+$string['enrol_log_unapprove'] = '退回待審核';
 

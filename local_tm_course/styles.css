@@ -256,9 +256,24 @@ button.tm-status-detail-trigger:focus {
     display: block;
     font-weight: 700;
 }
+.tm-status-detail-history {
+    margin: 0 0 .75rem;
+    overflow-wrap: anywhere;
+}
+.tm-status-detail-history ol {
+    margin: 0;
+    padding-left: 1.2rem;
+}
+.tm-status-detail-history li + li {
+    margin-top: .35rem;
+}
 .tm-status-detail-actions {
     display: flex;
     justify-content: flex-end;
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding-top: .5rem;
 }
 
 /* ---- Sync audit pills (admin enrolments) ---- */

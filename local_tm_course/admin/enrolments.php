@@ -105,6 +105,7 @@ if ($sessionid) {
     }
     $sql .= ' ORDER BY e.timecreated ASC';
     $enrolments = $DB->get_records_sql($sql, $params);
+    $enrolmenthistories = \local_tm_course\enrolment_status_detail::histories_for_enrolments(array_keys($enrolments));
     if ($fromresv > 0) {
         $scope_rows = $DB->get_records_sql(
             "SELECT e.id, e.status, COALESCE(e.prereq_absence_hold, 0) AS prereq_absence_hold
@@ -723,6 +724,13 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
         <?php
             $statusactorname = trim((string) ($e->status_actor_firstname ?? '') . ' ' . (string) ($e->status_actor_lastname ?? ''));
             $statusdetail = \local_tm_course\enrolment_status_detail::present($e, $statusactorname);
+            $historyjson = json_encode(
+                $enrolmenthistories[(int) $e->id] ?? [],
+                JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS
+            );
+            if ($historyjson === false) {
+                $historyjson = '[]';
+            }
         ?>
         <div class="<?php echo $hold ? 'tm-prereq-absence-hold-body' : ''; ?>">
             <button type="button"
@@ -738,7 +746,8 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
                     data-time-label="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['timelabel']); ?>"
                     data-time="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['time']); ?>"
                     data-reason-label="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['reasonlabel']); ?>"
-                    data-reason="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['reason']); ?>">
+                    data-reason="<?php echo \local_tm_course\enrolment_status_detail::escape($statusdetail['reason']); ?>"
+                    data-history="<?php echo \local_tm_course\enrolment_status_detail::escape($historyjson); ?>">
                 <?php echo \local_tm_course\enrolment_status_detail::escape($badge_lbl); ?>
             </button>
         </div>
@@ -887,6 +896,14 @@ $dietjs_url = new moodle_url('/local/tm_course/desk_diet_edit.js', ['v' => $diet
             <span class="tm-status-detail-k" id="tm-status-detail-reason-label"></span>
             <span id="tm-status-detail-reason"></span>
         </p>
+        <h5 id="tm-status-detail-history-title"><?php
+            echo \local_tm_course\enrolment_status_detail::escape(get_string('enrol_log_heading', 'local_tm_course'));
+        ?></h5>
+        <div id="tm-status-detail-history"
+             class="tm-status-detail-history"
+             data-empty="<?php echo \local_tm_course\enrolment_status_detail::escape(
+                 get_string('enrol_log_empty', 'local_tm_course')
+             ); ?>"></div>
         <div class="tm-status-detail-actions">
             <button type="button" class="btn btn-secondary" id="tm-status-detail-close"><?php
                 echo \local_tm_course\enrolment_status_detail::escape(get_string('statusdetail_close', 'local_tm_course'));

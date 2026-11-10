@@ -1659,5 +1659,14 @@ $string['cancel_detail_other_session'] = 'Moving to another session';
 $string['cancel_detail_other'] = 'Other reason';
 $string['cancel_detail_batch_submitter'] = 'Cancelled by the batch submitter';
 $string['cancel_detail_prereq'] = 'Prerequisite no longer met; cancelled automatically';
+$string['statusdetail_system'] = 'System';
+$string['enrol_log_heading'] = 'Action history';
+$string['enrol_log_empty'] = 'No action history yet';
+$string['enrol_log_apply'] = 'Applied';
+$string['enrol_log_approve'] = 'Approved';
+$string['enrol_log_reject'] = 'Rejected';
+$string['enrol_log_cancel'] = 'Cancelled';
+$string['enrol_log_reenrol'] = 'Re-enrolled';
+$string['enrol_log_unapprove'] = 'Returned to pending';
 
 

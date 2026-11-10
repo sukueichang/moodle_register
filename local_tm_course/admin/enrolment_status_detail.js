@@ -31,6 +31,50 @@
         if (reasonRow) {
             reasonRow.hidden = true;
         }
+        clearHistory();
+    }
+
+    function clearHistory() {
+        var box = document.getElementById('tm-status-detail-history');
+        if (!box) {
+            return;
+        }
+        while (box.firstChild) {
+            box.removeChild(box.firstChild);
+        }
+    }
+
+    function renderHistory(btn) {
+        var box = document.getElementById('tm-status-detail-history');
+        if (!box) {
+            return;
+        }
+        clearHistory();
+        var rows = [];
+        try {
+            rows = JSON.parse(btn.getAttribute('data-history') || '[]');
+        } catch (e) {
+            rows = [];
+        }
+        if (!rows || !rows.length) {
+            var empty = document.createElement('p');
+            empty.textContent = box.getAttribute('data-empty') || '';
+            box.appendChild(empty);
+            return;
+        }
+        var list = document.createElement('ol');
+        rows.forEach(function (row) {
+            var item = document.createElement('li');
+            var parts = [row && row.action, row && row.actor, row && row.time];
+            if (row && row.reason) {
+                parts.push(row.reason);
+            }
+            item.textContent = parts.filter(function (part) {
+                return !!part;
+            }).join(' · ');
+            list.appendChild(item);
+        });
+        box.appendChild(list);
     }
 
     function focusable() {
@@ -56,6 +100,7 @@
             text('tm-status-detail-reason', btn.getAttribute('data-reason'));
             reasonRow.hidden = false;
         }
+        renderHistory(btn);
         lastFocus = btn;
         modal.hidden = false;
         modal.setAttribute('aria-hidden', 'false');

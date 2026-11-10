@@ -20,6 +20,12 @@ class enrolment_manager {
     public const PLACEHOLDER_EMAIL_MARKER = '@local.tm.placeholder';
 
     /**
+     * Test-only. The next status write throws after both rows are staged and before commit.
+     * @var bool
+     */
+    public static $phpunit_throw_before_log_commit = false;
+
+    /**
      * Whether this email belongs to an internal placeholder/seat-holder account.
      */
     public static function is_placeholder_holder_email(string $email): bool {
@@ -272,6 +278,114 @@ class enrolment_manager {
     }
 
     /**
+     * Action code for one real status transition. Re-enrol is not a fresh application.
+     */
+    private static function log_action(?int $oldstatus, int $newstatus): string {
+        if ($oldstatus !== null
+                && in_array($oldstatus, [session_manager::ENROL_CANCELLED, session_manager::ENROL_REJECTED], true)
+                && in_array($newstatus, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED], true)) {
+            return 'reenrol';
+        }
+        if ($newstatus === session_manager::ENROL_APPROVED) {
+            return 'approve';
+        }
+        if ($newstatus === session_manager::ENROL_REJECTED) {
+            return 'reject';
+        }
+        if ($newstatus === session_manager::ENROL_CANCELLED) {
+            return 'cancel';
+        }
+        if ($oldstatus === session_manager::ENROL_APPROVED && $newstatus === session_manager::ENROL_PENDING) {
+            return 'unapprove';
+        }
+        return 'apply';
+    }
+
+    /**
+     * @param mixed $actorid
+     */
+    private static function log_actor_value($actorid): ?int {
+        if ($actorid === null || $actorid === '') {
+            return null;
+        }
+        return (int) $actorid;
+    }
+
+    /**
+     * Insert one history row. Caller must already be inside the status transaction.
+     */
+    private static function insert_enrolment_log(
+        int $enrolmentid,
+        ?int $actorid,
+        string $action,
+        ?int $oldstatus,
+        int $newstatus,
+        ?string $reasoncode,
+        ?string $reasontext,
+        int $timecreated
+    ): void {
+        global $DB;
+        $log = new \stdClass();
+        $log->enrolmentid = $enrolmentid;
+        $log->actorid = $actorid;
+        $log->action = $action;
+        $log->oldstatus = $oldstatus;
+        $log->newstatus = $newstatus;
+        $log->reason_code = ($reasoncode === null || $reasoncode === '') ? null : $reasoncode;
+        $log->reason_text = ($reasontext === null || $reasontext === '') ? null : $reasontext;
+        $log->timecreated = $timecreated;
+        $DB->insert_record('local_tm_course_enrolment_logs', $log);
+    }
+
+    /**
+     * Run the enrolment write and its history row in one delegated transaction.
+     */
+    private static function transaction_write(callable $write): void {
+        global $DB;
+        $transaction = $DB->start_delegated_transaction();
+        try {
+            $write();
+            if (defined('PHPUNIT_TEST') && PHPUNIT_TEST && self::$phpunit_throw_before_log_commit) {
+                self::$phpunit_throw_before_log_commit = false;
+                throw new \RuntimeException('enrolment log forced failure');
+            }
+            $transaction->allow_commit();
+        } catch (\Throwable $e) {
+            try {
+                $transaction->rollback($e);
+            } catch (\Throwable $rolled) {
+                throw $rolled;
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Save a stamped enrolment and the matching history row.
+     *
+     * @param bool $insert True for a new row. False updates $record->id.
+     */
+    private static function persist_stamped_enrolment(\stdClass $record, ?int $oldstatus, bool $insert): int {
+        global $DB;
+        $newstatus = (int) $record->status;
+        $actorid = self::log_actor_value($record->status_actorid ?? null);
+        $time = (int) ($record->status_time ?? time());
+        $action = self::log_action($oldstatus, $newstatus);
+        $id = 0;
+        self::transaction_write(function() use ($DB, $record, $insert, &$id, $actorid, $action, $oldstatus, $newstatus, $time) {
+            if ($insert) {
+                $id = (int) $DB->insert_record('local_tm_course_enrolments', $record);
+                $record->id = $id;
+            } else {
+                $DB->update_record('local_tm_course_enrolments', $record);
+                $id = (int) $record->id;
+            }
+            self::insert_enrolment_log($id, $actorid, $action, $oldstatus, $newstatus, null, null, $time);
+        });
+        return $id;
+    }
+
+    /**
      * Write status, actor, time, and the reason fields that belong to that status.
      * Returns false when the status is unchanged so a repeat action cannot replace the original episode.
      *
@@ -282,6 +396,7 @@ class enrolment_manager {
         if ((int) $enrol->status === $newstatus) {
             return false;
         }
+        $oldstatus = (int) $enrol->status;
         $now = time();
         $update = new \stdClass();
         $update->id = (int) $enrol->id;
@@ -308,7 +423,33 @@ class enrolment_manager {
             }
             $update->{$key} = $value;
         }
-        $DB->update_record('local_tm_course_enrolments', $update);
+        $reasoncode = null;
+        $reasontext = null;
+        if ($newstatus === session_manager::ENROL_REJECTED) {
+            $reasontext = $update->reject_reason !== null && $update->reject_reason !== ''
+                ? (string) $update->reject_reason : null;
+        } else if ($newstatus === session_manager::ENROL_CANCELLED) {
+            $reasoncode = $update->cancel_reason_code !== '' ? (string) $update->cancel_reason_code : null;
+            $reasontext = $update->cancel_reason_text !== null && $update->cancel_reason_text !== ''
+                ? (string) $update->cancel_reason_text : null;
+        }
+        $action = self::log_action($oldstatus, $newstatus);
+        $logactor = self::log_actor_value($actorid);
+        self::transaction_write(function() use (
+            $DB, $update, $logactor, $action, $oldstatus, $newstatus, $reasoncode, $reasontext, $now
+        ) {
+            $DB->update_record('local_tm_course_enrolments', $update);
+            self::insert_enrolment_log(
+                (int) $update->id,
+                $logactor,
+                $action,
+                $oldstatus,
+                $newstatus,
+                $reasoncode,
+                $reasontext,
+                $now
+            );
+        });
         $enrol->status = $newstatus;
         $enrol->status_actorid = $actorid;
         $enrol->status_time = $now;
@@ -463,6 +604,7 @@ class enrolment_manager {
         if ($existing) {
             // Re-activate a cancelled/rejected enrolment by updating the same row.
             // Never inherit prior present/absent marks onto the new enrolment cycle.
+            $oldstatus = (int) $existing->status;
             $now = time();
             $episodeactor = ((int) $status === session_manager::ENROL_APPROVED) ? 0 : (int) $userid;
             self::apply_episode_stamp($existing, (int) $status, $episodeactor, $now);
@@ -479,8 +621,7 @@ class enrolment_manager {
             $existing->diet_meat_other = $diet_meat_other;
             $existing->diet_vegetarian_notes = $diet_vegetarian_notes;
 
-            $DB->update_record('local_tm_course_enrolments', $existing);
-            $id = (int)$existing->id;
+            $id = self::persist_stamped_enrolment($existing, $oldstatus, false);
         } else {
             $record = new \stdClass();
             $record->sessionid    = $sessionid;
@@ -500,7 +641,7 @@ class enrolment_manager {
             $record->diet_vegetarian_notes = $diet_vegetarian_notes;
 
             try {
-                $id = $DB->insert_record('local_tm_course_enrolments', $record);
+                $id = self::persist_stamped_enrolment($record, null, true);
             } catch (\dml_write_exception $e) {
                 // Handle race condition: record created between our SELECT and INSERT.
                 $existing2 = $DB->get_record('local_tm_course_enrolments', [
@@ -508,7 +649,9 @@ class enrolment_manager {
                     'userid' => $userid,
                 ], '*', IGNORE_MISSING);
                 if ($existing2) {
-                    if ((int) $existing2->status !== (int) $status) {
+                    $oldstatus = (int) $existing2->status;
+                    $statuschanged = $oldstatus !== (int) $status;
+                    if ($statuschanged) {
                         $now = time();
                         $episodeactor = ((int) $status === session_manager::ENROL_APPROVED) ? 0 : (int) $userid;
                         self::apply_episode_stamp($existing2, (int) $status, $episodeactor, $now);
@@ -526,7 +669,11 @@ class enrolment_manager {
                     $existing2->diet_avoid_seafood = $diet_avoid_seafood;
                     $existing2->diet_meat_other = $diet_meat_other;
                     $existing2->diet_vegetarian_notes = $diet_vegetarian_notes;
-                    $DB->update_record('local_tm_course_enrolments', $existing2);
+                    if ($statuschanged) {
+                        self::persist_stamped_enrolment($existing2, $oldstatus, false);
+                    } else {
+                        $DB->update_record('local_tm_course_enrolments', $existing2);
+                    }
                     $id = (int)$existing2->id;
                 } else {
                     throw new \moodle_exception('error_enrol_diet_duplicate', 'local_tm_course');
@@ -3214,6 +3361,7 @@ class enrolment_manager {
             if (in_array($st, [session_manager::ENROL_PENDING, session_manager::ENROL_APPROVED, session_manager::ENROL_WAITLISTED], true)) {
                 throw new \moodle_exception('error_batch_already_active', 'local_tm_course');
             }
+            $oldstatus = $st;
             $now = time();
             self::apply_episode_stamp($existing, (int) $status, $actorid > 0 ? (int) $actorid : null, $now);
             $existing->attended = attendance_manager::ATTEND_UNSET;
@@ -3234,8 +3382,7 @@ class enrolment_manager {
             if ($auditnote !== '') {
                 $existing->notes = $auditnote;
             }
-            $DB->update_record('local_tm_course_enrolments', $existing);
-            $enrolid = (int)$existing->id;
+            $enrolid = self::persist_stamped_enrolment($existing, $oldstatus, false);
         } else {
             $record = new \stdClass();
             $record->sessionid = $sessionid;
@@ -3261,7 +3408,7 @@ class enrolment_manager {
                 $record->notes = $auditnote;
             }
             $record->timecreated = $now;
-            $enrolid = (int)$DB->insert_record('local_tm_course_enrolments', $record, true);
+            $enrolid = self::persist_stamped_enrolment($record, null, true);
         }
 
         if ($status === session_manager::ENROL_APPROVED) {

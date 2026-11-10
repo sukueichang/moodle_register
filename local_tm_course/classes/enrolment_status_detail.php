@@ -2,8 +2,9 @@
 /**
  * Current-status detail for one enrolment row.
  *
- * Shows only the latest status episode. It does not read timecreated,
- * timemodified, notes, or Moodle logs.
+ * The current-status view shows only the latest episode. History comes from
+ * local_tm_course_enrolment_logs and is never inferred from the current columns,
+ * timecreated, timemodified, notes, or Moodle logs.
  *
  * @package    local_tm_course
  */
@@ -163,5 +164,125 @@ class enrolment_status_detail {
             return get_string('statusdetail_not_recorded', 'local_tm_course');
         }
         return $reason;
+    }
+
+    /**
+     * Newest-first history for the enrolments already loaded on this page.
+     * One log query and one user query. Missing enrolments get an empty list.
+     *
+     * @param int[] $enrolids
+     * @return array<int, array<int, array{action:string,actor:string,time:string,reason:string}>>
+     */
+    public static function histories_for_enrolments(array $enrolids): array {
+        global $DB;
+        $enrolids = array_values(array_unique(array_filter(array_map('intval', $enrolids))));
+        $out = [];
+        foreach ($enrolids as $enrolid) {
+            $out[$enrolid] = [];
+        }
+        if (!$enrolids) {
+            return $out;
+        }
+        list($insql, $params) = $DB->get_in_or_equal($enrolids, SQL_PARAMS_NAMED, 'eid');
+        $logs = $DB->get_records_sql(
+            "SELECT *
+               FROM {local_tm_course_enrolment_logs}
+              WHERE enrolmentid $insql
+           ORDER BY timecreated DESC, id DESC",
+            $params
+        );
+        $actorids = [];
+        foreach ($logs as $log) {
+            if ($log->actorid === null || $log->actorid === '') {
+                continue;
+            }
+            $actorid = (int) $log->actorid;
+            if ($actorid > 0) {
+                $actorids[$actorid] = $actorid;
+            }
+        }
+        $names = [];
+        if ($actorids) {
+            $users = $DB->get_records_list('user', 'id', array_values($actorids), '', 'id, firstname, lastname, deleted');
+            foreach ($users as $user) {
+                if (!empty($user->deleted)) {
+                    continue;
+                }
+                $names[(int) $user->id] = trim($user->firstname . ' ' . $user->lastname);
+            }
+        }
+        foreach ($logs as $log) {
+            $enrolid = (int) $log->enrolmentid;
+            if (!array_key_exists($enrolid, $out)) {
+                continue;
+            }
+            $out[$enrolid][] = self::present_log($log, $names);
+        }
+        return $out;
+    }
+
+    /**
+     * @param array<int,string> $names
+     * @return array{action:string,actor:string,time:string,reason:string}
+     */
+    private static function present_log(\stdClass $log, array $names): array {
+        $actioncode = (string) ($log->action ?? '');
+        $reason = '';
+        $code = trim((string) ($log->reason_code ?? ''));
+        $text = (string) ($log->reason_text ?? '');
+        if ($code !== '') {
+            $reason = self::cancel_reason_text($code, $text);
+        } else {
+            $text = trim($text);
+            if ($text !== '') {
+                $reason = $text;
+            }
+        }
+        return [
+            'action' => self::action_label($actioncode),
+            'actor' => self::log_actor_label($log->actorid ?? null, $actioncode, $names),
+            'time' => self::time_text($log->timecreated ?? null),
+            'reason' => $reason,
+        ];
+    }
+
+    private static function action_label(string $action): string {
+        $keys = [
+            'apply' => 'enrol_log_apply',
+            'approve' => 'enrol_log_approve',
+            'reject' => 'enrol_log_reject',
+            'cancel' => 'enrol_log_cancel',
+            'reenrol' => 'enrol_log_reenrol',
+            'unapprove' => 'enrol_log_unapprove',
+        ];
+        if (!isset($keys[$action])) {
+            return get_string('statusdetail_not_recorded', 'local_tm_course');
+        }
+        return get_string($keys[$action], 'local_tm_course');
+    }
+
+    /**
+     * @param mixed $actorid
+     * @param array<int,string> $names
+     */
+    private static function log_actor_label($actorid, string $action, array $names): string {
+        if ($actorid === null || $actorid === '') {
+            return get_string('statusdetail_not_recorded', 'local_tm_course');
+        }
+        $actorid = (int) $actorid;
+        if ($actorid === 0) {
+            if ($action === 'approve') {
+                return get_string('statusdetail_system_approved', 'local_tm_course');
+            }
+            if ($action === 'cancel') {
+                return get_string('statusdetail_system_cancelled', 'local_tm_course');
+            }
+            return get_string('statusdetail_system', 'local_tm_course');
+        }
+        $name = trim($names[$actorid] ?? '');
+        if ($name === '') {
+            return get_string('statusdetail_not_recorded', 'local_tm_course');
+        }
+        return $name;
     }
 }
