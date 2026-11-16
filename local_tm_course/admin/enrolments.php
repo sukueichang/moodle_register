@@ -68,6 +68,36 @@ function enrolments_redirect_params(int $sessionid, int $fromresv, int $resvstat
     return $params;
 }
 
+/**
+ * Link into the existing session verification review page.
+ *
+ * @param array<int,array{state:string,sharedbatch:bool}> $summaries
+ */
+function enrolments_render_vq_entry(int $submissionid, array $summaries): string {
+    if ($submissionid <= 0) {
+        return '';
+    }
+    $url = new moodle_url('/local/tm_course/admin/session_verification_review.php', [
+        'submissionid' => $submissionid,
+    ]);
+    $html = html_writer::link(
+        $url,
+        get_string('session_vq_review_link_col', 'local_tm_course'),
+        ['class' => 'btn btn-sm btn-outline-primary']
+    );
+    $info = $summaries[$submissionid] ?? null;
+    if (is_array($info)) {
+        $key = session_verification_manager::state_lang_key((string)($info['state'] ?? ''));
+        if ($key !== '') {
+            $html .= ' ' . html_writer::span(get_string($key, 'local_tm_course'), 'small text-muted');
+        }
+        if (!empty($info['sharedbatch'])) {
+            $html .= ' ' . html_writer::span(get_string('session_vq_shared_batch', 'local_tm_course'), 'small text-muted');
+        }
+    }
+    return html_writer::div($html, 'tm-admin-vq-entry mt-2');
+}
+
 // ---- Load data ----
 $status_filter_raw = optional_param('filter_status', '', PARAM_RAW_TRIMMED);
 $status_filter = ($status_filter_raw === '' ? '' : (int) $status_filter_raw);
@@ -302,8 +332,29 @@ echo $OUTPUT->header();
 
 <?php
 $show_desk_board = !$sessionremoved && !$session_is_online && $status_filter === '' && $se;
+$vqsummaries = [];
 if ($show_desk_board) {
     $deskboard = enrolment_manager::build_session_desk_board($sessionid, ['include_pending' => true]);
+    if (!empty($session_has_vq)) {
+        $vqids = [];
+        foreach ($deskboard['desks'] as $desk) {
+            foreach ($desk['learners'] as $learner) {
+                $vid = (int)($learner['vq_submission_id'] ?? 0);
+                if ($vid > 0) {
+                    $vqids[] = $vid;
+                }
+            }
+        }
+        foreach ($deskboard['unassigned'] as $learner) {
+            $vid = (int)($learner['vq_submission_id'] ?? 0);
+            if ($vid > 0) {
+                $vqids[] = $vid;
+            }
+        }
+        if ($vqids) {
+            $vqsummaries = session_verification_manager::summarize_submission_states($vqids, $se);
+        }
+    }
 }
 ?>
 
@@ -382,6 +433,9 @@ if ($show_desk_board) {
                     <?php if ($learner['batch_submitter_note'] !== ''): ?>
                     <div class="small mt-1"><em><?php echo nl2br(s($learner['batch_submitter_note'])); ?></em></div>
                     <?php endif; ?>
+                    <?php if (!empty($session_has_vq)) {
+                        echo enrolments_render_vq_entry((int)($learner['vq_submission_id'] ?? 0), $vqsummaries);
+                    } ?>
                     <?php if (!$hold && $ispending): ?>
                     <div class="tm-admin-learner-actions mt-2">
                         <form method="post" action="" class="d-inline">
@@ -521,6 +575,9 @@ if ($show_desk_board) {
                     <span><?php echo s($dietlabel); ?></span>
                     <?php endif; ?>
                 </div>
+                <?php if (!empty($session_has_vq)) {
+                    echo enrolments_render_vq_entry((int)($learner['vq_submission_id'] ?? 0), $vqsummaries);
+                } ?>
                 <?php if (!$hold && $ispending): ?>
                 <p class="small text-warning mb-1"><?php echo get_string('error_desk_required_for_approval', 'local_tm_course'); ?></p>
                 <form method="post" action="" class="tm-admin-reject-form mt-1">

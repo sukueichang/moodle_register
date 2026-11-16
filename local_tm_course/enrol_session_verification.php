@@ -39,7 +39,9 @@ if ($submissionid > 0) {
     if (!$issiteadmin && !$canbatch) {
         throw new required_capability_exception($context, 'local/tm_course:batchenrol', 'nopermissions', '');
     }
-    if ((int)$submission->actor_userid !== (int)$USER->id && !$issiteadmin) {
+    // Same rule as before: original batch submitter, or an existing site-admin exception.
+    // Approve / manage capability does not grant edit access.
+    if (!session_verification_manager::user_may_edit_batch_submission($submission, (int)$USER->id, $issiteadmin)) {
         throw new moodle_exception('nopermissions', 'error');
     }
     $session = session_manager::get_session((int)$submission->sessionid);

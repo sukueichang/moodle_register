@@ -172,6 +172,10 @@ if ($action && confirm_sesskey() && $resvid > 0) {
     }
     try {
         $reservation = $DB->get_record('local_tm_course_reservation', ['id' => $resvid], '*', MUST_EXIST);
+        if ((int) $reservation->status === \local_tm_course\reservation_application::STATUS_CANCELLED
+                && ($action === 'resv_reject' || $action === 'resv_approve')) {
+            throw new moodle_exception('reservation_review_already_cancelled', 'local_tm_course');
+        }
         $isonline = ((string) $reservation->delivery_mode === session_manager::DELIVERY_ONLINE);
         if ($action === 'resv_note') {
             $reservation->manager_note = trim((string)$resvnote);
@@ -273,8 +277,9 @@ if (!in_array($resvstatus, [0, 1, 2], true)) {
     $resvstatus = 0;
 }
 if ($resvstatus === 2) {
-    $resvwhere = 'WHERE r.status = :rstatus';
-    $resvparams['rstatus'] = 2;
+    $resvwhere = 'WHERE r.status IN ('
+        . \local_tm_course\reservation_application::STATUS_REJECTED . ', '
+        . \local_tm_course\reservation_application::STATUS_CANCELLED . ')';
 }
 require_once(__DIR__ . '/../classes/reservation_application.php');
 $submittedsql = \local_tm_course\reservation_application::sql_submitted_only();
@@ -423,6 +428,7 @@ $resvstatuslabels = [
     0 => ['pending', get_string('enrol_pending', 'local_tm_course')],
     1 => ['approved', get_string('enrol_approved', 'local_tm_course')],
     2 => ['rejected', get_string('enrol_rejected', 'local_tm_course')],
+    3 => ['rejected', get_string('reservation_status_cancelled', 'local_tm_course')],
 ];
 
 echo $OUTPUT->header();
@@ -510,8 +516,13 @@ echo $OUTPUT->header();
                 $hascreatedsessions = !empty($ressesslist);
                 $hasinitiallearners = (int)($learnercounts[(int)$r->id] ?? 0) > 0;
                 $learnerreviewdone = $hascreatedsessions && (!$hasinitiallearners || $sessioninitialpendingtotal <= 0);
-                $showresvenrolreview = ((int)$r->status !== 2);
-                $virtualstatus = ((int)$r->status === 2) ? 2 : ($learnerreviewdone ? 1 : 0);
+                $showresvenrolreview = ((int) $r->status !== 2
+                    && (int) $r->status !== \local_tm_course\reservation_application::STATUS_CANCELLED);
+                if ((int) $r->status === \local_tm_course\reservation_application::STATUS_CANCELLED) {
+                    $virtualstatus = \local_tm_course\reservation_application::STATUS_CANCELLED;
+                } else {
+                    $virtualstatus = ((int) $r->status === 2) ? 2 : ($learnerreviewdone ? 1 : 0);
+                }
                 [$cls, $lbl] = $resvstatuslabels[$virtualstatus] ?? ['closed', 'Unknown'];
                 $rcourseids = [];
                 if (!empty($r->courseids_json)) {
@@ -634,7 +645,7 @@ echo $OUTPUT->header();
                                 <?php if (trim((string)$r->manager_note) !== '') { echo $check; } ?>
                             </span>
 
-                            <?php if ((int)$r->status !== 2): ?>
+                            <?php if ((int) $r->status !== 2 && (int) $r->status !== \local_tm_course\reservation_application::STATUS_CANCELLED): ?>
                                 <span class="tm-resv-actions-approval-pair">
                                 <form method="post" action="" style="display:inline">
                                     <input type="hidden" name="resvid" value="<?php echo (int)$r->id; ?>">
@@ -660,7 +671,8 @@ echo $OUTPUT->header();
                             <?php endif; ?>
                         </div>
 
-                        <?php if (!$stepallapproveprereq && (int)$r->status !== 2): ?>
+                        <?php if (!$stepallapproveprereq && (int) $r->status !== 2
+                            && (int) $r->status !== \local_tm_course\reservation_application::STATUS_CANCELLED): ?>
                             <div class="small text-muted mt-1"><?php echo s(get_string('reservation_review_approve_prereq_hint', 'local_tm_course')); ?></div>
                         <?php endif; ?>
 

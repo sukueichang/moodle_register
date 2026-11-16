@@ -24,14 +24,21 @@ require_once($CFG->dirroot . '/local/tm_course/classes/reservation_application.p
 class review_pending_badge_test extends \advanced_testcase {
 
     public function test_review_list_pending_rule(): void {
-        $this->assertSame([2], reservation_application::pending_review_excluded_statuses());
+        $this->assertSame(
+            [reservation_application::STATUS_REJECTED, reservation_application::STATUS_CANCELLED],
+            reservation_application::pending_review_excluded_statuses()
+        );
         $this->assertFalse(reservation_application::is_pending_on_review_list(2, false, 0, 0));
+        $this->assertFalse(reservation_application::is_pending_on_review_list(
+            reservation_application::STATUS_CANCELLED,
+            false,
+            0,
+            0
+        ));
         $this->assertTrue(reservation_application::is_pending_on_review_list(0, false, 3, 0));
         $this->assertFalse(reservation_application::is_pending_on_review_list(1, true, 0, 0));
         $this->assertFalse(reservation_application::is_pending_on_review_list(1, true, 2, 0));
         $this->assertTrue(reservation_application::is_pending_on_review_list(1, true, 2, 1));
-        // Status 3 is not a cancelled state in this branch's review page.
-        $this->assertTrue(reservation_application::is_pending_on_review_list(3, false, 0, 0));
     }
 
     public function test_only_pending_enrolments_including_batch_rows(): void {
@@ -147,13 +154,21 @@ class review_pending_badge_test extends \advanced_testcase {
         $this->assertFalse($shown['active']);
     }
 
-    public function test_unclassified_status_three_stays_on_the_pending_list(): void {
+    public function test_cancelled_dedicated_class_is_not_pending(): void {
         $this->resetAfterTest(true);
         $requester = $this->getDataGenerator()->create_user();
         $course = $this->getDataGenerator()->create_course();
-        $this->insert_reservation((int) $requester->id, 3, 1, (int) $course->id);
+        $this->insert_reservation(
+            (int) $requester->id,
+            reservation_application::STATUS_CANCELLED,
+            1,
+            (int) $course->id
+        );
 
-        $this->assertSame(1, reservation_application::pending_review_application_count());
+        $this->assertSame(0, reservation_application::pending_review_application_count());
+        $shown = $this->presentation_for_admin('報名與專屬開班審核');
+        $this->assertSame(0, $shown['count']);
+        $this->assertFalse($shown['active']);
     }
 
     public function test_users_without_approve_do_not_receive_the_count(): void {

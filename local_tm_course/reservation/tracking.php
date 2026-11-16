@@ -233,6 +233,7 @@ $statuslabels = [
     0 => get_string('enrol_pending', 'local_tm_course'),
     1 => get_string('enrol_approved', 'local_tm_course'),
     2 => get_string('enrol_rejected', 'local_tm_course'),
+    3 => get_string('reservation_status_cancelled', 'local_tm_course'),
 ];
 
 echo $OUTPUT->header();
