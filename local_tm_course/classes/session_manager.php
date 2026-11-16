@@ -407,6 +407,23 @@ class session_manager {
     }
 
     /**
+     * Pending enrolment applications on the review center's default filter.
+     * One count per enrolment row, including business batch rows and dedicated-class
+     * initial rows. Approved, rejected, cancelled, and waitlisted rows are not included.
+     */
+    public static function pending_enrolment_application_count(): int {
+        global $DB;
+        if (!$DB->get_manager()->table_exists('local_tm_course_enrolments')) {
+            return 0;
+        }
+        $total = 0;
+        foreach (self::get_enrolment_review_rows(self::ENROL_PENDING) as $row) {
+            $total += (int) $row->pending_count;
+        }
+        return $total;
+    }
+
+    /**
      * Create a classroom-only occupancy block (教室未開放). No course, groups, attendance, or enrolment.
      *
      * @param array{classroomid:int,starttime:int,endtime:int,name?:string} $data

@@ -345,21 +345,24 @@ if (!empty($reservationids)) {
 }
 if ($resvstatus !== 2) {
     $reservations = array_values(array_filter($reservations, function($r) use ($reservationsessions, $learnercounts, $resvstatus) {
-        if ((int)$r->status === 2) {
-            return false;
-        }
         $sess = $reservationsessions[(int)$r->id] ?? [];
-        $hascreated = !empty($sess);
         $initialpending = 0;
         foreach ($sess as $s) {
             $initialpending += (int)($s->initial_pending_count ?? 0);
         }
-        $hasinitiallearners = (int)($learnercounts[(int)$r->id] ?? 0) > 0;
-        $isapproveddone = $hascreated && (!$hasinitiallearners || $initialpending <= 0);
+        $ispending = \local_tm_course\reservation_application::is_pending_on_review_list(
+            (int) $r->status,
+            !empty($sess),
+            (int) ($learnercounts[(int) $r->id] ?? 0),
+            $initialpending
+        );
         if ($resvstatus === 1) {
-            return $isapproveddone;
+            if (in_array((int) $r->status, \local_tm_course\reservation_application::pending_review_excluded_statuses(), true)) {
+                return false;
+            }
+            return !$ispending;
         }
-        return !$isapproveddone;
+        return $ispending;
     }));
 }
 $coursecache = [];
