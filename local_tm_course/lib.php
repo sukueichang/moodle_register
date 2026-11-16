@@ -168,7 +168,8 @@ function local_tm_course_extend_navigation(global_navigation $nav): void {
         $node->add(get_string('nav_m5_settings', 'local_tm_course'), new moodle_url('/admin/settings.php', ['section' => 'local_tm_course_m5']), navigation_node::TYPE_CUSTOM, null, 'tm_course_m5');
         $node->add(get_string('nav_dashboard_settings', 'local_tm_course'), new moodle_url('/admin/settings.php', ['section' => 'local_tm_course_dashboard']), navigation_node::TYPE_CUSTOM, null, 'tm_course_dashboard_settings');
         $node->add(get_string('nav_sessions', 'local_tm_course'), new moodle_url('/local/tm_course/admin/sessions.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_sessions');
-        $node->add(get_string('nav_enrolments', 'local_tm_course'), new moodle_url('/local/tm_course/admin/review_center.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_enrolments');
+        $reviewentry = local_tm_course_review_entry_presentation(get_string('nav_enrolments', 'local_tm_course'));
+        $node->add($reviewentry['label'], new moodle_url('/local/tm_course/admin/review_center.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_enrolments');
         $node->add(get_string('nav_surveys', 'local_tm_course'), new moodle_url('/local/tm_course/admin/surveys.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_surveys');
         $node->add(get_string('nav_survey_results', 'local_tm_course'), new moodle_url('/local/tm_course/admin/survey_results.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_survey_results');
         $node->add(get_string('nav_class_prep', 'local_tm_course'), new moodle_url('/local/tm_course/admin/sessions.php'), navigation_node::TYPE_CUSTOM, null, 'tm_course_attendance');
@@ -232,7 +233,8 @@ function local_tm_course_extend_settings_navigation(settings_navigation $setting
     $root->add(get_string('nav_m5_settings', 'local_tm_course'), new moodle_url('/admin/settings.php', ['section' => 'local_tm_course_m5']), navigation_node::TYPE_SETTING, null, 'tm_course_fp_m5');
     $root->add(get_string('nav_dashboard_settings', 'local_tm_course'), new moodle_url('/admin/settings.php', ['section' => 'local_tm_course_dashboard']), navigation_node::TYPE_SETTING, null, 'tm_course_fp_dashboard_settings');
     $root->add(get_string('nav_sessions', 'local_tm_course'), new moodle_url('/local/tm_course/admin/sessions.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_sessions');
-    $root->add(get_string('nav_enrolments', 'local_tm_course'), new moodle_url('/local/tm_course/admin/review_center.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_enrolments');
+    $reviewentry = local_tm_course_review_entry_presentation(get_string('nav_enrolments', 'local_tm_course'));
+    $root->add($reviewentry['label'], new moodle_url('/local/tm_course/admin/review_center.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_enrolments');
     $root->add(get_string('nav_surveys', 'local_tm_course'), new moodle_url('/local/tm_course/admin/surveys.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_surveys');
     $root->add(get_string('nav_survey_results', 'local_tm_course'), new moodle_url('/local/tm_course/admin/survey_results.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_survey_results');
     $root->add(get_string('nav_class_prep', 'local_tm_course'), new moodle_url('/local/tm_course/admin/sessions.php'), navigation_node::TYPE_SETTING, null, 'tm_course_fp_attendance');
@@ -290,6 +292,41 @@ function local_tm_course_pluginfile($course, $cm, $context, $filearea, $args, $f
         send_file_not_found();
     }
     send_stored_file($file, 0, 0, (bool)$forcedownload, $options);
+}
+
+/**
+ * Label and highlight for the enrolment / dedicated-class review entry.
+ * Same pattern as the pending-grading button: append " (N)" and mark active when N > 0.
+ *
+ * @return array{label:string,count:int,active:bool}
+ */
+function local_tm_course_review_entry_presentation(string $label): array {
+    $count = local_tm_course_review_pending_badge_count();
+    if ($count > 0) {
+        $label .= ' (' . $count . ')';
+    }
+    return [
+        'label' => $label,
+        'count' => $count,
+        'active' => $count > 0,
+    ];
+}
+
+/**
+ * Pending review total for users who can open the review center.
+ * Enrolment applications plus dedicated-class applications. Other users get 0.
+ */
+function local_tm_course_review_pending_badge_count(): int {
+    if (!isloggedin() || isguestuser()) {
+        return 0;
+    }
+    if (!has_capability('local/tm_course:approve', context_system::instance())) {
+        return 0;
+    }
+    require_once(__DIR__ . '/classes/session_manager.php');
+    require_once(__DIR__ . '/classes/reservation_application.php');
+    return \local_tm_course\session_manager::pending_enrolment_application_count()
+        + \local_tm_course\reservation_application::pending_review_application_count();
 }
 
 /**
@@ -507,8 +544,10 @@ function local_tm_course_before_standard_top_of_body_html(): string {
             get_string('dashboard_admin_classrooms', 'local_tm_course'), ['class' => 'btn tm-dashboard-btn']);
         $out .= html_writer::link((new moodle_url('/local/tm_course/settings/course_mapping.php'))->out(false),
             get_string('dashboard_admin_mapping', 'local_tm_course'), ['class' => 'btn tm-dashboard-btn']);
+        $reviewentry = local_tm_course_review_entry_presentation(get_string('dashboard_admin_approvals', 'local_tm_course'));
         $out .= html_writer::link((new moodle_url('/local/tm_course/admin/review_center.php'))->out(false),
-            get_string('dashboard_admin_approvals', 'local_tm_course'), ['class' => 'btn tm-dashboard-btn']);
+            $reviewentry['label'],
+            ['class' => 'btn tm-dashboard-btn' . ($reviewentry['active'] ? ' tm-dashboard-btn-active' : '')]);
         $out .= html_writer::end_div();
         $out .= html_writer::end_div();
     }

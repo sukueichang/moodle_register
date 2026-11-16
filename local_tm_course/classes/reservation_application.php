@@ -411,4 +411,104 @@ class reservation_application {
             ],
         ];
     }
+
+    /**
+     * Statuses the review center leaves out of the default pending list.
+     * Rejected is 2. Cancelled (3) is included only when this class defines it,
+     * because that is the same code that removes those applications from the list.
+     *
+     * @return int[]
+     */
+    public static function pending_review_excluded_statuses(): array {
+        $excluded = [2];
+        if (defined(self::class . '::STATUS_REJECTED')) {
+            $excluded = [self::STATUS_REJECTED];
+        }
+        if (defined(self::class . '::STATUS_CANCELLED')) {
+            $excluded[] = self::STATUS_CANCELLED;
+        }
+        return array_values(array_unique(array_map('intval', $excluded)));
+    }
+
+    /**
+     * Whether admin/review_center.php shows this application on the default pending filter.
+     * A submitted application stays pending until it is rejected or cancelled, or until
+     * its sessions exist and any initial learners are no longer pending.
+     */
+    public static function is_pending_on_review_list(
+        int $status,
+        bool $hascreatedsessions,
+        int $learnercount,
+        int $initialpendingcount
+    ): bool {
+        if (in_array($status, self::pending_review_excluded_statuses(), true)) {
+            return false;
+        }
+        $settled = $hascreatedsessions && ($learnercount <= 0 || $initialpendingcount <= 0);
+        return !$settled;
+    }
+
+    /**
+     * Dedicated-class applications on the review center's default pending filter.
+     * One count per application, not per learner.
+     */
+    public static function pending_review_application_count(): int {
+        global $DB;
+        $dbman = $DB->get_manager();
+        require_once(__DIR__ . '/session_manager.php');
+        if (!$dbman->table_exists('local_tm_course_reservation')
+                || !$dbman->table_exists('local_tm_course_sessions')
+                || !$dbman->table_exists('local_tm_course_resv_learner')
+                || !$dbman->table_exists('local_tm_course_enrolments')) {
+            return 0;
+        }
+        $rows = $DB->get_records_sql(
+            "SELECT r.id, r.status
+               FROM {local_tm_course_reservation} r
+               JOIN {user} u ON u.id = r.requesterid
+              WHERE COALESCE(r.application_submitted, 0) = :submitted",
+            ['submitted' => self::SUBMITTED_YES]
+        );
+        if (!$rows) {
+            return 0;
+        }
+        $ids = array_map('intval', array_keys($rows));
+        list($insql, $inparams) = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED);
+        $sessionparams = $inparams;
+        $sessionparams['pending'] = session_manager::ENROL_PENDING;
+        $sessionrows = $DB->get_records_sql(
+            "SELECT s.source_reservation_id AS id,
+                    COUNT(DISTINCT s.id) AS sessioncount,
+                    SUM(CASE WHEN e.status = :pending AND COALESCE(e.reservation_initial_enrol, 0) = 1
+                             THEN 1 ELSE 0 END) AS initialpending
+               FROM {local_tm_course_sessions} s
+          LEFT JOIN {local_tm_course_enrolments} e ON e.sessionid = s.id
+              WHERE s.source_reservation_id $insql
+           GROUP BY s.source_reservation_id",
+            $sessionparams
+        );
+        list($linsql, $linparams) = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED);
+        $learnerrows = $DB->get_records_sql(
+            "SELECT reservationid AS id, COUNT(1) AS learnercount
+               FROM {local_tm_course_resv_learner}
+              WHERE reservationid $linsql
+           GROUP BY reservationid",
+            $linparams
+        );
+        $count = 0;
+        foreach ($rows as $row) {
+            $id = (int) $row->id;
+            $session = $sessionrows[$id] ?? null;
+            $learners = $learnerrows[$id] ?? null;
+            if (self::is_pending_on_review_list(
+                (int) $row->status,
+                $session !== null && (int) $session->sessioncount > 0,
+                $learners ? (int) $learners->learnercount : 0,
+                $session ? (int) $session->initialpending : 0
+            )) {
+                $count++;
+            }
+        }
+        return $count;
+    }
 }
