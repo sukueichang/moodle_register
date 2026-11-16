@@ -19,6 +19,15 @@ class reservation_application {
     /** Formal application submitted at end of step 3. */
     public const SUBMITTED_YES = 1;
 
+    /** Waiting for admin review. */
+    public const STATUS_PENDING = 0;
+    /** Admin approved and sessions may exist. */
+    public const STATUS_APPROVED = 1;
+    /** Admin rejected. */
+    public const STATUS_REJECTED = 2;
+    /** Requester withdrew the application before approval. Stored in the existing status column. */
+    public const STATUS_CANCELLED = 3;
+
     /**
      * SQL fragment (with leading AND) for lists that should only show formal applications.
      */
@@ -410,6 +419,30 @@ class reservation_application {
                 ['title' => $str('reservation_summary_section_step3', 'Step 3 — Pre-course verification'), 'items' => $step3items],
             ],
         ];
+    }
+
+    /**
+     * The original requester withdraws a dedicated-class application that is still pending
+     * and has no sessions. Site-admin viewing rights do not grant this.
+     */
+    public static function cancel_by_requester(\stdClass $reservation, int $userid): void {
+        global $DB;
+        if ($userid <= 0 || (int) $reservation->requesterid !== $userid) {
+            throw new \moodle_exception('nopermissions', 'error');
+        }
+        $fresh = $DB->get_record('local_tm_course_reservation', ['id' => (int) $reservation->id], '*', MUST_EXIST);
+        if ((int) $fresh->requesterid !== $userid) {
+            throw new \moodle_exception('nopermissions', 'error');
+        }
+        if ((int) $fresh->status !== self::STATUS_PENDING) {
+            throw new \moodle_exception('reservation_cancel_not_pending', 'local_tm_course');
+        }
+        if ($DB->record_exists('local_tm_course_sessions', ['source_reservation_id' => (int) $fresh->id])) {
+            throw new \moodle_exception('reservation_cancel_has_sessions', 'local_tm_course');
+        }
+        $fresh->status = self::STATUS_CANCELLED;
+        $fresh->timemodified = time();
+        $DB->update_record('local_tm_course_reservation', $fresh);
     }
 
     /**

@@ -9,10 +9,14 @@ require_once(__DIR__ . '/../classes/permissions_manager.php');
 require_once(__DIR__ . '/../classes/session_manager.php');
 require_once(__DIR__ . '/../classes/verification_manager.php');
 require_once(__DIR__ . '/../classes/enrolment_manager.php');
+require_once(__DIR__ . '/../classes/session_verification_manager.php');
+require_once(__DIR__ . '/../classes/reservation_application.php');
 
 use local_tm_course\permissions_manager;
 use local_tm_course\enrolment_manager;
 use local_tm_course\session_manager;
+use local_tm_course\session_verification_manager;
+use local_tm_course\reservation_application;
 
 require_login();
 
@@ -52,9 +56,10 @@ $statuslabels = [
     session_manager::ENROL_REJECTED => get_string('enrol_rejected', 'local_tm_course'),
 ];
 $resvstatuslabels = [
-    0 => get_string('enrol_pending', 'local_tm_course'),
-    1 => get_string('enrol_approved', 'local_tm_course'),
-    2 => get_string('enrol_rejected', 'local_tm_course'),
+    reservation_application::STATUS_PENDING => get_string('enrol_pending', 'local_tm_course'),
+    reservation_application::STATUS_APPROVED => get_string('enrol_approved', 'local_tm_course'),
+    reservation_application::STATUS_REJECTED => get_string('enrol_rejected', 'local_tm_course'),
+    reservation_application::STATUS_CANCELLED => get_string('reservation_status_cancelled', 'local_tm_course'),
 ];
 
 echo $OUTPUT->header();
@@ -150,6 +155,26 @@ if ($type === 'batch') {
     if (!$issiteadmin && empty($rows)) {
         throw new required_capability_exception($context, 'local/tm_course:batchenrol', 'nopermissions', '');
     }
+    $openvq = [];
+    $vqids = [];
+    foreach ($rows as $vqrow) {
+        $vqid = (int)($vqrow->vq_submission_id ?? 0);
+        if ($vqid > 0) {
+            $vqids[$vqid] = $vqid;
+        }
+    }
+    if ($vqids) {
+        list($vqinsql, $vqparams) = $DB->get_in_or_equal(array_values($vqids), SQL_PARAMS_NAMED);
+        $vqfound = $DB->get_records_sql(
+            "SELECT id, scope, actor_userid, submitted
+               FROM {local_tm_course_sess_vq_sub}
+              WHERE id $vqinsql",
+            $vqparams
+        );
+        foreach ($vqfound as $vqrec) {
+            $openvq[(int)$vqrec->id] = $vqrec;
+        }
+    }
     echo html_writer::tag('h3', $str('reservation_tracking_batch_title', 'Batch enrolment tracking'), ['class' => 'mb-2']);
     if ($isbatcharchived) {
         echo html_writer::div(get_string('reservation_tracking_archived_locked', 'local_tm_course'), 'tm-alert tm-alert-warning');
@@ -169,10 +194,36 @@ if ($type === 'batch') {
     if (empty($rows)) {
         echo html_writer::div($str('reservation_tracking_batch_empty', 'No batch enrolment submitted by you yet.'), 'tm-alert tm-alert-info');
     } else {
-        echo html_writer::div(
-            get_string('batch_tracking_followup_where_hint', 'local_tm_course'),
-            'tm-alert tm-alert-info small mb-2'
-        );
+        $vqactions = [];
+        if (!$isbatcharchived) {
+            foreach ($openvq as $vqid => $vqsub) {
+                if ((int) $vqsub->submitted === 1) {
+                    continue;
+                }
+                if (!session_verification_manager::user_may_edit_batch_submission($vqsub, (int) $USER->id, $issiteadmin)) {
+                    continue;
+                }
+                $vqactions[] = [
+                    'id' => (int) $vqid,
+                    'sub' => $vqsub,
+                ];
+            }
+        }
+        if ($vqactions) {
+            $vqlinks = [];
+            $vqmanypackages = count($vqactions) > 1;
+            foreach ($vqactions as $vqaction) {
+                $vqlabel = $vqmanypackages
+                    ? get_string('session_vq_tracking_open_id', 'local_tm_course', $vqaction['id'])
+                    : get_string('session_vq_tracking_open', 'local_tm_course');
+                $vqlinks[] = html_writer::link(
+                    new moodle_url('/local/tm_course/enrol_session_verification.php', ['submissionid' => $vqaction['id']]),
+                    $vqlabel,
+                    ['class' => 'btn btn-sm btn-outline-primary']
+                );
+            }
+            echo html_writer::div(implode(' ', $vqlinks), 'mb-3');
+        }
         $isonlinebatch = ((string)($session->delivery_mode ?? '')) === session_manager::DELIVERY_ONLINE;
         $cancelconfirmjs = json_encode(
             get_string('reservation_tracking_cancel_confirm', 'local_tm_course'),
@@ -253,7 +304,7 @@ if ($type === 'batch') {
                     . '</details>';
             }
 
-            $cancelcell = '—';
+            $cancelcell = '';
             if ((int)$row->status === session_manager::ENROL_CANCELLED) {
                 $accountstatus = get_string('enrol_cancelled', 'local_tm_course');
             } else {
@@ -277,7 +328,11 @@ if ($type === 'batch') {
                     . '</button>'
                     . '</form>';
             }
-            $actioncell = '<div class="d-flex flex-wrap align-items-center gap-1">' . $supplementcell . $cancelcell . '</div>';
+            $actioninner = $supplementcell . $cancelcell;
+            if ($actioninner === '') {
+                $actioninner = '—';
+            }
+            $actioncell = '<div class="d-flex flex-wrap align-items-center gap-1">' . $actioninner . '</div>';
             echo '<tr' . $rowclass . '>'
                 . '<td>' . (int)$row->id . '</td>'
                 . '<td>' . s($showname) . '</td>'
@@ -347,7 +402,21 @@ if ($type === 'batch') {
             \core\notification::error(get_string('reservation_tracking_archived_locked', 'local_tm_course'));
         } else {
         $action = optional_param('action', '', PARAM_ALPHANUMEXT);
-        if ($action === 'reupload_verification') {
+        if ($action === 'cancel_reservation') {
+            reservation_application::cancel_by_requester($reservation, (int) $USER->id);
+            redirect(
+                new moodle_url('/local/tm_course/reservation/tracking_detail.php', [
+                    'type' => 'custom',
+                    'id' => (int) $reservation->id,
+                ]),
+                get_string('reservation_cancel_application_done', 'local_tm_course'),
+                null,
+                \core\output\notification::NOTIFY_SUCCESS
+            );
+        }
+        if ((int) $reservation->status === reservation_application::STATUS_CANCELLED) {
+            \core\notification::error(get_string('reservation_review_already_cancelled', 'local_tm_course'));
+        } else if ($action === 'reupload_verification') {
             $questionid = optional_param('questionid', 0, PARAM_INT);
             $field = 'replace_qfile_' . $questionid;
             if ($questionid > 0 && !empty($_FILES[$field]) && is_array($_FILES[$field])) {
@@ -427,6 +496,23 @@ if ($type === 'batch') {
     }
     echo html_writer::tag('li', s($str('reservation_tracking_manager_note', 'Review note')) . ': ' . s($shownote));
     echo html_writer::end_tag('ul');
+    $cancancelapplication = !$iscustomarchived
+        && (int) $reservation->requesterid === (int) $USER->id
+        && (int) $reservation->status === reservation_application::STATUS_PENDING
+        && !$DB->record_exists('local_tm_course_sessions', ['source_reservation_id' => (int) $reservation->id]);
+    if ($cancancelapplication) {
+        $cancelappjs = json_encode(
+            get_string('reservation_cancel_application_confirm', 'local_tm_course'),
+            JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP
+        );
+        $cancelapponclick = 'if(!confirm(' . $cancelappjs . ')){return false;}this.closest("form").submit();return false;';
+        echo '<form method="post" class="mb-3">'
+            . '<input type="hidden" name="sesskey" value="' . sesskey() . '">'
+            . '<input type="hidden" name="action" value="cancel_reservation">'
+            . '<button type="button" class="btn btn-outline-danger" onclick=' . "'" . $cancelapponclick . "'" . '>'
+            . s(get_string('reservation_cancel_application', 'local_tm_course'))
+            . '</button></form>';
+    }
 
     $progresslabel = get_string('reservation_tracking_verification_na', 'local_tm_course');
     $progresscls = 'closed';
@@ -576,7 +662,9 @@ if ($type === 'batch') {
                 }
             }
             $reuploadcell = '';
-            if (!$iscustomarchived) {
+            if ((int) $reservation->status === reservation_application::STATUS_CANCELLED) {
+                $reuploadcell = s(get_string('reservation_status_cancelled', 'local_tm_course'));
+            } else if (!$iscustomarchived) {
                 $reuploadcell .= '<form method="post" enctype="multipart/form-data" style="display:flex;gap:.5rem;align-items:center;">';
                 $reuploadcell .= '<input type="hidden" name="sesskey" value="' . sesskey() . '">';
                 $reuploadcell .= '<input type="hidden" name="action" value="reupload_verification">';

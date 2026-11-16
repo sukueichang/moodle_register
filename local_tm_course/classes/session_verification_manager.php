@@ -13,6 +13,12 @@ class session_verification_manager {
     public const SCOPE_SELF = 'self';
     public const SCOPE_BATCH = 'batch';
 
+    /** Desk-board labels. Failed wins over still-pending required items. */
+    public const STATE_NOT_SUBMITTED = 'not_submitted';
+    public const STATE_PENDING_REVIEW = 'pending_review';
+    public const STATE_REQUIRED_FAILED = 'required_failed';
+    public const STATE_REQUIRED_PASSED = 'required_passed';
+
     /**
      * Whether the linked course has at least one verification question for this session's delivery mode.
      */
@@ -220,5 +226,193 @@ class session_verification_manager {
                 throw new \moodle_exception('error_session_vq_required_not_passed', 'local_tm_course');
             }
         }
+    }
+
+    /**
+     * Batch packages stay editable by the original submitter.
+     * Site admins keep the existing exception. Approve or manage capability is not enough.
+     */
+    public static function user_may_edit_batch_submission(\stdClass $submission, int $userid, bool $issiteadmin): bool {
+        if ((string)($submission->scope ?? '') !== self::SCOPE_BATCH) {
+            return false;
+        }
+        $actor = (int)($submission->actor_userid ?? 0);
+        if ($actor > 0 && $userid > 0 && $actor === $userid) {
+            return true;
+        }
+        return $issiteadmin;
+    }
+
+    /**
+     * Unsubmitted batch packages created by this user. Does not create a new submission.
+     *
+     * @return \stdClass[]
+     */
+    public static function list_actor_open_batch_submissions(int $sessionid, int $actoruserid): array {
+        global $DB;
+        if ($sessionid <= 0 || $actoruserid <= 0) {
+            return [];
+        }
+        return $DB->get_records('local_tm_course_sess_vq_sub', [
+            'sessionid' => $sessionid,
+            'scope' => self::SCOPE_BATCH,
+            'actor_userid' => $actoruserid,
+            'submitted' => 0,
+        ], 'id ASC');
+    }
+
+    public static function state_lang_key(string $state): string {
+        switch ($state) {
+            case self::STATE_NOT_SUBMITTED:
+                return 'session_vq_state_not_submitted';
+            case self::STATE_PENDING_REVIEW:
+                return 'session_vq_state_pending_review';
+            case self::STATE_REQUIRED_FAILED:
+                return 'session_vq_state_required_failed';
+            case self::STATE_REQUIRED_PASSED:
+                return 'session_vq_state_required_passed';
+            default:
+                return '';
+        }
+    }
+
+    /**
+     * One query for submissions, one for file rows, one for stored files.
+     *
+     * @param int[] $submissionids
+     * @return array<int,array{state:string,sharedbatch:bool}>
+     */
+    public static function summarize_submission_states(array $submissionids, \stdClass $session): array {
+        global $DB;
+        $ids = [];
+        foreach ($submissionids as $id) {
+            $id = (int)$id;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+        $ids = array_values($ids);
+        if (!$ids) {
+            return [];
+        }
+        list($insql, $params) = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED);
+        $subs = $DB->get_records_sql(
+            "SELECT id, scope, submitted
+               FROM {local_tm_course_sess_vq_sub}
+              WHERE id $insql",
+            $params
+        );
+        $filerows = $DB->get_records_sql(
+            "SELECT id, submissionid, questionid, itemid, review_status
+               FROM {local_tm_course_sess_vq_file}
+              WHERE submissionid $insql",
+            $params
+        );
+        $questions = verification_manager::get_questions_for_courses(
+            [(int)($session->courseid ?? 0)],
+            (string)($session->delivery_mode ?? session_manager::DELIVERY_ONSITE)
+        );
+        $requiredids = [];
+        foreach ($questions as $q) {
+            if ((int)($q->is_required ?? 0) === 1 && (int)$q->id > 0) {
+                $requiredids[] = (int)$q->id;
+            }
+        }
+        $byquestion = [];
+        $itemids = [];
+        foreach ($filerows as $row) {
+            $sid = (int)$row->submissionid;
+            $qid = (int)$row->questionid;
+            $byquestion[$sid][$qid] = $row;
+            if ((int)$row->itemid > 0) {
+                $itemids[] = (int)$row->itemid;
+            }
+        }
+        $withfile = self::itemids_with_stored_files($itemids);
+        $out = [];
+        foreach ($ids as $id) {
+            if (empty($subs[$id])) {
+                continue;
+            }
+            $sub = $subs[$id];
+            $shared = ((string)$sub->scope === self::SCOPE_BATCH);
+            if ((int)$sub->submitted !== 1) {
+                $out[$id] = [
+                    'state' => self::STATE_NOT_SUBMITTED,
+                    'sharedbatch' => $shared,
+                ];
+                continue;
+            }
+            $failed = false;
+            $waiting = false;
+            foreach ($requiredids as $qid) {
+                $link = $byquestion[$id][$qid] ?? null;
+                if (!$link) {
+                    $waiting = true;
+                    continue;
+                }
+                $status = (int)$link->review_status;
+                if ($status === verification_manager::REVIEW_FAILED) {
+                    $failed = true;
+                    continue;
+                }
+                $itemid = (int)$link->itemid;
+                if ($status !== verification_manager::REVIEW_PASSED || $itemid <= 0 || empty($withfile[$itemid])) {
+                    $waiting = true;
+                }
+            }
+            if ($failed) {
+                $state = self::STATE_REQUIRED_FAILED;
+            } else if ($waiting) {
+                $state = self::STATE_PENDING_REVIEW;
+            } else {
+                $state = self::STATE_REQUIRED_PASSED;
+            }
+            $out[$id] = [
+                'state' => $state,
+                'sharedbatch' => $shared,
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * @param int[] $itemids
+     * @return array<int,bool>
+     */
+    private static function itemids_with_stored_files(array $itemids): array {
+        global $DB;
+        $clean = [];
+        foreach ($itemids as $itemid) {
+            $itemid = (int)$itemid;
+            if ($itemid > 0) {
+                $clean[$itemid] = $itemid;
+            }
+        }
+        $clean = array_values($clean);
+        if (!$clean) {
+            return [];
+        }
+        $context = \context_system::instance();
+        list($insql, $params) = $DB->get_in_or_equal($clean, SQL_PARAMS_NAMED);
+        $params['ctx'] = $context->id;
+        $params['component'] = 'local_tm_course';
+        $params['filearea'] = verification_manager::FILEAREA;
+        $rows = $DB->get_records_sql(
+            "SELECT itemid
+               FROM {files}
+              WHERE contextid = :ctx
+                AND component = :component
+                AND filearea = :filearea
+                AND filename <> '.'
+                AND itemid $insql
+           GROUP BY itemid",
+            $params
+        );
+        $found = [];
+        foreach ($rows as $row) {
+            $found[(int)$row->itemid] = true;
+        }
+        return $found;
     }
 }

@@ -2206,6 +2206,27 @@ function xmldb_local_tm_course_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026111000, 'local', 'tm_course');
     }
 
+    if ($oldversion < 2026111001) {
+        // Desk-board verification links and the batch resume entry. No schema change.
+        upgrade_plugin_savepoint(true, 2026111001, 'local', 'tm_course');
+    }
+
+    if ($oldversion < 2026111002) {
+        // Verification button on the batch tracking detail. No schema change.
+        upgrade_plugin_savepoint(true, 2026111002, 'local', 'tm_course');
+    }
+
+    if ($oldversion < 2026111003) {
+        // Detail-level verification button and requester cancel. No schema change.
+        upgrade_plugin_savepoint(true, 2026111003, 'local', 'tm_course');
+    }
+
+    if ($oldversion < 2026111601) {
+        // Bring the verification entry and dedicated-class cancel onto 5.29.19.
+        // No schema change. Sites already past 2026111003 still need this savepoint.
+        upgrade_plugin_savepoint(true, 2026111601, 'local', 'tm_course');
+    }
+
     return true;
 }
 
